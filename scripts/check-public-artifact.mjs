@@ -6,7 +6,9 @@ const errors = [];
 const readable = new Set([".html", ".json", ".js", ".css", ".xml", ".txt", ".svg"]);
 const forbidden = [
   { label: "removed copy", pattern: /Nothing disappears because it lacks an original relation/i },
-  { label: "named training provider", pattern: /\bSANS(?:\s+Institute)?\b/i },
+  // Keep this uppercase-only so ordinary CSS values such as `sans-serif`
+  // do not trigger the provider-name privacy gate.
+  { label: "named training provider", pattern: /\bSANS(?:\s+Institute)?\b/ },
   { label: "course identifier", pattern: /\bSEC\d{3}(?:\.\d+)?\b/i },
   { label: "named research course", pattern: /\bCRTO\b|\bCertified\s+Red\s+Team\s+Operator\b/i },
   { label: "named development course", pattern: /MalDev/i },
