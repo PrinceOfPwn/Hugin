@@ -33,6 +33,9 @@ const fullTitle = title === "HUGIN" ? title : `${title} · HUGIN`;
     <meta name="twitter:card" content="summary_large_image" />
     <title>{fullTitle}</title>
     {jsonLd && <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
+    <script is:inline type="module">
+      window.loadHuginPagefind = () => import("/Hugin/pagefind/pagefind.js");
+    </script>
   </head>
   <body>
     <a class="skip-link" href="#content">Skip to content</a>

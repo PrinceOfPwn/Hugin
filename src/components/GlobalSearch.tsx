@@ -1,8 +1,13 @@
 import { useState } from "react";
 
 declare global {
-  interface Window { pagefind?: { search: (query: string) => Promise<{ results: Array<{ data: () => Promise<any> }> }> } }
+  interface Window {
+    pagefind?: PagefindApi;
+    loadHuginPagefind: () => Promise<PagefindApi>;
+  }
 }
+
+type PagefindApi = { search: (query: string) => Promise<{ results: Array<{ data: () => Promise<any> }> }> };
 
 export default function GlobalSearch() {
   const [query, setQuery] = useState("");
@@ -13,8 +18,7 @@ export default function GlobalSearch() {
     setQuery(value);
     if (value.trim().length < 2) { setResults([]); setStatus(""); return; }
     setStatus("Searching…");
-    const pagefindPath = "/Hugin/pagefind/pagefind.js";
-    const pagefind = window.pagefind ?? await import(/* @vite-ignore */ pagefindPath);
+    const pagefind = window.pagefind ?? await window.loadHuginPagefind();
     window.pagefind = pagefind;
     const response = await pagefind.search(value);
     const data = await Promise.all(response.results.slice(0, 6).map((result) => result.data()));
