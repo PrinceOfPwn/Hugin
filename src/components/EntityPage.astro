@@ -3,6 +3,7 @@ import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { bodyFor, curatedRelations, entityById, evidenceFor } from "../lib/data";
+import type { Entity, Relation } from "../lib/types";
 import { cleanBodyMarkdown, parseAndCleanSummary } from "../lib/summaryParser";
 
 const { entity } = Astro.props as { entity: Entity };
@@ -71,10 +72,10 @@ const jsonLd = {
           <span class="tech-badge" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.4); color: #38bdf8;">
             {entity.category}
           </span>
-          {entity.mitre.map((value) => (
+          {entity.mitre.map((value: string) => (
             <span class="tech-badge mitre">MITRE {value}</span>
           ))}
-          {structuredInfo.mitre?.map((value) => (
+          {structuredInfo.mitre?.map((value: string) => (
             <span class="tech-badge mitre">MITRE {value}</span>
           ))}
         </div>
@@ -188,7 +189,7 @@ const jsonLd = {
           <li><strong style="color: #ffffff;">Kind:</strong> {entity.kind.replace(/_/g, " ")}</li>
           <li><strong style="color: #ffffff;">Category:</strong> {entity.category}</li>
           <li><strong style="color: #ffffff;">Galaxy:</strong> {entity.subgalaxy || entity.galaxyId}</li>
-          {entity.tags.slice(0, 8).map((tag) => <li style="color: #38bdf8;">#{tag}</li>)}
+          {entity.tags.slice(0, 8).map((tag: string) => <li style="color: #38bdf8;">#{tag}</li>)}
         </ul>
       </section>
 

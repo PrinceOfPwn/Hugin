@@ -13,17 +13,6 @@ const REVISION = "751bff37182d3f1213fa05d7196b954e230abad9";
 const NEIGHBORS = 8;
 const SHARDS = 64;
 
-const CORE_TYPES = new Set([
-  "technique",
-  "playbook",
-  "concept",
-  "detection",
-  "lgtm_note",
-  "chain",
-  "architecture",
-  "pattern"
-]);
-
 const GALAXY_DEFS = [
   ["techniques", "Techniques & Playbooks", "Operator techniques and field-ready playbooks.", "#d84a57"],
   ["internals", "Windows Internals & Concepts", "Structures, primitives, APIs, and system behavior.", "#8f73c9"],
@@ -137,7 +126,6 @@ for (const target of [PUBLIC, GENERATED]) {
   fs.mkdirSync(target, { recursive: true });
 }
 
-const sourceNodeById = new Map(source.nodes.map((node) => [node.id, node]));
 const entitySourceNodes = source.nodes.filter((node) => ["core", "support"].includes(node.publishState));
 const evidenceSourceNodes = source.nodes.filter((node) => node.publishState === "evidence");
 const entityIds = new Set(entitySourceNodes.map((node) => node.id));
@@ -200,8 +188,6 @@ const entities = entitySourceNodes.map((node) => {
     }]
   };
 });
-
-const entityById = new Map(entities.map((entity) => [entity.id, entity]));
 
 const evidenceLinkMap = new Map();
 for (const edge of evidenceSourceEdges) {
