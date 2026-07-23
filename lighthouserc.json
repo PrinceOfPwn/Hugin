@@ -1,0 +1,18 @@
+{
+  "ci": {
+    "collect": {
+      "startServerCommand": "npm run preview -- --host 127.0.0.1 --port 4322",
+      "startServerReadyPattern": "Local",
+      "url": ["http://127.0.0.1:4322/Hugin/", "http://127.0.0.1:4322/Hugin/explore/", "http://127.0.0.1:4322/Hugin/graph/"],
+      "numberOfRuns": 1
+    },
+    "assert": {
+      "assertions": {
+        "categories:accessibility": ["error", { "minScore": 0.95 }],
+        "largest-contentful-paint": ["error", { "maxNumericValue": 2500 }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }]
+      }
+    },
+    "upload": { "target": "temporary-public-storage" }
+  }
+}
