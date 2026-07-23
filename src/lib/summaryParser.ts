@@ -120,3 +120,25 @@ export function parseAndCleanSummary(rawText: string, fallbackTitle = ""): Struc
     enables: parseArray(enablesMatch?.[1]),
   };
 }
+
+export function cleanBodyMarkdown(body: string): string {
+  if (!body) return "";
+  let text = String(body);
+  if (/^\s*(?:---|id:\s*\S+)/i.test(text)) {
+    const firstHeading = text.search(/^#\s+/m);
+    if (firstHeading !== -1) {
+      text = text.slice(firstHeading);
+    } else {
+      text = text
+        .split("\n")
+        .filter(
+          (line) =>
+            !/^\s*(?:id|name|category|tier|mitre|analyzed_by|analysis_date|confidence|requires|enables|vault_references|implements|file|key_functions|key_structs|key_constants|lines_of_interest|min_windows|needs_admin|tags):/i.test(
+              line
+            )
+        )
+        .join("\n");
+    }
+  }
+  return text.trim();
+}

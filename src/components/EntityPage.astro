@@ -3,54 +3,83 @@ import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { bodyFor, curatedRelations, entityById, evidenceFor } from "../lib/data";
-import type { Entity, Relation } from "../lib/types";
+import { cleanBodyMarkdown, parseAndCleanSummary } from "../lib/summaryParser";
 
 const { entity } = Astro.props as { entity: Entity };
-const body = bodyFor(entity);
-const html = sanitizeHtml(await marked.parse(body, { gfm: true }), {
-  allowedTags: sanitizeHtml.defaults.allowedTags,
-  allowedAttributes: {
-    a: ["href", "title"]
-  },
-  allowedSchemes: ["https", "http", "mailto"]
-});
+const rawBody = cleanBodyMarkdown(bodyFor(entity));
+const html = rawBody
+  ? sanitizeHtml(await marked.parse(rawBody, { gfm: true }), {
+      allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img", "pre", "code", "span", "div"]),
+      allowedAttributes: {
+        a: ["href", "title", "target", "rel"],
+        img: ["src", "alt", "title"],
+        code: ["class"],
+        span: ["class", "style"],
+        div: ["class", "style"],
+      },
+      allowedSchemes: ["https", "http", "mailto"],
+    })
+  : "";
 
-const relations = curatedRelations.filter((edge) => edge.source === entity.id || edge.target === entity.id);
-const neighbors = relations
-  .map((edge) => ({
-    edge,
-    entity: entityById.get(edge.source === entity.id ? edge.target : edge.source)
-  }))
-  .filter((item): item is { edge: Relation; entity: Entity } => Boolean(item.entity))
-  .sort((a, b) => b.entity.degree - a.entity.degree)
-  .slice(0, 30);
+const structuredInfo = parseAndCleanSummary(entity.summary, entity.title);
+
+// Deduplicate curated relations by (type + target.id)
+const rawRelations = curatedRelations.filter((edge) => edge.source === entity.id || edge.target === entity.id);
+const seenNeighbors = new Set<string>();
+const neighbors: Array<{ edge: Relation; entity: Entity }> = [];
+
+for (const edge of rawRelations) {
+  const targetId = edge.source === entity.id ? edge.target : edge.source;
+  const target = entityById.get(targetId);
+  if (!target) continue;
+  const key = `${edge.type}:${target.id}`;
+  if (!seenNeighbors.has(key)) {
+    seenNeighbors.add(key);
+    neighbors.push({ edge, entity: target });
+  }
+}
+neighbors.sort((a, b) => b.entity.degree - a.entity.degree);
+
 const evidence = evidenceFor(entity.id, 8);
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "TechArticle",
   headline: entity.title,
-  description: entity.summary,
+  description: structuredInfo.cleanSummary,
   keywords: entity.tags,
   isPartOf: {
     "@type": "Dataset",
-    name: "HUGIN Knowledge Universe"
-  }
+    name: "HUGIN Knowledge Universe",
+  },
 };
 ---
 
-<BaseLayout title={entity.title} description={entity.summary} jsonLd={jsonLd}>
+<BaseLayout title={entity.title} description={structuredInfo.cleanSummary} jsonLd={jsonLd}>
   <header class="entity-head">
     <div class="wrap entity-head-grid">
       <div>
-        <p class="eyebrow">{entity.galaxyId} · {entity.kind.replace(/_/g, " ")}</p>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+          <span class="eyebrow-galaxy">{entity.galaxyId}</span>
+          <span class="eyebrow-bright">{entity.kind.replace(/_/g, " ")}</span>
+          {structuredInfo.tier && <span class="tech-badge tier">Tier {structuredInfo.tier}</span>}
+          {entity.tier && !structuredInfo.tier && <span class="tech-badge tier">Tier {entity.tier}</span>}
+        </div>
         <h1>{entity.title}</h1>
-        <p class="lede">{entity.summary}</p>
-        <div class="meta-row">
-          <span class="badge">{entity.category}</span>
-          {entity.tier && <span class="badge">Tier {entity.tier}</span>}
-          {entity.mitre.slice(0, 6).map((value) => <span class="badge">{value}</span>)}
+        <p class="lede" style="color: #e2e8f0; font-size: 1.05rem; line-height: 1.6;">{structuredInfo.cleanSummary}</p>
+        
+        <div class="tech-badges" style="margin-top: 14px;">
+          <span class="tech-badge" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.4); color: #38bdf8;">
+            {entity.category}
+          </span>
+          {entity.mitre.map((value) => (
+            <span class="tech-badge mitre">MITRE {value}</span>
+          ))}
+          {structuredInfo.mitre?.map((value) => (
+            <span class="tech-badge mitre">MITRE {value}</span>
+          ))}
         </div>
       </div>
+
       <dl class="entity-facts">
         <div><dt>Record</dt><dd>{entity.evidenceId}</dd></div>
         <div><dt>Galaxy</dt><dd>{entity.galaxyId}</dd></div>
@@ -62,91 +91,111 @@ const jsonLd = {
 
   <div class="wrap entity-layout" data-pagefind-body>
     <article class="entity-main">
-      <section>
-        <p class="eyebrow">Overview</p>
-        <h2>What this record contributes</h2>
-        <p class="lede">{entity.summary}</p>
-      </section>
-
-      {neighbors.length > 0 && (
+      {/* ── 1. PRIMARY CONTENT: Technical Note / Body (Uncollapsed) ── */}
+      {html ? (
+        <section class="technical-primary">
+          <p class="eyebrow-bright">Primary Technical Note</p>
+          <h2 style="color: #ffffff; margin-bottom: 16px;">Full Analysis & Implementation Specification</h2>
+          <div class="prose" set:html={html} />
+        </section>
+      ) : (
         <section>
-          <p class="eyebrow">Curated graph</p>
-          <h2>Connected knowledge</h2>
+          <p class="eyebrow-bright">Overview</p>
+          <h2 style="color: #ffffff;">Technical Summary</h2>
+          <p class="lede" style="color: #e2e8f0; font-size: 1rem; line-height: 1.6;">{structuredInfo.cleanSummary}</p>
+        </section>
+      )}
+
+      {/* Structured File & Function Locations */}
+      {(structuredInfo.files || structuredInfo.linesOfInterest) && (
+        <section class="tech-section" style="margin-top: 28px;">
+          <p class="eyebrow-bright">Codebase Verification</p>
+          <h2 style="color: #ffffff;">Source Implementation Files</h2>
+          {structuredInfo.files?.map((file) => (
+            <div class="tech-file-box">📄 {file}</div>
+          ))}
+          {structuredInfo.linesOfInterest?.map((loi) => (
+            <div class="tech-loi-item">⚡ {loi}</div>
+          ))}
+        </section>
+      )}
+
+      {/* ── 2. CURATED GRAPH: Connected Knowledge (Deduplicated) ── */}
+      {neighbors.length > 0 && (
+        <section style="margin-top: 36px;">
+          <p class="eyebrow-bright">Curated Graph</p>
+          <h2 style="color: #ffffff;">Connected Knowledge Nodes ({neighbors.length})</h2>
           <ul class="relation-list">
-            {neighbors.map(({ edge, entity: target }) => (
-              <li>
-                <span class="relation-type">{edge.type.replace(/_/g, " ")}</span>
-                <span>
-                  <a href={`/Hugin${target.route}`}>{target.title}</a>
-                  <span style="display:block;color:var(--muted);font-size:.8rem;margin-top:4px">
-                    {target.summary}
+            {neighbors.map(({ edge, entity: target }) => {
+              const targetSummary = parseAndCleanSummary(target.summary, target.title).cleanSummary;
+              return (
+                <li>
+                  <span class="relation-type" style="color: #38bdf8; font-weight: 600;">{edge.type.replace(/_/g, " ")}</span>
+                  <span>
+                    <a href={`/Hugin${target.route}`} style="color: #ffffff; font-weight: 600; text-decoration: none;">{target.title}</a>
+                    <span style="display:block; color:#cbd5e1; font-size:.84rem; margin-top:4px; line-height: 1.45;">
+                      {targetSummary}
+                    </span>
                   </span>
-                </span>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
 
+      {/* ── 3. ANONYMOUS EVIDENCE ── */}
       {evidence.length > 0 && (
-        <section>
-          <p class="eyebrow">Anonymous evidence</p>
-          <h2>Supporting observations</h2>
-          <p class="lede">
+        <section style="margin-top: 36px;">
+          <p class="eyebrow-bright">Anonymous Evidence</p>
+          <h2 style="color: #ffffff;">Supporting Observations ({evidence.length})</h2>
+          <p class="lede" style="color: #cbd5e1; font-size: 0.88rem;">
             Evidence is identified by topic and neutral record ID. Provider, course, filename,
             and local provenance are excluded from the public dataset.
           </p>
           <div class="evidence-list">
             {evidence.map((item) => (
-              <article class="evidence-item">
-                <span class="evidence-id">{item.evidenceId}</span>
+              <article class="evidence-item" style="border-left: 3px solid #22d3ee; padding-left: 14px; margin-block: 14px;">
+                <span class="evidence-id" style="color: #22d3ee; font-family: var(--mono); font-size: 0.76rem;">{item.evidenceId}</span>
                 <span>
-                  <strong>{item.title}</strong>
-                  <p>{item.summary}</p>
+                  <strong style="color: #ffffff; display: block; font-size: 0.95rem;">{item.title}</strong>
+                  <p style="color: #cbd5e1; font-size: 0.86rem; margin-top: 4px;">{item.summary}</p>
                 </span>
               </article>
             ))}
           </div>
         </section>
       )}
-
-      {body && (
-        <section>
-          <details class="technical-note">
-            <summary>Open full technical note</summary>
-            <div class="prose" set:html={html} />
-          </details>
-        </section>
-      )}
     </article>
 
     <aside class="entity-sidebar">
       <section class="sidebar-section">
-        <p class="eyebrow">Graph context</p>
-        <h2>Continue exploring</h2>
-        <p>Open this record in Neighborhood mode to see its immediate structure without the full-universe noise.</p>
+        <p class="eyebrow-bright">Graph Context</p>
+        <h2 style="color: #ffffff;">Continue Exploring</h2>
+        <p style="color: #cbd5e1; font-size: 0.85rem;">Open this record in 3D Neighborhood mode to trace immediate connections in WebGL.</p>
         <a
-          class="button primary"
+          class="inspector-action-primary"
           href={`/Hugin/graph/?focus=${encodeURIComponent(entity.id)}&mode=neighborhood&edges=curated&depth=1`}
+          style="margin-top: 12px; text-decoration: none;"
         >
-          Open neighborhood
+          Open 3D Neighborhood →
         </a>
       </section>
 
       <section class="sidebar-section">
-        <p class="eyebrow">Classification</p>
-        <ul>
-          <li>{entity.kind.replace(/_/g, " ")}</li>
-          <li>{entity.category}</li>
-          <li>{entity.subgalaxy}</li>
-          {entity.tags.slice(0, 8).map((tag) => <li>{tag}</li>)}
+        <p class="eyebrow-bright">Classification</p>
+        <ul style="color: #cbd5e1; font-size: 0.85rem;">
+          <li><strong style="color: #ffffff;">Kind:</strong> {entity.kind.replace(/_/g, " ")}</li>
+          <li><strong style="color: #ffffff;">Category:</strong> {entity.category}</li>
+          <li><strong style="color: #ffffff;">Galaxy:</strong> {entity.subgalaxy || entity.galaxyId}</li>
+          {entity.tags.slice(0, 8).map((tag) => <li style="color: #38bdf8;">#{tag}</li>)}
         </ul>
       </section>
 
       <section class="sidebar-section">
-        <p class="eyebrow">Public provenance</p>
-        <h2>{entity.evidenceId}</h2>
-        <p>Anonymous, owner-authorized research record. Original source names and private paths are not published.</p>
+        <p class="eyebrow-bright">Public Provenance</p>
+        <h2 style="color: #ffffff; font-family: var(--mono); font-size: 1rem;">{entity.evidenceId}</h2>
+        <p style="color: #cbd5e1; font-size: 0.85rem;">Anonymous, owner-authorized research record. Original source names and private paths are not published.</p>
       </section>
     </aside>
   </div>
