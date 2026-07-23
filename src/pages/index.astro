@@ -3,43 +3,156 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 import GlobalSearch from "../components/GlobalSearch";
 import { entities, galaxies, manifest } from "../lib/data";
 
-const hubs = [...entities].sort((a, b) => b.degree - a.degree).slice(0, 8);
+const coreEntities = entities.filter((entity) => entity.publishState === "core");
+const hubs = [...coreEntities].sort((a, b) => b.degree - a.degree).slice(0, 5);
+const featured = hubs[0];
+const galaxyPositions = [
+  [50, 12],
+  [78, 24],
+  [88, 53],
+  [76, 82],
+  [50, 90],
+  [22, 82],
+  [12, 53],
+  [22, 24]
+];
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Dataset",
   name: "HUGIN Knowledge Universe",
-  description: "A static technical knowledge universe containing 5,608 owner-authorized research entities.",
+  description: `A static technical knowledge graph with ${manifest.counts.coreEntities} curated knowledge entities and anonymous supporting evidence.`,
   version: manifest.datasetVersion,
   url: "https://princeofpwn.github.io/Hugin/",
-  distribution: { "@type": "DataDownload", encodingFormat: "application/json", contentUrl: "https://github.com/PrinceOfPwn/Hugin/releases" }
+  distribution: {
+    "@type": "DataDownload",
+    encodingFormat: "application/json",
+    contentUrl: "https://github.com/PrinceOfPwn/Hugin/releases"
+  }
 };
 ---
 
-<BaseLayout title="HUGIN" description="Explore 5,608 technical research entities across eight structured galaxies." jsonLd={jsonLd}>
-  <section class="hero">
-    <div class="wrap">
-      <p class="eyebrow">Owner-authorized static research corpus · no backend</p>
-      <h1>Map the machinery behind the signal.</h1>
-      <p class="lede">HUGIN organizes techniques, Windows internals, detections, operational chains, evidence and research gaps into a permanent, searchable universe.</p>
-      <div class="actions"><a class="button primary" href="/Hugin/explore/">Explore the catalog</a><a class="button" href="/Hugin/graph/">Open the universe</a></div>
-      <div class="metrics" aria-label="Dataset metrics">
-        <div class="metric"><strong>{manifest.counts.nodes.toLocaleString()}</strong><span>research entities</span></div>
-        <div class="metric"><strong>{manifest.counts.curatedRelations.toLocaleString()}</strong><span>original valid relations</span></div>
-        <div class="metric"><strong>{manifest.counts.similarityRelations.toLocaleString()}</strong><span>generated semantic neighbors</span></div>
-        <div class="metric"><strong>{manifest.counts.galaxies}</strong><span>structural galaxies</span></div>
+<BaseLayout
+  title="HUGIN"
+  description="Explore a curated technical knowledge graph, its relationships, and anonymous supporting evidence."
+  jsonLd={jsonLd}
+>
+  <section class="wrap hero-home">
+    <div>
+      <p class="eyebrow">Adversary research index · static and anonymous</p>
+      <h1>Map tradecraft. Trace evidence. Design detection.</h1>
+      <p class="lede">
+        HUGIN connects techniques, Windows internals, detections, operational chains,
+        research notes, and the relationships that make them useful.
+      </p>
+      <GlobalSearch client:load />
+      <div class="actions">
+        <a class="button primary" href="/Hugin/graph/">Open the universe</a>
+        <a class="button" href="/Hugin/explore/">Browse the catalog</a>
       </div>
     </div>
+
+    <figure class="universe-preview" aria-labelledby="universe-preview-title">
+      <header class="preview-head">
+        <h2 id="universe-preview-title">Universe topology</h2>
+        <span>{manifest.counts.coreEntities.toLocaleString()} knowledge nodes</span>
+      </header>
+      <div class="preview-map">
+        <div class="preview-core">HUGIN<br />Core graph</div>
+        {galaxies.map((galaxy, index) => (
+          <a
+            class="preview-galaxy"
+            href={`/Hugin/graph/?galaxy=${galaxy.id}`}
+            style={`--galaxy-color:${galaxy.color};left:${galaxyPositions[index][0]}%;top:${galaxyPositions[index][1]}%`}
+          >
+            <strong>{galaxy.name}</strong>
+            <small>{galaxy.count.toLocaleString()} nodes</small>
+          </a>
+        ))}
+      </div>
+      <figcaption class="preview-foot">
+        <span>Eight structural galaxies</span>
+        <a href="/Hugin/graph/">Enter interactive graph →</a>
+      </figcaption>
+    </figure>
   </section>
+
+  <dl class="metric-strip wrap" aria-label="Dataset metrics">
+    <div class="metric">
+      <dt>Knowledge nodes</dt>
+      <dd>{manifest.counts.coreEntities.toLocaleString()}</dd>
+    </div>
+    <div class="metric">
+      <dt>Curated relations</dt>
+      <dd>{manifest.counts.curatedRelations.toLocaleString()}</dd>
+    </div>
+    <div class="metric">
+      <dt>LGTM research notes</dt>
+      <dd>{coreEntities.filter((entity) => entity.kind === "lgtm_note").length.toLocaleString()}</dd>
+    </div>
+    <div class="metric">
+      <dt>Anonymous evidence records</dt>
+      <dd>{manifest.counts.evidenceRecords.toLocaleString()}</dd>
+    </div>
+  </dl>
+
   <section class="wrap section">
-    <p class="eyebrow">Global search</p><h2>Find evidence, not pages.</h2>
-    <GlobalSearch client:load />
+    <header class="section-head">
+      <p class="section-index">01</p>
+      <h2>Eight ways into the graph.</h2>
+      <p>
+        Start broad in the universe, isolate a galaxy, or jump directly into a
+        technique and follow its neighborhood.
+      </p>
+    </header>
+    <div class="index-list">
+      {galaxies.map((galaxy, index) => (
+        <a class="index-row" href={`/Hugin/graph/?galaxy=${galaxy.id}`}>
+          <span class="row-index">{String(index + 1).padStart(2, "0")}</span>
+          <h3>{galaxy.name}</h3>
+          <p>{galaxy.description}</p>
+          <span class="row-count">{galaxy.count.toLocaleString()} nodes</span>
+        </a>
+      ))}
+    </div>
   </section>
-  <section class="wrap section">
-    <p class="eyebrow">Universe structure</p><h2>Eight galaxies. One public map.</h2>
-    <div class="grid">{galaxies.map((galaxy) => <a class="card" href={`/Hugin/graph/?galaxy=${galaxy.id}`} style="text-decoration:none"><h3><span class="galaxy-dot" style={`color:${galaxy.color};background:${galaxy.color}`}></span>{galaxy.name}</h3><strong>{galaxy.count.toLocaleString()} nodes</strong><p>{galaxy.description}</p></a>)}</div>
-  </section>
-  <section class="wrap section">
-    <p class="eyebrow">Original graph</p><h2>Highest-connectivity entities.</h2>
-    <div class="grid">{hubs.map((entity) => <a class="card" href={`/Hugin${entity.route}`} style="text-decoration:none"><span class="badge">{entity.kind}</span><h3 style="margin-top:14px">{entity.title}</h3><p>{entity.degree} original connections · {entity.category}</p></a>)}</div>
+
+  <section class="wrap section section-rule">
+    <header class="section-head">
+      <p class="section-index">02</p>
+      <h2>Follow signal, not volume.</h2>
+      <p>Central entities surface first. Raw training fragments remain supporting evidence, never standalone pages.</p>
+    </header>
+    <div class="feature-grid">
+      {featured && (
+        <article class="feature">
+          <p class="eyebrow">Most connected · {featured.kind}</p>
+          <h3>{featured.title}</h3>
+          <p>{featured.summary}</p>
+          <div class="meta-row">
+            <span class="badge">{featured.galaxyId}</span>
+            <span class="badge">{featured.degree} relations</span>
+          </div>
+          <div class="actions">
+            <a class="button primary" href={`/Hugin${featured.route}`}>Open record</a>
+            <a class="button" href={`/Hugin/graph/?focus=${encodeURIComponent(featured.id)}&mode=neighborhood`}>
+              Trace neighborhood
+            </a>
+          </div>
+        </article>
+      )}
+      <aside class="quiet-panel">
+        <p class="eyebrow">Connected index</p>
+        <h3>Highest-signal records</h3>
+        <div class="index-list">
+          {hubs.slice(1).map((entity, index) => (
+            <a class="index-row" style="grid-template-columns:30px minmax(0,1fr) auto;min-height:64px" href={`/Hugin${entity.route}`}>
+              <span class="row-index">{index + 1}</span>
+              <h3>{entity.title}</h3>
+              <span class="row-count">{entity.degree}</span>
+            </a>
+          ))}
+        </div>
+      </aside>
+    </div>
   </section>
 </BaseLayout>

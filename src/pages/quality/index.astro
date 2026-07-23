@@ -1,10 +1,95 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import { entities, manifest } from "../../lib/data";
-const isolated = entities.filter((entity) => entity.degree === 0).length;
-const byKind = Object.entries(entities.reduce((counts, entity) => ({ ...counts, [entity.kind]: (counts[entity.kind] || 0) + 1 }), {} as Record<string, number>)).sort((a, b) => b[1] - a[1]);
+import { manifest, quality } from "../../lib/data";
+
+const quarantineReasons = Object.entries(
+  quality.quarantinedNodes.reduce(
+    (counts, item) => ({ ...counts, [item.reason]: (counts[item.reason] || 0) + 1 }),
+    {} as Record<string, number>
+  )
+).sort((a, b) => b[1] - a[1]);
+const relationReasons = Object.entries(
+  quality.quarantinedRelations.reduce(
+    (counts, item) => ({ ...counts, [item.reason]: (counts[item.reason] || 0) + 1 }),
+    {} as Record<string, number>
+  )
+).sort((a, b) => b[1] - a[1]);
 ---
-<BaseLayout title="Data Quality" description="Integrity, quarantine and coverage report for the HUGIN dataset.">
-  <header class="wrap section"><p class="eyebrow">Build-enforced quality</p><h1>Every omission becomes visible.</h1><p class="lede">The manifest must preserve exactly 5,608 entities. Invalid relations are quarantined, generated links are labeled, routes are sanitized and every node remains reachable through catalog, search and galaxy membership.</p></header>
-  <section class="wrap" style="padding-bottom:70px"><div class="metrics"><div class="metric"><strong>{manifest.counts.nodes.toLocaleString()}</strong><span>validated IDs and routes</span></div><div class="metric"><strong>{manifest.counts.quarantinedRelations}</strong><span>invalid self-relations quarantined</span></div><div class="metric"><strong>{isolated.toLocaleString()}</strong><span>without original relations; still visible</span></div><div class="metric"><strong>0</strong><span>absolute local paths allowed</span></div></div><div class="grid" style="margin-top:30px">{byKind.map(([kind, count]) => <div class="card"><span class="badge">{kind}</span><h3 style="margin:16px 0 0">{count.toLocaleString()}</h3></div>)}</div></section>
+
+<BaseLayout
+  title="Data Quality"
+  description="Build-enforced content quality, anonymization, and quarantine reporting for HUGIN."
+>
+  <header class="wrap page-head">
+    <p class="eyebrow">Build-enforced quality</p>
+    <h1>Only useful knowledge enters the public graph.</h1>
+    <p class="lede">
+      Raw imports are classified before publication. Administrative slides, generic objectives,
+      private paths, provider names, and unsupported relations fail closed.
+    </p>
+  </header>
+
+  <dl class="metric-strip wrap" aria-label="Quality metrics">
+    <div class="metric"><dt>Raw records audited</dt><dd>{manifest.counts.rawRecords.toLocaleString()}</dd></div>
+    <div class="metric"><dt>Knowledge nodes</dt><dd>{manifest.counts.coreEntities.toLocaleString()}</dd></div>
+    <div class="metric"><dt>Evidence quarantined</dt><dd>{manifest.counts.quarantinedEvidence.toLocaleString()}</dd></div>
+    <div class="metric"><dt>Private identifiers allowed</dt><dd>0</dd></div>
+  </dl>
+
+  <section class="wrap quality-grid">
+    <article>
+      <p class="eyebrow">Evidence quarantine</p>
+      <h2>Rejected before indexing</h2>
+      <table class="quality-table">
+        <thead><tr><th>Reason</th><th>Records</th></tr></thead>
+        <tbody>
+          {quarantineReasons.map(([reason, count]) => (
+            <tr><td>{reason.replace(/-/g, " ")}</td><td>{count.toLocaleString()}</td></tr>
+          ))}
+        </tbody>
+      </table>
+
+      <p class="eyebrow" style="margin-top:40px">Relation quarantine</p>
+      <h2>Edges removed from the graph</h2>
+      <table class="quality-table">
+        <thead><tr><th>Reason</th><th>Relations</th></tr></thead>
+        <tbody>
+          {relationReasons.map(([reason, count]) => (
+            <tr><td>{reason.replace(/-/g, " ")}</td><td>{count.toLocaleString()}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </article>
+
+    <aside>
+      <section class="sidebar-section">
+        <p class="eyebrow">Publication states</p>
+        <table class="quality-table">
+          <tbody>
+            <tr><td>Core knowledge</td><td>{quality.states.core.toLocaleString()}</td></tr>
+            <tr><td>Optional sources</td><td>{quality.states.support.toLocaleString()}</td></tr>
+            <tr><td>Anonymous evidence</td><td>{quality.states.evidence.toLocaleString()}</td></tr>
+            <tr><td>Quarantined</td><td>{quality.states.quarantined.toLocaleString()}</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <section class="sidebar-section">
+        <p class="eyebrow">Build gate</p>
+        <h2>Automatic rejection</h2>
+        <p>
+          The deployment stops if public artifacts contain named providers, course IDs,
+          local usernames, private paths, raw evidence pages, duplicate IDs, broken
+          relations, or unlabeled generated similarity.
+        </p>
+      </section>
+      <section class="sidebar-section">
+        <p class="eyebrow">Evidence policy</p>
+        <h2>Context, not clutter</h2>
+        <p>
+          Anonymous evidence can support a record inside its detail page. It cannot
+          become an independent catalog result or a graph node.
+        </p>
+      </section>
+    </aside>
+  </section>
 </BaseLayout>

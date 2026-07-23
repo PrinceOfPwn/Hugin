@@ -1,40 +1,116 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DatasetManifest, Entity } from "../lib/types";
 
+function initialParams() {
+  return new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+}
+
 export default function CatalogExplorer({ manifest }: { manifest: DatasetManifest }) {
+  const params = initialParams();
   const [entities, setEntities] = useState<Entity[]>([]);
-  const initialParams = () => new URLSearchParams(typeof location === "undefined" ? "" : location.search);
-  const [query, setQuery] = useState(() => initialParams().get("q") || "");
-  const [kind, setKind] = useState(() => initialParams().get("kind") || "all");
-  const [galaxy, setGalaxy] = useState(() => initialParams().get("galaxy") || "all");
-  const [limit, setLimit] = useState(120);
+  const [query, setQuery] = useState(params.get("q") || "");
+  const [kind, setKind] = useState(params.get("kind") || "all");
+  const [galaxy, setGalaxy] = useState(params.get("galaxy") || "all");
+  const [includeSources, setIncludeSources] = useState(params.get("sources") === "1");
+  const [limit, setLimit] = useState(100);
 
-  useEffect(() => { fetch(`/Hugin${manifest.assets.catalog}`).then((response) => response.json()).then(setEntities); }, [manifest]);
   useEffect(() => {
-    const params = new URLSearchParams();
-    if (query) params.set("q", query); if (kind !== "all") params.set("kind", kind); if (galaxy !== "all") params.set("galaxy", galaxy);
-    if (typeof history !== "undefined") history.replaceState(null, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
-  }, [query, kind, galaxy]);
+    fetch(`/Hugin${manifest.assets.catalog}`)
+      .then((response) => response.json())
+      .then(setEntities);
+  }, [manifest]);
 
-  const filtered = useMemo(() => entities.filter((entity) => {
-    const text = `${entity.title} ${entity.summary} ${entity.tags.join(" ")} ${entity.mitre.join(" ")}`.toLowerCase();
-    return (kind === "all" || entity.kind === kind) && (galaxy === "all" || entity.galaxyId === galaxy) && (!query || text.includes(query.toLowerCase()));
-  }), [entities, query, kind, galaxy]);
-  const kinds = [...new Set(entities.map((entity) => entity.kind))].sort();
-  const galaxies = [...new Set(entities.map((entity) => entity.galaxyId))].sort();
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const next = new URLSearchParams();
+    if (query) next.set("q", query);
+    if (kind !== "all") next.set("kind", kind);
+    if (galaxy !== "all") next.set("galaxy", galaxy);
+    if (includeSources) next.set("sources", "1");
+    window.history.replaceState(null, "", `${window.location.pathname}${next.size ? `?${next}` : ""}`);
+  }, [query, kind, galaxy, includeSources]);
 
-  return <div className="panel">
-    <div className="toolbar">
-      <input aria-label="Filter catalog" placeholder="Filter 5,608 entities…" value={query} onChange={(event) => { setQuery(event.target.value); setLimit(120); }} />
-      <select aria-label="Filter by type" value={kind} onChange={(event) => setKind(event.target.value)}><option value="all">All types</option>{kinds.map((value) => <option key={value}>{value}</option>)}</select>
-      <select aria-label="Filter by galaxy" value={galaxy} onChange={(event) => setGalaxy(event.target.value)}><option value="all">All galaxies</option>{galaxies.map((value) => <option key={value}>{value}</option>)}</select>
+  const visibleEntities = useMemo(
+    () => entities.filter((entity) => includeSources || entity.publishState === "core"),
+    [entities, includeSources]
+  );
+
+  const filtered = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return visibleEntities
+      .filter((entity) => {
+        const text = [
+          entity.title,
+          entity.summary,
+          entity.tags.join(" "),
+          entity.mitre.join(" "),
+          entity.category
+        ].join(" ").toLowerCase();
+        return (kind === "all" || entity.kind === kind)
+          && (galaxy === "all" || entity.galaxyId === galaxy)
+          && (!normalizedQuery || text.includes(normalizedQuery));
+      })
+      .sort((a, b) => b.degree - a.degree || a.title.localeCompare(b.title));
+  }, [visibleEntities, query, kind, galaxy]);
+
+  const kinds = [...new Set(visibleEntities.map((entity) => entity.kind))].sort();
+  const galaxies = [...new Set(visibleEntities.map((entity) => entity.galaxyId))].sort();
+
+  return (
+    <div className="catalog-shell">
+      <div className="catalog-toolbar">
+        <input
+          aria-label="Filter catalog"
+          placeholder={`Filter ${manifest.counts.coreEntities.toLocaleString()} knowledge nodes…`}
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setLimit(100);
+          }}
+        />
+        <select aria-label="Filter by type" value={kind} onChange={(event) => setKind(event.target.value)}>
+          <option value="all">All entity types</option>
+          {kinds.map((value) => <option value={value} key={value}>{value.replace(/_/g, " ")}</option>)}
+        </select>
+        <select aria-label="Filter by galaxy" value={galaxy} onChange={(event) => setGalaxy(event.target.value)}>
+          <option value="all">All galaxies</option>
+          {galaxies.map((value) => <option value={value} key={value}>{value}</option>)}
+        </select>
+        <label className="layer-toggle" style={{ border: "1px solid var(--rule)" }}>
+          <input
+            type="checkbox"
+            checked={includeSources}
+            onChange={() => setIncludeSources((value) => !value)}
+          />
+          Include source layer
+        </label>
+      </div>
+
+      <p className="catalog-summary" aria-live="polite">
+        <span>{entities.length ? `${filtered.length.toLocaleString()} matching nodes` : "Loading catalog…"}</span>
+        <span>{includeSources ? "Knowledge + anonymous sources" : "Knowledge layer only"}</span>
+      </p>
+
+      <div>
+        {filtered.slice(0, limit).map((entity) => (
+          <a className="catalog-result" href={`/Hugin${entity.route}`} key={entity.id}>
+            <span>
+              <h3>{entity.title}</h3>
+              <p>{entity.summary}</p>
+            </span>
+            <span className="catalog-galaxy">{entity.galaxyId}</span>
+            <span className="catalog-kind">{entity.kind.replace(/_/g, " ")}</span>
+          </a>
+        ))}
+      </div>
+
+      {limit < filtered.length && (
+        <div className="load-more">
+          <button className="button" type="button" onClick={() => setLimit((value) => value + 100)}>
+            Load 100 more
+          </button>
+        </div>
+      )}
     </div>
-    <p style={{padding: "0 18px", color: "var(--muted)"}} aria-live="polite">{entities.length ? `${filtered.length.toLocaleString()} results` : "Loading catalog…"}</p>
-    <div className="results">
-      {filtered.slice(0, limit).map((entity) => <a className="result" href={`/Hugin${entity.route}`} key={entity.id}>
-        <span><h3>{entity.title}</h3><p>{entity.summary}</p></span><span className="badge">{entity.kind}</span>
-      </a>)}
-    </div>
-    {limit < filtered.length && <div style={{padding: 18, textAlign: "center"}}><button className="button" onClick={() => setLimit((value) => value + 120)}>Load 120 more</button></div>}
-  </div>;
+  );
 }
