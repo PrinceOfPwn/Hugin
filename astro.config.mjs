@@ -14,14 +14,7 @@ export default defineConfig({
   },
   vite: {
     build: {
-      cssCodeSplit: true,
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            sigma: ["sigma", "graphology"]
-          }
-        }
-      }
+      cssCodeSplit: true
     }
   }
 });

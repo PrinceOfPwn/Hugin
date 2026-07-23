@@ -10,11 +10,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  data:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -28,11 +28,37 @@ jobs:
             .cache
           key: hugin-minilm-q4-${{ hashFiles('data/source/public-graph.json', 'package-lock.json') }}
       - run: npm ci
-      - name: Build immutable static artifact
-        env:
+      - env:
           HUGIN_SIMILARITY_ENGINE: transformers
           HUGIN_MODEL_CACHE: .hf-cache
-        run: npm run build
+        run: npm run data:build
+      - run: npm run data:validate
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hugin-generated-${{ github.sha }}
+          path: |
+            src/generated
+            public/data
+          retention-days: 1
+
+  build:
+    needs: data
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: hugin-generated-${{ github.sha }}
+          path: .
+      - run: npm run site:build
       - run: npm run check
       - run: npm run test:budgets
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
