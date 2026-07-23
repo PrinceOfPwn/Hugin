@@ -151,7 +151,7 @@ async function createEmbeddings(texts) {
   env.cacheDir = path.resolve(process.env.HUGIN_MODEL_CACHE || ".hf-cache");
   env.useFSCache = true;
   env.allowRemoteModels = true;
-  const extractor = await pipeline("feature-extraction", MODEL, { revision: REVISION, dtype: "q8" });
+  const extractor = await pipeline("feature-extraction", MODEL, { revision: REVISION, dtype: "q4" });
   const vectors = [];
   try {
     for (let start = 0; start < texts.length; start += 64) {
@@ -310,7 +310,7 @@ const manifest = {
     galaxies: galaxies.length
   },
   assets,
-  similarityModel: embeddings.engine,
+  similarityModel: `${embeddings.engine}:q4`,
   similarityRevision: REVISION,
   corpusHash
 };

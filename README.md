@@ -14,7 +14,7 @@ HUGIN is a fully static technical research universe built for GitHub Pages. It p
 
 - Astro generates real static HTML under the `/Hugin/` base path.
 - React is limited to search, catalog filters, and the Sigma.js WebGL graph.
-- GitHub Actions performs normalization, q8 MiniLM embeddings, neighbor generation, layout, Pagefind indexing, Playwright, Axe, Lighthouse, and bundle checks.
+- GitHub Actions performs normalization, pinned q4 MiniLM embeddings, neighbor generation, layout, Pagefind indexing, Playwright, Axe, Lighthouse, and bundle checks.
 - GitHub Pages only serves the verified artifact.
 - The owner import is ignored. The tracked `data/source/public-graph.json` is a sanitized public projection containing every entity.
 
