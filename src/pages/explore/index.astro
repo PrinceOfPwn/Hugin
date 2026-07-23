@@ -1,0 +1,22 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import CatalogExplorer from "../../components/CatalogExplorer";
+import { manifest } from "../../lib/data";
+---
+
+<BaseLayout
+  title="Explore"
+  description={`Search and filter ${manifest.counts.coreEntities.toLocaleString()} HUGIN knowledge nodes.`}
+>
+  <header class="wrap page-head">
+    <p class="eyebrow">Complete knowledge catalog</p>
+    <h1>Find the record. Then follow its connections.</h1>
+    <p class="lede">
+      Search techniques, concepts, detections, operational chains, and LGTM research notes.
+      Anonymous source records are available as an optional layer.
+    </p>
+  </header>
+  <section class="wrap">
+    <CatalogExplorer client:load manifest={manifest} />
+  </section>
+</BaseLayout>

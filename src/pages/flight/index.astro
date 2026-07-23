@@ -1,0 +1,6 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import RavenFlight from "../../components/RavenFlight";
+import { manifest } from "../../lib/data";
+---
+<BaseLayout title="Raven Flight" description="An optional 3D flight through a selected HUGIN galaxy."><RavenFlight client:only="react" manifest={manifest} /></BaseLayout>

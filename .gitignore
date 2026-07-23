@@ -1,0 +1,31 @@
+node_modules/
+dist/
+.astro/
+.pagefind-cache/
+.cache/
+.hf-cache/
+playwright-report/
+test-results/
+coverage/
+.pages/
+
+# The owner-supplied raw import remains local. Only its sanitized projection is versioned.
+hugin/vault-export/
+hugin/**/*.bak
+hugin/**/*.error.json
+hugin/**/run-manifest*.json
+
+# Generated runtime assets are reproducible in CI.
+public/data/
+src/generated/
+
+# Local operating material is not part of the public dataset.
+hugin/CLAUDE.md
+hugin/SIRA_PREP.md
+hugin/prompts/
+hugin/INDEX.md
+hugin/file-manifest.json
+hugin/analysis-atlas/
+hugin/analysis-curated/
+hugin/techniques/
+release/
