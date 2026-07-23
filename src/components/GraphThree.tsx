@@ -4,13 +4,13 @@ import {
   useState,
   useMemo,
   useCallback,
-  Suspense,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
-import type { DatasetManifest } from "../lib/types";
+import type { DatasetManifest, EvidenceRecord } from "../lib/types";
+import { parseAndCleanSummary } from "../lib/summaryParser";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,11 +25,12 @@ type GraphNode = {
   category: string;
   route: string;
   summary: string;
-  scope: "core" | "support" | "structure";
+  scope: "core" | "support" | "structure" | "evidence";
   degree: number;
   size: number;
   color: string;
   isGalaxy?: boolean;
+  rawEvidence?: EvidenceRecord;
 };
 
 type GraphEdge = {
@@ -37,7 +38,7 @@ type GraphEdge = {
   source: string;
   target: string;
   type: string;
-  origin: LayerName;
+  origin: LayerName | "evidence";
   score?: number;
   rank?: number;
 };
@@ -62,13 +63,12 @@ const GALAXY_CENTERS: Record<string, [number, number, number]> = {
 };
 
 function compute3DLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, THREE.Vector3> {
-  // Initialise with galaxy-seeded random positions
   type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number };
   const particles = new Map<string, Particle>();
 
   nodes.forEach((n) => {
     const c = GALAXY_CENTERS[n.galaxyId] ?? [0, 0, 0];
-    const spread = n.isGalaxy ? 10 : 160;
+    const spread = n.isGalaxy ? 10 : n.scope === "evidence" ? 80 : 160;
     particles.set(n.id, {
       x: c[0] + (Math.random() - 0.5) * spread,
       y: c[1] + (Math.random() - 0.5) * spread,
@@ -77,7 +77,6 @@ function compute3DLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, TH
     });
   });
 
-  // Adjacency list
   const adj = new Map<string, string[]>();
   nodes.forEach((n) => adj.set(n.id, []));
   edges.forEach((e) => {
@@ -90,7 +89,7 @@ function compute3DLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, TH
   const REST = 72;
   const GAL_K = 0.004;
   const DAMP = 0.80;
-  const ITERS = 90;
+  const ITERS = 80;
 
   for (let iter = 0; iter < ITERS; iter++) {
     const alpha = Math.pow(1 - iter / ITERS, 1.4);
@@ -98,7 +97,6 @@ function compute3DLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, TH
     particles.forEach((p, id) => {
       let fx = 0, fy = 0, fz = 0;
 
-      // Edge spring attraction
       for (const nid of adj.get(id) ?? []) {
         const q = particles.get(nid);
         if (!q) continue;
@@ -108,7 +106,6 @@ function compute3DLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, TH
         fx += f * dx; fy += f * dy; fz += f * dz;
       }
 
-      // Galaxy gravity — pulls cluster together
       const gid = nodeById.get(id)?.galaxyId ?? "";
       const [cx, cy, cz] = GALAXY_CENTERS[gid] ?? [0, 0, 0];
       fx += (cx - p.x) * GAL_K * alpha;
@@ -143,13 +140,13 @@ function StarField() {
     const pos = new Float32Array(N * 3);
     const col = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) {
-      const r = 600 + Math.random() * 400;
+      const r = 650 + Math.random() * 450;
       const th = Math.random() * Math.PI * 2;
       const ph = Math.acos(2 * Math.random() - 1);
       pos[i * 3]     = r * Math.sin(ph) * Math.cos(th);
       pos[i * 3 + 1] = r * Math.sin(ph) * Math.sin(th);
       pos[i * 3 + 2] = r * Math.cos(ph);
-      // Slight colour variation: white-blue to white-purple
+
       const t = Math.random();
       col[i * 3]     = 0.75 + t * 0.25;
       col[i * 3 + 1] = 0.75 + t * 0.15;
@@ -159,17 +156,17 @@ function StarField() {
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     g.setAttribute("color", new THREE.BufferAttribute(col, 3));
     const m = new THREE.PointsMaterial({
-      size: 0.9,
+      size: 1.0,
       sizeAttenuation: true,
       vertexColors: true,
       transparent: true,
-      opacity: 0.7,
+      opacity: 0.75,
     });
     return [g, m] as const;
   }, []);
 
   useFrame(({ clock }) => {
-    if (ref.current) ref.current.rotation.y = clock.getElapsedTime() * 0.008;
+    if (ref.current) ref.current.rotation.y = clock.getElapsedTime() * 0.007;
   });
 
   return <points ref={ref} geometry={geo} material={mat} />;
@@ -195,21 +192,19 @@ function GraphNodes({
   onClick: (id: string) => void;
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
-
   const phases = useMemo(() => nodes.map(() => Math.random() * Math.PI * 2), [nodes]);
 
   const mat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        roughness: 0.25,
-        metalness: 0.55,
+        roughness: 0.2,
+        metalness: 0.6,
         emissive: new THREE.Color(0x000000),
         emissiveIntensity: 0,
       }),
     []
   );
 
-  // Set initial instance transforms once
   useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh) return;
@@ -217,7 +212,7 @@ function GraphNodes({
     const color = new THREE.Color();
     nodes.forEach((n, i) => {
       const pos = positions.get(n.id) ?? new THREE.Vector3();
-      const s = Math.max(2.2, n.size * 0.95);
+      const s = n.scope === "evidence" ? 1.4 : Math.max(2.2, n.size * 0.95);
       m.makeScale(s, s, s);
       m.setPosition(pos.x, pos.y, pos.z);
       mesh.setMatrixAt(i, m);
@@ -228,7 +223,6 @@ function GraphNodes({
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }, [nodes, positions]);
 
-  // Per-frame animation
   useFrame(({ clock }) => {
     const mesh = meshRef.current;
     if (!mesh) return;
@@ -247,14 +241,13 @@ function GraphNodes({
       const floatY = Math.sin(t * 0.38 + phases[i]) * 2.0;
       const floatX = Math.cos(t * 0.22 + phases[i] * 0.7) * 0.8;
 
-      let s = Math.max(2.2, n.size * 0.95);
+      let s = n.scope === "evidence" ? 1.4 : Math.max(2.2, n.size * 0.95);
       if (!isVisible) {
         s = 0.001;
       } else if (isSelected) {
-        // Pulse selected node
-        s *= 1.9 + Math.sin(t * 3) * 0.15;
+        s *= 2.0 + Math.sin(t * 3) * 0.18;
       } else if (isHovered) {
-        s *= 1.45;
+        s *= 1.5;
       }
 
       m.makeScale(s, s, s);
@@ -265,10 +258,10 @@ function GraphNodes({
         color.copy(SELECTED_COLOR);
       } else if (isHovered) {
         color.set(n.color);
-        color.lerp(WHITE, 0.45);
+        color.lerp(WHITE, 0.5);
       } else {
         color.set(n.color);
-        if (!isVisible) color.set(0x080808);
+        if (!isVisible) color.set(0x0a0a0a);
       }
       mesh.setColorAt(i, color);
     });
@@ -335,8 +328,8 @@ function GraphEdges({
     const all = [...inactive, ...active];
     const verts = new Float32Array(all.length * 6);
     const colors = new Float32Array(all.length * 6);
-    const DIM = new THREE.Color(0x2a2440);
-    const LIT = new THREE.Color(0xdf7880);
+    const DIM = new THREE.Color(0x3a3055);
+    const LIT = new THREE.Color(0xff8899);
 
     all.forEach((e, i) => {
       const sp = positions.get(e.source)!;
@@ -352,7 +345,7 @@ function GraphEdges({
     const m = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: visibleSet ? 0.65 : 0.28,
+      opacity: visibleSet ? 0.75 : 0.35,
     });
     return [g, m] as const;
   }, [edges, positions, visibleSet, selectedId]);
@@ -360,105 +353,56 @@ function GraphEdges({
   return <lineSegments geometry={geo} material={mat} />;
 }
 
-// ─── Galaxy label sprites ─────────────────────────────────────────────────────
-
-function GalaxyLabels({
-  nodes,
-  positions,
-}: {
-  nodes: GraphNode[];
-  positions: Map<string, THREE.Vector3>;
-}) {
-  const galaxyNodes = useMemo(() => nodes.filter((n) => n.isGalaxy), [nodes]);
-
-  return (
-    <>
-      {galaxyNodes.map((n) => {
-        const pos = positions.get(n.id);
-        if (!pos) return null;
-        return (
-          <sprite key={n.id} position={[pos.x, pos.y + 18, pos.z]}>
-            <spriteMaterial
-              attach="material"
-              color={n.color}
-              transparent
-              opacity={0.0}
-            />
-          </sprite>
-        );
-      })}
-    </>
-  );
-}
-
 // ─── Smooth camera rig ────────────────────────────────────────────────────────
 
-function CameraRig({
-  target,
-  onReady,
-}: {
-  target: THREE.Vector3 | null;
-  onReady?: () => void;
-}) {
+function CameraRig({ target }: { target: THREE.Vector3 | null }) {
   const { camera } = useThree();
   const dest = useRef<THREE.Vector3 | null>(null);
-  const ready = useRef(false);
 
   useEffect(() => {
     dest.current = target;
   }, [target]);
 
-  useEffect(() => {
-    if (!ready.current) {
-      ready.current = true;
-      onReady?.();
-    }
-  }, [onReady]);
-
   useFrame(() => {
     if (!dest.current) return;
-    const look = new THREE.Vector3(dest.current.x + 55, dest.current.y + 25, dest.current.z + 75);
-    camera.position.lerp(look, 0.045);
+    const look = new THREE.Vector3(dest.current.x + 50, dest.current.y + 20, dest.current.z + 70);
+    camera.position.lerp(look, 0.05);
     camera.lookAt(dest.current);
   });
 
   return null;
 }
 
-// ─── Ambient pulse ring around selected node ──────────────────────────────────
+// ─── Selection ring ───────────────────────────────────────────────────────────
 
-function SelectionRing({
-  position,
-}: {
-  position: THREE.Vector3;
-}) {
+function SelectionRing({ position }: { position: THREE.Vector3 }) {
   const ref = useRef<THREE.Mesh>(null);
   const mat = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
         color: 0xff8899,
         transparent: true,
-        opacity: 0.6,
+        opacity: 0.65,
         side: THREE.BackSide,
       }),
     []
   );
-  const geo = useMemo(() => new THREE.TorusGeometry(12, 0.5, 8, 48), []);
+  const geo = useMemo(() => new THREE.TorusGeometry(12, 0.6, 8, 48), []);
 
   useFrame(({ clock }) => {
     const m = ref.current;
     if (!m) return;
     const t = clock.getElapsedTime();
-    const s = 1 + Math.sin(t * 2.5) * 0.18;
+    const s = 1 + Math.sin(t * 2.8) * 0.2;
     m.scale.setScalar(s);
-    mat.opacity = 0.35 + Math.sin(t * 2.5) * 0.25;
+    mat.opacity = 0.4 + Math.sin(t * 2.8) * 0.25;
     m.position.copy(position);
   });
 
   return <mesh ref={ref} geometry={geo} material={mat} />;
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 function initialParams() {
   return new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
@@ -468,13 +412,15 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
   const params = initialParams();
 
   const [graphData, setGraphData] = useState<GraphData | null>(null);
-  const [status, setStatus] = useState("Loading graph…");
+  const [status, setStatus] = useState("Loading 3D knowledge map…");
   const [selected, setSelected] = useState<GraphNode | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>((params.get("mode") as Mode) || "universe");
   const [depth, setDepth] = useState(Number(params.get("depth") || 1));
   const [activeGalaxy, setActiveGalaxy] = useState(params.get("galaxy") || "");
   const [showSources, setShowSources] = useState(params.get("sources") === "1");
+  const [showEvidence, setShowEvidence] = useState(false);
+  const [evidenceData, setEvidenceData] = useState<EvidenceRecord[] | null>(null);
   const [layers, setLayers] = useState<Record<LayerName, boolean>>({
     curated: (params.get("edges") || "curated").includes("curated"),
     membership: (params.get("edges") || "").includes("membership"),
@@ -483,10 +429,23 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
   const [cameraTarget, setCameraTarget] = useState<THREE.Vector3 | null>(null);
   const [relations, setRelations] = useState<Array<{ edge: string; type: string; node: GraphNode }>>([]);
 
-  // Cursor style for hover
   const [cursorGrab, setCursorGrab] = useState(false);
 
-  // ── Fetch & layout ──────────────────────────────────────────────────────────
+  // ── Fetch evidence on demand ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (showEvidence && !evidenceData) {
+      setStatus("Fetching 3,256 raw evidence records…");
+      fetch(`/Hugin${manifest.assets.evidence}`)
+        .then((r) => r.json())
+        .then((items: EvidenceRecord[]) => {
+          setEvidenceData(items);
+          setStatus(`3,256 raw evidence records loaded.`);
+        })
+        .catch(() => setStatus("Error loading evidence records."));
+    }
+  }, [showEvidence, evidenceData, manifest.assets.evidence]);
+
+  // ── Fetch core graph & build 3D layout ───────────────────────────────────────
   useEffect(() => {
     const base = "/Hugin";
     const fetches: Promise<any>[] = [
@@ -506,19 +465,53 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
     Promise.all(fetches).then(([payload, simEdges, memEdges]) => {
       setStatus("Computing 3D layout…");
       setTimeout(() => {
+        let allNodes: GraphNode[] = [...payload.nodes];
         let allEdges: GraphEdge[] = [...payload.edges];
-        if (layers.curated) { /* already in payload */ }
+
         if (layers.similarity) allEdges = [...allEdges, ...simEdges];
         if (layers.membership) allEdges = [...allEdges, ...memEdges];
 
-        const positions = compute3DLayout(payload.nodes, payload.edges);
-        setGraphData({ nodes: payload.nodes, edges: allEdges, positions });
-        setStatus(`${manifest.counts.coreEntities.toLocaleString()} knowledge nodes ready.`);
+        // Attach evidence nodes if loaded
+        if (showEvidence && evidenceData) {
+          const evNodes: GraphNode[] = evidenceData.slice(0, 1500).map((ev) => ({
+            id: ev.id,
+            label: ev.title || `Evidence ${ev.id}`,
+            kind: "evidence",
+            galaxyId: "evidence",
+            category: ev.topic || "raw_evidence",
+            route: `/dataset/#${ev.id}`,
+            summary: ev.summary || "Raw evidence extraction document.",
+            scope: "evidence",
+            degree: 1,
+            size: 1.2,
+            color: "#22d3ee",
+            rawEvidence: ev,
+          }));
 
-        // Check URL focus param
+          const evEdges: GraphEdge[] = [];
+          evidenceData.slice(0, 1500).forEach((ev) => {
+            if (ev.relatedEntityIds && ev.relatedEntityIds[0]) {
+              evEdges.push({
+                id: `edge-ev-${ev.id}`,
+                source: ev.id,
+                target: ev.relatedEntityIds[0],
+                type: "evidence_of",
+                origin: "evidence",
+              });
+            }
+          });
+
+          allNodes = [...allNodes, ...evNodes];
+          allEdges = [...allEdges, ...evEdges];
+        }
+
+        const positions = compute3DLayout(allNodes, allEdges);
+        setGraphData({ nodes: allNodes, edges: allEdges, positions });
+        setStatus(`${payload.nodes.length.toLocaleString()} knowledge nodes ready.`);
+
         const focus = initialParams().get("focus");
         if (focus) {
-          const n = payload.nodes.find((x: GraphNode) => x.id === focus);
+          const n = allNodes.find((x) => x.id === focus);
           if (n) {
             setSelected(n);
             const pos = positions.get(n.id);
@@ -527,9 +520,9 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
         }
       }, 30);
     });
-  }, [manifest, layers.curated, layers.similarity, layers.membership]);
+  }, [manifest, layers.curated, layers.similarity, layers.membership, showEvidence, evidenceData]);
 
-  // ── Adjacency (for neighborhood mode) ───────────────────────────────────────
+  // ── Adjacency map ────────────────────────────────────────────────────────────
   const adj = useMemo(() => {
     if (!graphData) return null;
     const map = new Map<string, string[]>();
@@ -567,7 +560,7 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
     return null;
   }, [mode, activeGalaxy, selected, depth, graphData, adj]);
 
-  // ── Display nodes (filter support if needed) ─────────────────────────────────
+  // ── Display nodes ────────────────────────────────────────────────────────────
   const displayNodes = useMemo(() => {
     if (!graphData) return [];
     return showSources
@@ -575,7 +568,7 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
       : graphData.nodes.filter((n) => n.scope !== "support");
   }, [graphData, showSources]);
 
-  // ── Node click handler ───────────────────────────────────────────────────────
+  // ── Click node handler ───────────────────────────────────────────────────────
   const handleNodeClick = useCallback(
     (id: string) => {
       if (!graphData) return;
@@ -621,11 +614,16 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
   const toggleLayer = (layer: LayerName) =>
     setLayers((prev) => ({ ...prev, [layer]: !prev[layer] }));
 
-  // ── Selected node 3D position ────────────────────────────────────────────────
   const selectedPos = useMemo(() => {
     if (!selected || !graphData) return null;
     return graphData.positions.get(selected.id) ?? null;
   }, [selected, graphData]);
+
+  // ── Parse structured summary for selected node ──────────────────────────────
+  const structuredInfo = useMemo(() => {
+    if (!selected) return null;
+    return parseAndCleanSummary(selected.summary, selected.label);
+  }, [selected]);
 
   return (
     <div className="graph-page">
@@ -638,7 +636,7 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
       </header>
 
       <div className="graph-shell">
-        {/* ── Left rail ── */}
+        {/* ── Left Rail Controls ── */}
         <aside className="graph-rail" aria-label="Graph view controls">
           <fieldset>
             <legend>View</legend>
@@ -705,6 +703,15 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
               <span className="layer-key sources" />
               Source layer
             </label>
+            <label className="layer-toggle" style={{ marginTop: 6 }}>
+              <input
+                type="checkbox"
+                checked={showEvidence}
+                onChange={() => setShowEvidence((v) => !v)}
+              />
+              <span className="layer-key" style={{ background: "#22d3ee" }} />
+              Raw Evidence (3,256)
+            </label>
           </fieldset>
 
           <button className="button" type="button" onClick={resetView} style={{ width: "100%", marginTop: 8 }}>
@@ -715,7 +722,7 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
           </a>
         </aside>
 
-        {/* ── 3D Canvas ── */}
+        {/* ── 3D WebGL Canvas ── */}
         <div
           className="graph-stage"
           style={{ cursor: cursorGrab ? "pointer" : "grab" }}
@@ -728,8 +735,7 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
           >
             <color attach="background" args={["#04030d"]} />
 
-            {/* Lighting */}
-            <ambientLight intensity={0.4} color="#8877cc" />
+            <ambientLight intensity={0.45} color="#8877cc" />
             <pointLight position={[300, 300, 200]} intensity={2.5} color="#9988ff" distance={1200} />
             <pointLight position={[-300, -200, -300]} intensity={1.5} color="#ff6644" distance={1000} />
             <pointLight position={[0, -400, 200]} intensity={1.0} color="#44aaff" distance={800} />
@@ -782,36 +788,107 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
           </p>
         </div>
 
-        {/* ── Inspector ── */}
+        {/* ── High-Contrast Inspector ── */}
         <aside className="inspector" aria-live="polite">
           {selected ? (
             <>
-              <p className="eyebrow">{selected.kind} · {selected.galaxyId}</p>
+              {/* Top Hierarchy: Badges & Title */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                <span className="eyebrow-galaxy">{selected.galaxyId}</span>
+                <span className="eyebrow-bright">{selected.kind}</span>
+                {structuredInfo?.tier && (
+                  <span className="tech-badge tier">Tier {structuredInfo.tier}</span>
+                )}
+              </div>
+
               <h2>{selected.label}</h2>
-              <p className="inspector-summary">{selected.summary}</p>
+
+              {/* Prominent Action Button near the top */}
+              <a className="inspector-action-primary" href={`/Hugin${selected.route}`}>
+                Open Full Technical Record →
+              </a>
+
+              {/* Clean Summary (no raw metadata dumps) */}
+              <p className="inspector-summary">
+                {structuredInfo?.cleanSummary ?? selected.summary}
+              </p>
+
+              {/* MITRE & Tags */}
+              {(structuredInfo?.mitre || structuredInfo?.tags) && (
+                <div className="tech-section">
+                  <p className="tech-section-title">Classifications & Tags</p>
+                  <div className="tech-badges">
+                    {structuredInfo.mitre?.map((m) => (
+                      <span key={m} className="tech-badge mitre">MITRE {m}</span>
+                    ))}
+                    {structuredInfo.tags?.map((t) => (
+                      <span key={t} className="tech-badge">{t}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Implementation Files */}
+              {structuredInfo?.files && structuredInfo.files.length > 0 && (
+                <div className="tech-section">
+                  <p className="tech-section-title">Implementation Files</p>
+                  {structuredInfo.files.map((file) => (
+                    <div key={file} className="tech-file-box">
+                      📄 {file}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Lines of Interest */}
+              {structuredInfo?.linesOfInterest && structuredInfo.linesOfInterest.length > 0 && (
+                <div className="tech-section">
+                  <p className="tech-section-title">Key Code Locations</p>
+                  {structuredInfo.linesOfInterest.map((loi) => (
+                    <div key={loi} className="tech-loi-item">
+                      ⚡ {loi}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Raw Evidence Extra Information */}
+              {selected.rawEvidence && (
+                <div className="tech-section">
+                  <p className="tech-section-title">Evidence Extract</p>
+                  <p style={{ fontSize: "0.82rem", color: "#cbd5e1" }}>
+                    {selected.rawEvidence.summary}
+                  </p>
+                  <div className="tech-badges" style={{ marginTop: 8 }}>
+                    <span className="tech-badge">Score: {selected.rawEvidence.qualityScore}</span>
+                    <span className="tech-badge">Topic: {selected.rawEvidence.topic}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Metadata Key/Value Details */}
               <dl>
                 <dt>ID</dt><dd>{selected.id}</dd>
                 <dt>Category</dt><dd>{selected.category}</dd>
                 <dt>Relations</dt><dd>{selected.degree.toLocaleString()}</dd>
-                <dt>Layer</dt><dd>{selected.scope}</dd>
+                <dt>Scope</dt><dd>{selected.scope}</dd>
               </dl>
-              <div className="actions">
-                <a className="button primary" href={`/Hugin${selected.route}`}>
-                  Open {selected.isGalaxy ? "catalog" : "record"}
-                </a>
-                {!selected.isGalaxy && (
-                  <button
-                    className="button"
-                    type="button"
-                    onClick={() => setMode("neighborhood")}
-                  >
-                    Neighborhood
-                  </button>
-                )}
-              </div>
+
+              {!selected.isGalaxy && (
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => setMode("neighborhood")}
+                  style={{ width: "100%", marginTop: 8 }}
+                >
+                  Explore Neighborhood →
+                </button>
+              )}
+
+              {/* Relations List */}
               {relations.length > 0 && (
-                <>
-                  <p className="meta-label" style={{ marginTop: 26 }}>Visible relations</p>
+                <div className="tech-section">
+                  <p className="tech-section-title">Connected Knowledge Nodes</p>
                   <ul className="inspector-relations">
                     {relations.map(({ edge, type, node }) => (
                       <li key={edge}>
@@ -826,25 +903,25 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
                       </li>
                     ))}
                   </ul>
-                </>
+                </div>
               )}
             </>
           ) : (
             <>
-              <p className="eyebrow">Universe inspector</p>
-              <h2>{manifest.counts.coreEntities.toLocaleString()} knowledge nodes</h2>
+              <span className="eyebrow-bright">Universe Inspector</span>
+              <h2 style={{ marginTop: 8 }}>{manifest.counts.coreEntities.toLocaleString()} knowledge nodes</h2>
               <p className="inspector-summary">
-                Rotate to explore the 3D knowledge universe. Click any node to inspect its
-                connections, open its full record, or enter neighborhood mode to trace relationships.
+                Rotate and zoom to explore the 3D knowledge universe. Click any node to inspect its
+                clean technical specification, implementation code locations, or enter neighborhood mode to trace connections.
               </p>
               <dl>
-                <dt>Curated edges</dt><dd>{manifest.counts.curatedRelations.toLocaleString()}</dd>
+                <dt>Curated Edges</dt><dd>{manifest.counts.curatedRelations.toLocaleString()}</dd>
                 <dt>Galaxies</dt><dd>{manifest.counts.galaxies}</dd>
-                <dt>Support nodes</dt><dd>{manifest.counts.supportEntities.toLocaleString()}</dd>
-                <dt>Evidence records</dt><dd>{manifest.counts.evidenceRecords.toLocaleString()}</dd>
+                <dt>Support Nodes</dt><dd>{manifest.counts.supportEntities.toLocaleString()}</dd>
+                <dt>Evidence Records</dt><dd>{manifest.counts.evidenceRecords.toLocaleString()}</dd>
               </dl>
-              <a href="/Hugin/explore/" className="button" style={{ display: "block", textAlign: "center", marginTop: 16 }}>
-                Open accessible catalog →
+              <a href="/Hugin/explore/" className="inspector-action-primary">
+                Open Full Catalog →
               </a>
             </>
           )}
