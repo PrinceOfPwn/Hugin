@@ -44,7 +44,7 @@ RAVEN_SHA256 = {
     "assets/raven-black.png": "04052cd2d7aaa73ebb3be9f91c7ddbeaa61090e630ddc93753ec279aa11b06c0",
     "assets/favicon.png": "92a78a92cb9b4a667d91ea2f8a0f02e3da530d35013256686c3ae0f33d3b7ee5",
 }
-RAVEN_SOURCE_URL_FRAGMENT = "vectorstock.com/i/500p/12/14/raven-opened-its-wings-and-trampled-paws-vector-40631214.jpg"
+RAVEN_OWNER_AUTHORIZATION = "owner-provided-and-authorized"
 RECYCLED_ID = "src:dark_crystal/crowd/src/recycled.rs"
 TECHNIQUE_ID = "T-001"
 
@@ -529,8 +529,8 @@ def validate_raven_assets(validation: Validation, root: Path, shell_html: str) -
         except (OSError, UnicodeError):
             pass
     validation.check(
-        RAVEN_SOURCE_URL_FRAGMENT in attribution_text,
-        "raven source URL is documented",
+        RAVEN_OWNER_AUTHORIZATION in attribution_text,
+        "raven owner authorization is documented",
     )
 
 

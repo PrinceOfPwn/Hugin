@@ -1,0 +1,45 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import GlobalSearch from "../components/GlobalSearch";
+import { entities, galaxies, manifest } from "../lib/data";
+
+const hubs = [...entities].sort((a, b) => b.degree - a.degree).slice(0, 8);
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Dataset",
+  name: "HUGIN Knowledge Universe",
+  description: "A static technical knowledge universe containing 5,608 owner-authorized research entities.",
+  version: manifest.datasetVersion,
+  url: "https://princeofpwn.github.io/Hugin/",
+  distribution: { "@type": "DataDownload", encodingFormat: "application/json", contentUrl: "https://github.com/PrinceOfPwn/Hugin/releases" }
+};
+---
+
+<BaseLayout title="HUGIN" description="Explore 5,608 technical research entities across eight structured galaxies." jsonLd={jsonLd}>
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow">Owner-authorized static research corpus · no backend</p>
+      <h1>Map the machinery behind the signal.</h1>
+      <p class="lede">HUGIN organizes techniques, Windows internals, detections, operational chains, evidence and research gaps into a permanent, searchable universe.</p>
+      <div class="actions"><a class="button primary" href="/Hugin/explore/">Explore the catalog</a><a class="button" href="/Hugin/graph/">Open the universe</a></div>
+      <div class="metrics" aria-label="Dataset metrics">
+        <div class="metric"><strong>{manifest.counts.nodes.toLocaleString()}</strong><span>research entities</span></div>
+        <div class="metric"><strong>{manifest.counts.curatedRelations.toLocaleString()}</strong><span>original valid relations</span></div>
+        <div class="metric"><strong>{manifest.counts.similarityRelations.toLocaleString()}</strong><span>generated semantic neighbors</span></div>
+        <div class="metric"><strong>{manifest.counts.galaxies}</strong><span>structural galaxies</span></div>
+      </div>
+    </div>
+  </section>
+  <section class="wrap section">
+    <p class="eyebrow">Global search</p><h2>Find evidence, not pages.</h2>
+    <GlobalSearch client:load />
+  </section>
+  <section class="wrap section">
+    <p class="eyebrow">Universe structure</p><h2>Eight galaxies. One public map.</h2>
+    <div class="grid">{galaxies.map((galaxy) => <a class="card" href={`/Hugin/graph/?galaxy=${galaxy.id}`} style="text-decoration:none"><h3><span class="galaxy-dot" style={`color:${galaxy.color};background:${galaxy.color}`}></span>{galaxy.name}</h3><strong>{galaxy.count.toLocaleString()} nodes</strong><p>{galaxy.description}</p></a>)}</div>
+  </section>
+  <section class="wrap section">
+    <p class="eyebrow">Original graph</p><h2>Highest-connectivity entities.</h2>
+    <div class="grid">{hubs.map((entity) => <a class="card" href={`/Hugin${entity.route}`} style="text-decoration:none"><span class="badge">{entity.kind}</span><h3 style="margin-top:14px">{entity.title}</h3><p>{entity.degree} original connections · {entity.category}</p></a>)}</div>
+  </section>
+</BaseLayout>
