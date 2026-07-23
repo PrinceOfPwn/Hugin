@@ -5,15 +5,28 @@ import path from "node:path";
 const generated = path.resolve("src/generated");
 const output = path.resolve("release");
 const entities = JSON.parse(fs.readFileSync(path.join(generated, "entities.json"), "utf8"));
+const evidence = JSON.parse(fs.readFileSync(path.join(generated, "evidence.json"), "utf8"));
 const relations = JSON.parse(fs.readFileSync(path.join(generated, "curated-relations.json"), "utf8"));
 const manifest = JSON.parse(fs.readFileSync(path.join(generated, "manifest.json"), "utf8"));
 fs.mkdirSync(output, { recursive: true });
 
 const csv = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
 fs.writeFileSync(path.join(output, "hugin-entities.jsonl"), `${entities.map((entity) => JSON.stringify(entity)).join("\n")}\n`);
+fs.writeFileSync(path.join(output, "hugin-evidence.jsonl"), `${evidence.map((item) => JSON.stringify(item)).join("\n")}\n`);
 fs.writeFileSync(path.join(output, "hugin-entities.csv"), [
   ["id", "slug", "title", "kind", "category", "galaxy", "summary", "mitre", "tags"].join(","),
   ...entities.map((entity) => [entity.id, entity.slug, entity.title, entity.kind, entity.category, entity.galaxyId, entity.summary, entity.mitre.join("|"), entity.tags.join("|")].map(csv).join(","))
+].join("\n"));
+fs.writeFileSync(path.join(output, "hugin-evidence.csv"), [
+  ["evidence_id", "title", "topic", "summary", "quality_score", "related_entities"].join(","),
+  ...evidence.map((item) => [
+    item.evidenceId,
+    item.title,
+    item.topic,
+    item.summary,
+    item.qualityScore,
+    item.relatedEntityIds.join("|")
+  ].map(csv).join(","))
 ].join("\n"));
 
 const xml = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");

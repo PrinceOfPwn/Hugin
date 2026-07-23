@@ -2,10 +2,75 @@
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { manifest } from "../../lib/data";
 ---
-<BaseLayout title="Dataset" description="HUGIN dataset schema, versions, artifacts and download information.">
-  <header class="wrap section"><p class="eyebrow">Static public dataset</p><h1>Versioned, inspectable, reproducible.</h1><p class="lede">GitHub Actions normalizes the owner import, computes semantic neighborhoods, prepositions the galaxies and publishes immutable hashed assets. The browser performs no AI inference.</p></header>
-  <section class="wrap" style="padding-bottom:70px">
-    <div class="metrics"><div class="metric"><strong>{manifest.datasetVersion}</strong><span>dataset version</span></div><div class="metric"><strong>{manifest.schemaVersion}</strong><span>schema version</span></div><div class="metric"><strong>{manifest.counts.uniqueBodies.toLocaleString()}</strong><span>deduplicated bodies</span></div><div class="metric"><strong>64</strong><span>content shards</span></div></div>
-    <div class="entity-grid"><article class="prose"><h2>Public contracts</h2><p>The catalog contains stable IDs, unique slugs, permanent routes, structural galaxy membership, body references and sanitized provenance. Relations record their origin so generated similarity can never be confused with curated research.</p><h2>Downloads</h2><p>Versioned JSONL, CSV and GraphML snapshots, metrics and SHA-256 checksums are published through <a href="https://github.com/PrinceOfPwn/Hugin/releases">GitHub Releases</a>.</p><h2>Similarity model</h2><p><code>{manifest.similarityModel}</code><br /><code>{manifest.similarityRevision}</code></p></article><aside class="sidebar card"><p class="eyebrow">Source integrity</p><p><small>Corpus SHA-256</small><br /><code>{manifest.sourceHash}</code></p><p><small>Build commit</small><br /><code>{manifest.commit}</code></p></aside></div>
+
+<BaseLayout
+  title="Dataset"
+  description="HUGIN dataset structure, anonymous evidence policy, versions, and public artifacts."
+>
+  <header class="wrap page-head">
+    <p class="eyebrow">Static public dataset</p>
+    <h1>Structured for exploration, sanitized for publication.</h1>
+    <p class="lede">
+      GitHub Actions validates the public projection, computes semantic neighborhoods,
+      positions the galaxies, and publishes immutable assets. The browser performs no AI inference.
+    </p>
+  </header>
+
+  <dl class="metric-strip wrap" aria-label="Dataset metrics">
+    <div class="metric"><dt>Schema</dt><dd>{manifest.schemaVersion}</dd></div>
+    <div class="metric"><dt>Knowledge nodes</dt><dd>{manifest.counts.coreEntities.toLocaleString()}</dd></div>
+    <div class="metric"><dt>Evidence records</dt><dd>{manifest.counts.evidenceRecords.toLocaleString()}</dd></div>
+    <div class="metric"><dt>Content shards</dt><dd>64</dd></div>
+  </dl>
+
+  <section class="wrap quality-grid">
+    <article class="prose">
+      <h2>Public layers</h2>
+      <p>
+        The core graph contains techniques, playbooks, concepts, detections, chains,
+        architecture, patterns, and LGTM research notes. Anonymous source and documentation
+        records form an optional layer. Evidence fragments are loaded only inside relevant records.
+      </p>
+
+      <h2>Anonymous evidence</h2>
+      <p>
+        Public evidence uses neutral topics and identifiers such as <code>EV-7C91A4</code>.
+        Provider names, course identifiers, filenames, usernames, local paths, and promotional
+        source links are excluded from every public artifact.
+      </p>
+
+      <h2>Relationship semantics</h2>
+      <p>
+        Curated edges preserve the owner-authorized graph. Membership edges describe structural
+        placement. Similarity edges are generated during the build, remain explicitly labeled,
+        and never masquerade as curated research.
+      </p>
+
+      <h2>Downloads</h2>
+      <p>
+        Versioned JSONL, CSV, GraphML, metrics, and checksums are distributed through
+        <a href="https://github.com/PrinceOfPwn/Hugin/releases"> GitHub Releases</a>.
+      </p>
+    </article>
+
+    <aside>
+      <section class="sidebar-section">
+        <p class="eyebrow">Dataset version</p>
+        <code class="dataset-code">{manifest.datasetVersion}</code>
+      </section>
+      <section class="sidebar-section">
+        <p class="eyebrow">Corpus checksum</p>
+        <code class="dataset-code">{manifest.sourceHash}</code>
+      </section>
+      <section class="sidebar-section">
+        <p class="eyebrow">Similarity model</p>
+        <code class="dataset-code">{manifest.similarityModel}</code>
+        <code class="dataset-code">{manifest.similarityRevision}</code>
+      </section>
+      <section class="sidebar-section">
+        <p class="eyebrow">Build commit</p>
+        <code class="dataset-code">{manifest.commit}</code>
+      </section>
+    </aside>
   </section>
 </BaseLayout>

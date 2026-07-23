@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Dataset version (for example v2.0.0)
+        description: Dataset version (for example v2.1.0)
         required: true
         type: string
 
@@ -26,7 +26,7 @@ jobs:
           path: |
             .hf-cache
             .cache
-          key: hugin-minilm-q4-${{ hashFiles('data/source/public-graph.json', 'package-lock.json') }}
+          key: hugin-minilm-q8-${{ hashFiles('data/source/public-graph.json', 'package-lock.json') }}
       - run: npm ci
       - name: Build and validate dataset
         env:

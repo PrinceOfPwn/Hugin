@@ -1,6 +1,8 @@
+export type PublishState = "core" | "support";
+
 export interface Provenance {
-  sourceKey: string;
-  sourceLabel: string;
+  evidenceId: string;
+  sourceClass: string;
   sourceHash?: string;
 }
 
@@ -21,7 +23,22 @@ export interface Entity {
   bodyRef: string;
   bodyShard: number;
   degree: number;
+  publishState: PublishState;
+  evidenceId: string;
   provenance: Provenance[];
+}
+
+export interface EvidenceRecord {
+  id: string;
+  evidenceId: string;
+  title: string;
+  topic: string;
+  summary: string;
+  keyCues: string[];
+  relatedEntityIds: string[];
+  bodyRef: string;
+  bodyShard: number;
+  qualityScore: number;
 }
 
 export interface Relation {
@@ -34,6 +51,7 @@ export interface Relation {
   score?: number;
   rank?: number;
   modelRevision?: string;
+  corpusHash?: string;
 }
 
 export interface DatasetManifest {
@@ -42,10 +60,26 @@ export interface DatasetManifest {
   sourceHash: string;
   generatedAt: string;
   commit: string;
-  counts: Record<string, number>;
+  counts: {
+    rawRecords: number;
+    rawRelations: number;
+    coreEntities: number;
+    supportEntities: number;
+    graphEntities: number;
+    evidenceRecords: number;
+    quarantinedEvidence: number;
+    curatedRelations: number;
+    evidenceLinks: number;
+    membershipRelations: number;
+    similarityRelations: number;
+    quarantinedRelations: number;
+    uniqueBodies: number;
+    galaxies: number;
+  };
   assets: Record<string, string>;
   similarityModel: string;
   similarityRevision: string;
+  corpusHash: string;
 }
 
 export interface Galaxy {
@@ -54,4 +88,12 @@ export interface Galaxy {
   description: string;
   color: string;
   count: number;
+  supportCount: number;
+}
+
+export interface QualityReport {
+  rawCounts: { nodes: number; relations: number };
+  states: Record<string, number>;
+  quarantinedNodes: Array<{ id: string; type: string; reason: string }>;
+  quarantinedRelations: Array<{ id: string; reason: string }>;
 }

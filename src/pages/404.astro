@@ -1,4 +1,15 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
 ---
-<BaseLayout title="Not Found" description="This HUGIN route does not exist."><section class="wrap hero"><p class="eyebrow">404 / signal lost</p><h1>This coordinate is empty.</h1><p class="lede">Return to the catalog or open the universe to locate the entity you need.</p><div class="actions"><a class="button primary" href="/Hugin/explore/">Explore catalog</a><a class="button" href="/Hugin/graph/">Open universe</a></div></section></BaseLayout>
+
+<BaseLayout title="Not Found" description="This HUGIN route does not exist.">
+  <section class="wrap page-head" style="min-height:62vh">
+    <p class="eyebrow">404 · coordinate not found</p>
+    <h1>This point is outside the mapped universe.</h1>
+    <p class="lede">Return to the catalog or open the graph to locate the knowledge record you need.</p>
+    <div class="actions">
+      <a class="button primary" href="/Hugin/explore/">Explore catalog</a>
+      <a class="button" href="/Hugin/graph/">Open graph</a>
+    </div>
+  </section>
+</BaseLayout>

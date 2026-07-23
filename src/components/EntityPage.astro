@@ -2,50 +2,152 @@
 import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { bodyFor, curatedRelations, entityById } from "../lib/data";
-import type { Entity } from "../lib/types";
+import { bodyFor, curatedRelations, entityById, evidenceFor } from "../lib/data";
+import type { Entity, Relation } from "../lib/types";
 
 const { entity } = Astro.props as { entity: Entity };
 const body = bodyFor(entity);
-const html = sanitizeHtml(await marked.parse(body), {
-  allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
-  allowedAttributes: { a: ["href", "title"], img: ["src", "alt", "title", "loading"] },
+const html = sanitizeHtml(await marked.parse(body, { gfm: true }), {
+  allowedTags: sanitizeHtml.defaults.allowedTags,
+  allowedAttributes: {
+    a: ["href", "title"]
+  },
   allowedSchemes: ["https", "http", "mailto"]
 });
+
 const relations = curatedRelations.filter((edge) => edge.source === entity.id || edge.target === entity.id);
-const neighbors = relations.slice(0, 40).map((edge) => ({ edge, entity: entityById.get(edge.source === entity.id ? edge.target : edge.source) })).filter((item) => item.entity);
+const neighbors = relations
+  .map((edge) => ({
+    edge,
+    entity: entityById.get(edge.source === entity.id ? edge.target : edge.source)
+  }))
+  .filter((item): item is { edge: Relation; entity: Entity } => Boolean(item.entity))
+  .sort((a, b) => b.entity.degree - a.entity.degree)
+  .slice(0, 30);
+const evidence = evidenceFor(entity.id, 8);
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "TechArticle",
   headline: entity.title,
   description: entity.summary,
   keywords: entity.tags,
-  isPartOf: { "@type": "Dataset", name: "HUGIN Knowledge Universe" }
+  isPartOf: {
+    "@type": "Dataset",
+    name: "HUGIN Knowledge Universe"
+  }
 };
 ---
 
 <BaseLayout title={entity.title} description={entity.summary} jsonLd={jsonLd}>
   <header class="entity-head">
-    <div class="wrap">
-      <p class="eyebrow">{entity.galaxyId} / {entity.kind}</p>
-      <h1>{entity.title}</h1>
-      <p class="lede">{entity.summary}</p>
-      <div class="meta-row"><span class="badge">{entity.category}</span>{entity.tier && <span class="badge">Tier {entity.tier}</span>}{entity.mitre.map((value) => <span class="badge">{value}</span>)}</div>
+    <div class="wrap entity-head-grid">
+      <div>
+        <p class="eyebrow">{entity.galaxyId} · {entity.kind.replace(/_/g, " ")}</p>
+        <h1>{entity.title}</h1>
+        <p class="lede">{entity.summary}</p>
+        <div class="meta-row">
+          <span class="badge">{entity.category}</span>
+          {entity.tier && <span class="badge">Tier {entity.tier}</span>}
+          {entity.mitre.slice(0, 6).map((value) => <span class="badge">{value}</span>)}
+        </div>
+      </div>
+      <dl class="entity-facts">
+        <div><dt>Record</dt><dd>{entity.evidenceId}</dd></div>
+        <div><dt>Galaxy</dt><dd>{entity.galaxyId}</dd></div>
+        <div><dt>Relations</dt><dd>{entity.degree.toLocaleString()}</dd></div>
+        <div><dt>Layer</dt><dd>{entity.publishState === "core" ? "Knowledge" : "Anonymous source"}</dd></div>
+      </dl>
     </div>
   </header>
-  <div class="wrap entity-grid">
-    <article class="prose" data-pagefind-body set:html={html} />
-    <aside class="sidebar">
-      <div class="card">
-        <p class="eyebrow">Provenance</p>
-        {entity.provenance.map((source) => <p><strong>{source.sourceLabel}</strong><br /><small>{source.sourceHash}</small></p>)}
-        <p><a href={`https://github.com/PrinceOfPwn/Hugin/tree/main/data/source/public-graph.json`}>Permanent source on GitHub</a></p>
-      </div>
-      <div class="card" style="margin-top: 14px">
-        <p class="eyebrow">Original relations · {relations.length}</p>
-        {neighbors.length ? <ul>{neighbors.map(({ edge, entity: target }) => <li><a href={`/Hugin${target!.route}`}>{target!.title}</a> <small>({edge.type})</small></li>)}</ul> : <p>This entity has no original relation. It remains visible through its galaxy and generated semantic neighborhood.</p>}
-        <a href={`/Hugin/graph/?focus=${encodeURIComponent(entity.id)}&edges=curated,similarity&k=3`}>Open contextual graph →</a>
-      </div>
+
+  <div class="wrap entity-layout" data-pagefind-body>
+    <article class="entity-main">
+      <section>
+        <p class="eyebrow">Overview</p>
+        <h2>What this record contributes</h2>
+        <p class="lede">{entity.summary}</p>
+      </section>
+
+      {neighbors.length > 0 && (
+        <section>
+          <p class="eyebrow">Curated graph</p>
+          <h2>Connected knowledge</h2>
+          <ul class="relation-list">
+            {neighbors.map(({ edge, entity: target }) => (
+              <li>
+                <span class="relation-type">{edge.type.replace(/_/g, " ")}</span>
+                <span>
+                  <a href={`/Hugin${target.route}`}>{target.title}</a>
+                  <span style="display:block;color:var(--muted);font-size:.8rem;margin-top:4px">
+                    {target.summary}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {evidence.length > 0 && (
+        <section>
+          <p class="eyebrow">Anonymous evidence</p>
+          <h2>Supporting observations</h2>
+          <p class="lede">
+            Evidence is identified by topic and neutral record ID. Provider, course, filename,
+            and local provenance are excluded from the public dataset.
+          </p>
+          <div class="evidence-list">
+            {evidence.map((item) => (
+              <article class="evidence-item">
+                <span class="evidence-id">{item.evidenceId}</span>
+                <span>
+                  <strong>{item.title}</strong>
+                  <p>{item.summary}</p>
+                </span>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {body && (
+        <section>
+          <details class="technical-note">
+            <summary>Open full technical note</summary>
+            <div class="prose" set:html={html} />
+          </details>
+        </section>
+      )}
+    </article>
+
+    <aside class="entity-sidebar">
+      <section class="sidebar-section">
+        <p class="eyebrow">Graph context</p>
+        <h2>Continue exploring</h2>
+        <p>Open this record in Neighborhood mode to see its immediate structure without the full-universe noise.</p>
+        <a
+          class="button primary"
+          href={`/Hugin/graph/?focus=${encodeURIComponent(entity.id)}&mode=neighborhood&edges=curated&depth=1`}
+        >
+          Open neighborhood
+        </a>
+      </section>
+
+      <section class="sidebar-section">
+        <p class="eyebrow">Classification</p>
+        <ul>
+          <li>{entity.kind.replace(/_/g, " ")}</li>
+          <li>{entity.category}</li>
+          <li>{entity.subgalaxy}</li>
+          {entity.tags.slice(0, 8).map((tag) => <li>{tag}</li>)}
+        </ul>
+      </section>
+
+      <section class="sidebar-section">
+        <p class="eyebrow">Public provenance</p>
+        <h2>{entity.evidenceId}</h2>
+        <p>Anonymous, owner-authorized research record. Original source names and private paths are not published.</p>
+      </section>
     </aside>
   </div>
 </BaseLayout>

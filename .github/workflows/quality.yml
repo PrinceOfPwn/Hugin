@@ -1,4 +1,4 @@
-name: HUGIN 2.0 quality
+name: HUGIN 2.1 quality
 
 on:
   pull_request:
@@ -27,7 +27,7 @@ jobs:
           path: |
             .hf-cache
             .cache
-          key: hugin-minilm-q4-${{ hashFiles('data/source/public-graph.json', 'package-lock.json') }}
+          key: hugin-minilm-q8-${{ hashFiles('data/source/public-graph.json', 'package-lock.json') }}
       - run: npm ci
       - name: Build semantic dataset in the cloud
         env:
@@ -61,6 +61,7 @@ jobs:
           path: .
       - name: Build Astro and Pagefind from verified data
         run: npm run site:build
+      - run: npm run site:validate
       - run: npm run check
       - run: npm run test:budgets
       - run: npx playwright install --with-deps chromium

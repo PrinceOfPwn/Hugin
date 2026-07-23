@@ -1,4 +1,4 @@
-name: Deploy HUGIN 2.0 to Pages
+name: Deploy HUGIN 2.1 to Pages
 
 on:
   push:
@@ -26,7 +26,7 @@ jobs:
           path: |
             .hf-cache
             .cache
-          key: hugin-minilm-q4-${{ hashFiles('data/source/public-graph.json', 'package-lock.json') }}
+          key: hugin-minilm-q8-${{ hashFiles('data/source/public-graph.json', 'package-lock.json') }}
       - run: npm ci
       - env:
           HUGIN_SIMILARITY_ENGINE: transformers
@@ -59,6 +59,7 @@ jobs:
           name: hugin-generated-${{ github.sha }}
           path: .
       - run: npm run site:build
+      - run: npm run site:validate
       - run: npm run check
       - run: npm run test:budgets
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
