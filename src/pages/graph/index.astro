@@ -1,0 +1,8 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import GraphUniverse from "../../components/GraphUniverse";
+import { manifest } from "../../lib/data";
+---
+<BaseLayout title="Knowledge Universe" description="Explore all 5,608 HUGIN entities as eight precomputed WebGL galaxies.">
+  <GraphUniverse client:only="react" manifest={manifest} />
+</BaseLayout>
