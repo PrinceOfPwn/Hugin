@@ -89,7 +89,7 @@ export default function CatalogExplorer({ manifest }: { manifest: DatasetManifes
 
       <p className="catalog-summary" aria-live="polite">
         <span>{entities.length ? `${filtered.length.toLocaleString()} matching nodes` : "Loading catalog…"}</span>
-        <span>{includeSources ? "Knowledge + anonymous sources" : "Knowledge layer only"}</span>
+        <span>{includeSources ? "Knowledge + source layer" : "Knowledge layer only"}</span>
       </p>
 
       <div>
