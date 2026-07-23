@@ -1,0 +1,10 @@
+---
+import EntityPage from "../../components/EntityPage.astro";
+import { entities } from "../../lib/data";
+export function getStaticPaths() {
+  const routed = new Set(["technique", "playbook", "concept", "detection", "chain", "atlas_reference"]);
+  return entities.filter((entity) => !routed.has(entity.kind)).map((entity) => ({ params: { slug: entity.slug }, props: { entity } }));
+}
+const { entity } = Astro.props;
+---
+<EntityPage entity={entity} />
