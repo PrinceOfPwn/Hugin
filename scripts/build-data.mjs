@@ -5,8 +5,11 @@ import path from "node:path";
 const SOURCE = path.resolve("data/source/public-graph.json");
 const PUBLIC = path.resolve("public/data");
 const GENERATED = path.resolve("src/generated");
-const MODEL = "onnx-community/all-MiniLM-L6-v2-ONNX";
-const REVISION = "aff7a1dc4e8a1ea593e6ea21e95c22ef0a25966f";
+// This Transformers.js repository publishes the q8 `model_quantized.onnx`
+// artifact. The newer onnx-community mirror currently exposes fp32/fp16/q4,
+// but not q8, so it cannot satisfy HUGIN's pinned q8 build contract.
+const MODEL = "Xenova/all-MiniLM-L6-v2";
+const REVISION = "751bff37182d3f1213fa05d7196b954e230abad9";
 const NEIGHBORS = 8;
 const SHARDS = 64;
 

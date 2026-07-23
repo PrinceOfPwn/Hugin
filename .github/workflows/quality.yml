@@ -27,7 +27,7 @@ jobs:
           path: |
             .hf-cache
             .cache
-          key: hugin-minilm-q8-${{ hashFiles('data/source/public-graph.json', 'package-lock.json') }}
+          key: hugin-minilm-q8-${{ hashFiles('data/source/public-graph.json', 'scripts/build-data.mjs', 'package-lock.json') }}
       - run: npm ci
       - name: Build semantic dataset in the cloud
         env:
