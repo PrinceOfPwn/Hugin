@@ -1,0 +1,81 @@
+---
+import ravenMark from "../../hugin/assets/raven-mark.png";
+import favicon from "../../hugin/assets/favicon.png";
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description: string;
+  image?: string;
+  jsonLd?: Record<string, unknown>;
+}
+
+const { title, description, image = "/Hugin/og.png", jsonLd } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const fullTitle = title === "HUGIN" ? "HUGIN · Knowledge Universe" : `${title} · HUGIN`;
+const currentPath = Astro.url.pathname;
+const navigation = [
+  { label: "Universe", href: "/Hugin/" },
+  { label: "Explore", href: "/Hugin/explore/" },
+  { label: "Graph", href: "/Hugin/graph/" },
+  { label: "Dataset", href: "/Hugin/dataset/" }
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0a0f" />
+    <meta name="description" content={description} />
+    <meta name="robots" content="index,follow" />
+    <link rel="icon" type="image/png" href={favicon.src} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={new URL(image, Astro.site)} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>{fullTitle}</title>
+    {jsonLd && <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
+    <script is:inline type="module">
+      window.loadHuginPagefind = () => import("/Hugin/pagefind/pagefind.js");
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="/Hugin/" aria-label="HUGIN Knowledge Universe home">
+        <img src={ravenMark.src} alt="" width="38" height="38" />
+        <span class="brand-copy">
+          <strong>HUGIN</strong>
+          <small>Knowledge Universe</small>
+        </span>
+      </a>
+      <nav class="site-nav" aria-label="Primary navigation">
+        {navigation.map((item) => {
+          const active = item.href === "/Hugin/"
+            ? currentPath === item.href
+            : currentPath.startsWith(item.href);
+          return <a href={item.href} aria-current={active ? "page" : undefined}>{item.label}</a>;
+        })}
+      </nav>
+      <a class="header-status" href="/Hugin/quality/">
+        <span aria-hidden="true"></span>
+        Quality verified
+      </a>
+    </header>
+    <main id="content">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <p><strong>HUGIN</strong> maps technical knowledge, relationships, and anonymous evidence.</p>
+      <nav aria-label="Footer navigation">
+        <a href="/Hugin/quality/">Quality</a>
+        <a href="https://github.com/PrinceOfPwn/Hugin">GitHub</a>
+      </nav>
+    </footer>
+  </body>
+</html>
