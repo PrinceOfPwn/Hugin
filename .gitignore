@@ -28,4 +28,8 @@ hugin/file-manifest.json
 hugin/analysis-atlas/
 hugin/analysis-curated/
 hugin/techniques/
+hugin/techniques-generated/
+hugin/cluster-specs/
+hugin/jobs-*.json
 release/
+*.zip
