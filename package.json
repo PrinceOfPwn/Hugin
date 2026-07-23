@@ -42,6 +42,8 @@
   "devDependencies": {
     "@astrojs/check": "latest",
     "@axe-core/playwright": "latest",
+    "@emnapi/core": "1.11.2",
+    "@emnapi/runtime": "1.11.2",
     "@lhci/cli": "latest",
     "@playwright/test": "latest",
     "@types/react": "latest",
