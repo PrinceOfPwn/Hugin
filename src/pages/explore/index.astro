@@ -1,0 +1,9 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import CatalogExplorer from "../../components/CatalogExplorer";
+import { manifest } from "../../lib/data";
+---
+<BaseLayout title="Explore" description="Search and filter all 5,608 HUGIN research entities.">
+  <header class="wrap section"><p class="eyebrow">Complete catalog</p><h1>Explore every node.</h1><p class="lede">Nothing disappears because it lacks an original relation. Filter the complete public projection by type, galaxy, category, MITRE and research signal.</p></header>
+  <section class="wrap" style="padding-bottom:70px"><CatalogExplorer client:load manifest={manifest} /></section>
+</BaseLayout>
