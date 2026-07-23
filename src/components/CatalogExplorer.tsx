@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DatasetManifest, Entity } from "../lib/types";
+import { parseAndCleanSummary } from "../lib/summaryParser";
 
 function initialParams() {
   return new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
@@ -92,16 +93,19 @@ export default function CatalogExplorer({ manifest }: { manifest: DatasetManifes
       </p>
 
       <div>
-        {filtered.slice(0, limit).map((entity) => (
-          <a className="catalog-result" href={`/Hugin${entity.route}`} key={entity.id}>
-            <span>
-              <h3>{entity.title}</h3>
-              <p>{entity.summary}</p>
-            </span>
-            <span className="catalog-galaxy">{entity.galaxyId}</span>
-            <span className="catalog-kind">{entity.kind.replace(/_/g, " ")}</span>
-          </a>
-        ))}
+        {filtered.slice(0, limit).map((entity) => {
+          const cleanSummary = parseAndCleanSummary(entity.summary, entity.title).cleanSummary;
+          return (
+            <a className="catalog-result" href={`/Hugin${entity.route}`} key={entity.id}>
+              <span>
+                <h3>{entity.title}</h3>
+                <p>{cleanSummary}</p>
+              </span>
+              <span className="catalog-galaxy">{entity.galaxyId}</span>
+              <span className="catalog-kind">{entity.kind.replace(/_/g, " ")}</span>
+            </a>
+          );
+        })}
       </div>
 
       {limit < filtered.length && (

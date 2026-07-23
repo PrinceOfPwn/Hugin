@@ -6,7 +6,7 @@ import {
   useCallback,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OrbitControls, Html } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { DatasetManifest, EvidenceRecord } from "../lib/types";
@@ -172,6 +172,17 @@ function StarField() {
   return <points ref={ref} geometry={geo} material={mat} />;
 }
 
+const GALAXY_COLORS: Record<string, string> = {
+  techniques: "#ff4d6d",
+  internals: "#38bdf8",
+  defenses: "#4ade80",
+  chains: "#fbbf24",
+  evidence: "#22d3ee",
+  sources: "#c084fc",
+  gaps: "#f472b6",
+  architecture: "#a78bfa",
+};
+
 // ─── Node instanced mesh ──────────────────────────────────────────────────────
 
 function GraphNodes({
@@ -194,13 +205,22 @@ function GraphNodes({
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const phases = useMemo(() => nodes.map(() => Math.random() * Math.PI * 2), [nodes]);
 
+  const hoveredNode = useMemo(
+    () => (hoveredId ? nodes.find((n) => n.id === hoveredId) : null),
+    [hoveredId, nodes]
+  );
+  const hoveredPos = useMemo(
+    () => (hoveredNode ? positions.get(hoveredNode.id) : null),
+    [hoveredNode, positions]
+  );
+
   const mat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        roughness: 0.2,
-        metalness: 0.6,
-        emissive: new THREE.Color(0x000000),
-        emissiveIntensity: 0,
+        roughness: 0.15,
+        metalness: 0.7,
+        emissive: new THREE.Color(0x111122),
+        emissiveIntensity: 0.4,
       }),
     []
   );
@@ -216,7 +236,8 @@ function GraphNodes({
       m.makeScale(s, s, s);
       m.setPosition(pos.x, pos.y, pos.z);
       mesh.setMatrixAt(i, m);
-      color.set(n.color);
+      const nodeColor = GALAXY_COLORS[n.galaxyId] || n.color;
+      color.set(nodeColor);
       mesh.setColorAt(i, color);
     });
     mesh.instanceMatrix.needsUpdate = true;
@@ -247,20 +268,21 @@ function GraphNodes({
       } else if (isSelected) {
         s *= 2.0 + Math.sin(t * 3) * 0.18;
       } else if (isHovered) {
-        s *= 1.5;
+        s *= 1.6;
       }
 
       m.makeScale(s, s, s);
       m.setPosition(pos.x + floatX, pos.y + floatY, pos.z);
       mesh.setMatrixAt(i, m);
 
+      const baseColorStr = GALAXY_COLORS[n.galaxyId] || n.color;
       if (isSelected) {
         color.copy(SELECTED_COLOR);
       } else if (isHovered) {
-        color.set(n.color);
-        color.lerp(WHITE, 0.5);
+        color.set(baseColorStr);
+        color.lerp(WHITE, 0.6);
       } else {
-        color.set(n.color);
+        color.set(baseColorStr);
         if (!isVisible) color.set(0x0a0a0a);
       }
       mesh.setColorAt(i, color);
@@ -288,13 +310,45 @@ function GraphNodes({
   );
 
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[SPHERE, mat, nodes.length]}
-      onPointerMove={handleMove}
-      onPointerOut={handleOut}
-      onClick={handleClick}
-    />
+    <>
+      <instancedMesh
+        ref={meshRef}
+        args={[SPHERE, mat, nodes.length]}
+        onPointerMove={handleMove}
+        onPointerOut={handleOut}
+        onClick={handleClick}
+      />
+      {hoveredNode && hoveredPos && (
+        <Html
+          position={[hoveredPos.x, hoveredPos.y + 14, hoveredPos.z]}
+          center
+          distanceFactor={450}
+          style={{ pointerEvents: "none" }}
+        >
+          <div
+            style={{
+              background: "rgba(4, 3, 13, 0.92)",
+              border: `1px solid ${GALAXY_COLORS[hoveredNode.galaxyId] || "#38bdf8"}`,
+              boxShadow: `0 0 16px ${GALAXY_COLORS[hoveredNode.galaxyId] || "#38bdf8"}66`,
+              borderRadius: "8px",
+              padding: "8px 14px",
+              whiteSpace: "nowrap",
+              color: "#ffffff",
+              fontFamily: "Inter, sans-serif",
+              backdropFilter: "blur(8px)",
+              zIndex: 1000,
+            }}
+          >
+            <div style={{ fontSize: "0.68rem", color: GALAXY_COLORS[hoveredNode.galaxyId] || "#38bdf8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              {hoveredNode.galaxyId} · {hoveredNode.kind.replace(/_/g, " ")}
+            </div>
+            <div style={{ fontSize: "0.95rem", fontWeight: 700, marginTop: "2px" }}>
+              {hoveredNode.label}
+            </div>
+          </div>
+        </Html>
+      )}
+    </>
   );
 }
 
@@ -328,8 +382,8 @@ function GraphEdges({
     const all = [...inactive, ...active];
     const verts = new Float32Array(all.length * 6);
     const colors = new Float32Array(all.length * 6);
-    const DIM = new THREE.Color(0x3a3055);
-    const LIT = new THREE.Color(0xff8899);
+    const DIM = new THREE.Color(0x1d1730);
+    const LIT = new THREE.Color(0x38bdf8);
 
     all.forEach((e, i) => {
       const sp = positions.get(e.source)!;
@@ -345,7 +399,7 @@ function GraphEdges({
     const m = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: visibleSet ? 0.75 : 0.35,
+      opacity: visibleSet ? 0.85 : 0.18,
     });
     return [g, m] as const;
   }, [edges, positions, visibleSet, selectedId]);
