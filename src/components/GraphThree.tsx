@@ -49,7 +49,7 @@ type GraphData = {
   positions: Map<string, THREE.Vector3>;
 };
 
-// ─── 3D Layout ────────────────────────────────────────────────────────────────
+// ─── 3D Layout & Constants ────────────────────────────────────────────────────
 
 const GALAXY_CENTERS: Record<string, [number, number, number]> = {
   techniques:   [  280,   40,   60],
@@ -60,6 +60,17 @@ const GALAXY_CENTERS: Record<string, [number, number, number]> = {
   sources:      [   60,  200,  220],
   gaps:         [  200,  -80, -180],
   architecture: [ -120, -200, -140],
+};
+
+const GALAXY_COLORS: Record<string, string> = {
+  techniques: "#ff0055", // Bright Neon Crimson / Pink
+  internals: "#00f0ff",  // Electric Cyan
+  defenses: "#00ff66",   // Neon Lime Green
+  chains: "#ffb703",     // Electric Gold / Amber
+  evidence: "#00e5ff",   // Bright Turquoise
+  sources: "#e056fd",    // Neon Magenta
+  gaps: "#ff3366",       // Hot Coral
+  architecture: "#9d4edd", // Deep Neon Violet
 };
 
 function compute3DLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, THREE.Vector3> {
@@ -128,7 +139,76 @@ function compute3DLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, TH
 
 // ─── Three.js shared geometry ─────────────────────────────────────────────────
 
-const SPHERE = new THREE.SphereGeometry(1, 10, 7);
+const SPHERE = new THREE.SphereGeometry(1, 12, 8);
+
+// ─── Galaxy Clouds (Animación de Fondo) ───────────────────────────────────────
+
+function GalaxyCloud({ center, color }: { center: [number, number, number], color: string }) {
+  const ref = useRef<THREE.Points>(null);
+
+  const [geo, mat] = useMemo(() => {
+    const N = 1500;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    const c = new THREE.Color(color);
+
+    for (let i = 0; i < N; i++) {
+      // Distribución espiral para efecto galaxia
+      const r = Math.pow(Math.random(), 0.5) * 140;
+      const branchAngle = Math.random() * Math.PI * 2;
+      const spinAngle = r * 0.04; // Fuerza de los brazos espirales
+      
+      const randomX = (Math.random() - 0.5) * 20 * (1 - r / 140);
+      const randomY = (Math.random() - 0.5) * 12 * (1 - r / 140); // Aplanado en Y
+      const randomZ = (Math.random() - 0.5) * 20 * (1 - r / 140);
+
+      pos[i * 3]     = Math.cos(branchAngle + spinAngle) * r + randomX;
+      pos[i * 3 + 1] = randomY;
+      pos[i * 3 + 2] = Math.sin(branchAngle + spinAngle) * r + randomZ;
+
+      // Degradar el color hacia el borde
+      const fade = 1 - r / 140;
+      col[i * 3]     = c.r * fade;
+      col[i * 3 + 1] = c.g * fade;
+      col[i * 3 + 2] = c.b * fade;
+    }
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    
+    const m = new THREE.PointsMaterial({
+      size: 2.5,
+      sizeAttenuation: true,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.4,
+      blending: THREE.AdditiveBlending, // Brillo aditivo
+      depthWrite: false,
+    });
+    return [g, m] as const;
+  }, [color]);
+
+  useFrame(({ clock }) => {
+    if (ref.current) {
+      const t = clock.getElapsedTime();
+      // Rotación lenta de la galaxia sobre su eje
+      ref.current.rotation.y = t * 0.05;
+    }
+  });
+
+  return <points ref={ref} geometry={geo} material={mat} position={center} />;
+}
+
+function GalaxyClouds() {
+  return (
+    <>
+      {Object.entries(GALAXY_CENTERS).map(([key, center]) => (
+        <GalaxyCloud key={key} center={center} color={GALAXY_COLORS[key] || "#ffffff"} />
+      ))}
+    </>
+  );
+}
 
 // ─── Star field ───────────────────────────────────────────────────────────────
 
@@ -148,40 +228,29 @@ function StarField() {
       pos[i * 3 + 2] = r * Math.cos(ph);
 
       const t = Math.random();
-      col[i * 3]     = 0.75 + t * 0.25;
-      col[i * 3 + 1] = 0.75 + t * 0.15;
-      col[i * 3 + 2] = 0.85 + t * 0.15;
+      col[i * 3]     = 0.4 + t * 0.4;
+      col[i * 3 + 1] = 0.4 + t * 0.3;
+      col[i * 3 + 2] = 0.6 + t * 0.4;
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     g.setAttribute("color", new THREE.BufferAttribute(col, 3));
     const m = new THREE.PointsMaterial({
-      size: 1.0,
+      size: 1.2,
       sizeAttenuation: true,
       vertexColors: true,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.8,
     });
     return [g, m] as const;
   }, []);
 
   useFrame(({ clock }) => {
-    if (ref.current) ref.current.rotation.y = clock.getElapsedTime() * 0.007;
+    if (ref.current) ref.current.rotation.y = clock.getElapsedTime() * 0.005;
   });
 
   return <points ref={ref} geometry={geo} material={mat} />;
 }
-
-const GALAXY_COLORS: Record<string, string> = {
-  techniques: "#ff0055", // Bright Neon Crimson / Pink
-  internals: "#00f0ff",  // Electric Cyan
-  defenses: "#00ff66",   // Neon Lime Green
-  chains: "#ffb703",     // Electric Gold / Amber
-  evidence: "#00e5ff",   // Bright Turquoise
-  sources: "#e056fd",    // Neon Magenta
-  gaps: "#ff3366",       // Hot Coral
-  architecture: "#9d4edd", // Deep Neon Violet
-};
 
 // ─── Node instanced mesh ──────────────────────────────────────────────────────
 
@@ -214,14 +283,14 @@ function GraphNodes({
     [hoveredNode, positions]
   );
 
+  // Material estandarizado con Tone Mapping correcto para que no sature a blanco
   const mat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        roughness: 0.1,
-        metalness: 0.1,
-        emissive: new THREE.Color(0xffffff),
-        emissiveIntensity: 1.6,
-        toneMapped: false,
+        roughness: 0.35,
+        metalness: 0.15,
+        toneMapped: true,
+        emissiveIntensity: 0.8, 
       }),
     []
   );
@@ -279,11 +348,14 @@ function GraphNodes({
       const baseColorStr = GALAXY_COLORS[n.galaxyId] || n.color;
       if (isSelected) {
         color.copy(SELECTED_COLOR);
+        // El emisivo ayuda a que el Bloom lo detecte más fuertemente
+        mesh.material instanceof THREE.MeshStandardMaterial && (mesh.material.emissive = color.clone());
       } else if (isHovered) {
-        color.set(baseColorStr);
-        color.lerp(WHITE, 0.7);
+        color.set(baseColorStr).lerp(WHITE, 0.4);
+        mesh.material instanceof THREE.MeshStandardMaterial && (mesh.material.emissive = color.clone());
       } else {
         color.set(baseColorStr);
+        mesh.material instanceof THREE.MeshStandardMaterial && (mesh.material.emissive = color.clone().multiplyScalar(0.6)); // Brillo base moderado
         if (!isVisible) color.set(0x05050a);
       }
       mesh.setColorAt(i, color);
@@ -411,7 +483,7 @@ function GraphEdges({
 // ─── Smooth camera rig ────────────────────────────────────────────────────────
 
 function CameraRig({ target }: { target: THREE.Vector3 | null }) {
-  const { camera } = useThree();
+  const { camera, controls } = useThree();
   const dest = useRef<THREE.Vector3 | null>(null);
 
   useEffect(() => {
@@ -420,9 +492,12 @@ function CameraRig({ target }: { target: THREE.Vector3 | null }) {
 
   useFrame(() => {
     if (!dest.current) return;
-    const look = new THREE.Vector3(dest.current.x + 50, dest.current.y + 20, dest.current.z + 70);
-    camera.position.lerp(look, 0.05);
-    camera.lookAt(dest.current);
+    const orbit = controls as any;
+    if (orbit && orbit.target) {
+      orbit.target.lerp(dest.current, 0.08);
+    }
+    const offset = new THREE.Vector3(dest.current.x + 40, dest.current.y + 25, dest.current.z + 85);
+    camera.position.lerp(offset, 0.08);
   });
 
   return null;
@@ -486,7 +561,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
 
   const [cursorGrab, setCursorGrab] = useState(false);
 
-  // ── Fetch evidence on demand ─────────────────────────────────────────────────
   useEffect(() => {
     if (showEvidence && !evidenceData) {
       setStatus("Fetching 3,256 raw evidence records…");
@@ -500,7 +574,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
     }
   }, [showEvidence, evidenceData, manifest.assets.evidence]);
 
-  // ── Fetch core graph & build 3D layout ───────────────────────────────────────
   useEffect(() => {
     const base = "/Hugin";
     const fetches: Promise<any>[] = [
@@ -526,7 +599,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
         if (layers.similarity) allEdges = [...allEdges, ...simEdges];
         if (layers.membership) allEdges = [...allEdges, ...memEdges];
 
-        // Attach evidence nodes if loaded
         if (showEvidence && evidenceData) {
           const evNodes: GraphNode[] = evidenceData.slice(0, 1500).map((ev) => ({
             id: ev.id,
@@ -577,7 +649,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
     });
   }, [manifest, layers.curated, layers.similarity, layers.membership, showEvidence, evidenceData]);
 
-  // ── Adjacency map ────────────────────────────────────────────────────────────
   const adj = useMemo(() => {
     if (!graphData) return null;
     const map = new Map<string, string[]>();
@@ -589,7 +660,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
     return map;
   }, [graphData]);
 
-  // ── Visible set ─────────────────────────────────────────────────────────────
   const visibleSet = useMemo<Set<string> | null>(() => {
     if (!graphData || !adj) return null;
 
@@ -615,7 +685,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
     return null;
   }, [mode, activeGalaxy, selected, depth, graphData, adj]);
 
-  // ── Display nodes ────────────────────────────────────────────────────────────
   const displayNodes = useMemo(() => {
     if (!graphData) return [];
     return showSources
@@ -623,7 +692,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
       : graphData.nodes.filter((n) => n.scope !== "support");
   }, [graphData, showSources]);
 
-  // ── Click node handler ───────────────────────────────────────────────────────
   const handleNodeClick = useCallback(
     (id: string) => {
       if (!graphData) return;
@@ -674,7 +742,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
     return graphData.positions.get(selected.id) ?? null;
   }, [selected, graphData]);
 
-  // ── Parse structured summary for selected node ──────────────────────────────
   const structuredInfo = useMemo(() => {
     if (!selected) return null;
     return parseAndCleanSummary(selected.summary, selected.label);
@@ -691,7 +758,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
       </header>
 
       <div className="graph-shell">
-        {/* ── Left Rail Controls ── */}
         <aside className="graph-rail" aria-label="Graph view controls">
           <fieldset>
             <legend>View</legend>
@@ -777,7 +843,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
           </a>
         </aside>
 
-        {/* ── 3D WebGL Canvas ── */}
         <div
           className="graph-stage"
           style={{ cursor: cursorGrab ? "pointer" : "grab" }}
@@ -790,12 +855,15 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
           >
             <color attach="background" args={["#04030d"]} />
 
-            <ambientLight intensity={0.8} color="#9988ee" />
-            <pointLight position={[300, 300, 200]} intensity={4.5} color="#00ffff" distance={1500} />
-            <pointLight position={[-300, -200, -300]} intensity={3.5} color="#ff00aa" distance={1200} />
-            <pointLight position={[0, -400, 200]} intensity={2.5} color="#a855f7" distance={1000} />
+            {/* Iluminación re-balanceda para no saturar a blanco los neón */}
+            <ambientLight intensity={0.15} color="#5566ff" />
+            <pointLight position={[300, 300, 200]} intensity={1.5} color="#00ffff" distance={1500} />
+            <pointLight position={[-300, -200, -300]} intensity={1.2} color="#ff00aa" distance={1200} />
+            <pointLight position={[0, -400, 200]} intensity={0.8} color="#a855f7" distance={1000} />
 
             <StarField />
+            {/* Nubes animadas representando las galaxias */}
+            <GalaxyClouds />
 
             {graphData && (
               <>
@@ -821,19 +889,23 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
             <CameraRig target={cameraTarget} />
             <OrbitControls
               enableDamping
-              dampingFactor={0.07}
-              rotateSpeed={0.55}
-              zoomSpeed={0.8}
-              panSpeed={0.6}
+              dampingFactor={0.06}
+              rotateSpeed={0.85}
+              zoomSpeed={1.4}
+              panSpeed={1.1}
+              minDistance={15}
+              maxDistance={2400}
+              screenSpacePanning={true}
               makeDefault
             />
 
             <EffectComposer>
               <Bloom
-                luminanceThreshold={0.05}
+                luminanceThreshold={0.2} // Subimos el umbral para que el fondo no brille
                 luminanceSmoothing={0.9}
-                intensity={2.6}
-                radius={0.95}
+                intensity={0.8} // Menos intensidad para evitar la mancha blanca
+                radius={0.8}
+                mipmapBlur // Mejora calidad del blur
               />
             </EffectComposer>
           </Canvas>
@@ -843,11 +915,9 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
           </p>
         </div>
 
-        {/* ── High-Contrast Inspector ── */}
         <aside className="inspector" aria-live="polite">
           {selected ? (
             <>
-              {/* Top Hierarchy: Badges & Title */}
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
                 <span className="eyebrow-galaxy">{selected.galaxyId}</span>
                 <span className="eyebrow-bright">{selected.kind}</span>
@@ -858,17 +928,14 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
 
               <h2>{selected.label}</h2>
 
-              {/* Prominent Action Button near the top */}
               <a className="inspector-action-primary" href={`/Hugin${selected.route}`}>
                 Open Full Technical Record →
               </a>
 
-              {/* Clean Summary (no raw metadata dumps) */}
               <p className="inspector-summary">
                 {structuredInfo?.cleanSummary ?? selected.summary}
               </p>
 
-              {/* MITRE & Tags */}
               {(structuredInfo?.mitre || structuredInfo?.tags) && (
                 <div className="tech-section">
                   <p className="tech-section-title">Classifications & Tags</p>
@@ -883,7 +950,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
                 </div>
               )}
 
-              {/* Implementation Files */}
               {structuredInfo?.files && structuredInfo.files.length > 0 && (
                 <div className="tech-section">
                   <p className="tech-section-title">Implementation Files</p>
@@ -895,7 +961,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
                 </div>
               )}
 
-              {/* Lines of Interest */}
               {structuredInfo?.linesOfInterest && structuredInfo.linesOfInterest.length > 0 && (
                 <div className="tech-section">
                   <p className="tech-section-title">Key Code Locations</p>
@@ -907,7 +972,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
                 </div>
               )}
 
-              {/* Raw Evidence Extra Information */}
               {selected.rawEvidence && (
                 <div className="tech-section">
                   <p className="tech-section-title">Evidence Extract</p>
@@ -921,7 +985,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
                 </div>
               )}
 
-              {/* Metadata Key/Value Details */}
               <dl>
                 <dt>ID</dt><dd>{selected.id}</dd>
                 <dt>Category</dt><dd>{selected.category}</dd>
@@ -940,7 +1003,6 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
                 </button>
               )}
 
-              {/* Relations List */}
               {relations.length > 0 && (
                 <div className="tech-section">
                   <p className="tech-section-title">Connected Knowledge Nodes</p>
