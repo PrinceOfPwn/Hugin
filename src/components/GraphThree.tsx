@@ -173,14 +173,14 @@ function StarField() {
 }
 
 const GALAXY_COLORS: Record<string, string> = {
-  techniques: "#ff4d6d",
-  internals: "#38bdf8",
-  defenses: "#4ade80",
-  chains: "#fbbf24",
-  evidence: "#22d3ee",
-  sources: "#c084fc",
-  gaps: "#f472b6",
-  architecture: "#a78bfa",
+  techniques: "#ff0055", // Bright Neon Crimson / Pink
+  internals: "#00f0ff",  // Electric Cyan
+  defenses: "#00ff66",   // Neon Lime Green
+  chains: "#ffb703",     // Electric Gold / Amber
+  evidence: "#00e5ff",   // Bright Turquoise
+  sources: "#e056fd",    // Neon Magenta
+  gaps: "#ff3366",       // Hot Coral
+  architecture: "#9d4edd", // Deep Neon Violet
 };
 
 // ─── Node instanced mesh ──────────────────────────────────────────────────────
@@ -217,10 +217,11 @@ function GraphNodes({
   const mat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        roughness: 0.15,
-        metalness: 0.7,
-        emissive: new THREE.Color(0x111122),
-        emissiveIntensity: 0.4,
+        roughness: 0.1,
+        metalness: 0.1,
+        emissive: new THREE.Color(0xffffff),
+        emissiveIntensity: 1.6,
+        toneMapped: false,
       }),
     []
   );
@@ -232,7 +233,7 @@ function GraphNodes({
     const color = new THREE.Color();
     nodes.forEach((n, i) => {
       const pos = positions.get(n.id) ?? new THREE.Vector3();
-      const s = n.scope === "evidence" ? 1.4 : Math.max(2.2, n.size * 0.95);
+      const s = n.scope === "evidence" ? 2.2 : Math.max(3.6, n.size * 1.5);
       m.makeScale(s, s, s);
       m.setPosition(pos.x, pos.y, pos.z);
       mesh.setMatrixAt(i, m);
@@ -262,13 +263,13 @@ function GraphNodes({
       const floatY = Math.sin(t * 0.38 + phases[i]) * 2.0;
       const floatX = Math.cos(t * 0.22 + phases[i] * 0.7) * 0.8;
 
-      let s = n.scope === "evidence" ? 1.4 : Math.max(2.2, n.size * 0.95);
+      let s = n.scope === "evidence" ? 2.2 : Math.max(3.6, n.size * 1.5);
       if (!isVisible) {
         s = 0.001;
       } else if (isSelected) {
-        s *= 2.0 + Math.sin(t * 3) * 0.18;
+        s *= 2.2 + Math.sin(t * 3.5) * 0.25;
       } else if (isHovered) {
-        s *= 1.6;
+        s *= 1.8;
       }
 
       m.makeScale(s, s, s);
@@ -280,10 +281,10 @@ function GraphNodes({
         color.copy(SELECTED_COLOR);
       } else if (isHovered) {
         color.set(baseColorStr);
-        color.lerp(WHITE, 0.6);
+        color.lerp(WHITE, 0.7);
       } else {
         color.set(baseColorStr);
-        if (!isVisible) color.set(0x0a0a0a);
+        if (!isVisible) color.set(0x05050a);
       }
       mesh.setColorAt(i, color);
     });
@@ -789,10 +790,10 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
           >
             <color attach="background" args={["#04030d"]} />
 
-            <ambientLight intensity={0.45} color="#8877cc" />
-            <pointLight position={[300, 300, 200]} intensity={2.5} color="#9988ff" distance={1200} />
-            <pointLight position={[-300, -200, -300]} intensity={1.5} color="#ff6644" distance={1000} />
-            <pointLight position={[0, -400, 200]} intensity={1.0} color="#44aaff" distance={800} />
+            <ambientLight intensity={0.8} color="#9988ee" />
+            <pointLight position={[300, 300, 200]} intensity={4.5} color="#00ffff" distance={1500} />
+            <pointLight position={[-300, -200, -300]} intensity={3.5} color="#ff00aa" distance={1200} />
+            <pointLight position={[0, -400, 200]} intensity={2.5} color="#a855f7" distance={1000} />
 
             <StarField />
 
@@ -829,10 +830,10 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
 
             <EffectComposer>
               <Bloom
-                luminanceThreshold={0.12}
+                luminanceThreshold={0.05}
                 luminanceSmoothing={0.9}
-                intensity={1.4}
-                radius={0.85}
+                intensity={2.6}
+                radius={0.95}
               />
             </EffectComposer>
           </Canvas>
