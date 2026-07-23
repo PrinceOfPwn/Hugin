@@ -990,6 +990,29 @@ p {
   font-weight: 500;
 }
 
+.inspector-relation-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.inspector-relation-btn:hover strong {
+  color: var(--red-soft);
+}
+
+.inspector-relation-btn span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: capitalize;
+}
+
 .entity-head {
   padding-block: 58px 34px;
   border-bottom: 1px solid var(--rule);
