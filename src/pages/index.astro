@@ -20,7 +20,7 @@ const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Dataset",
   name: "HUGIN Knowledge Universe",
-  description: `A static technical knowledge graph with ${manifest.counts.coreEntities} curated knowledge entities and anonymous supporting evidence.`,
+  description: `A technical knowledge graph with ${manifest.counts.coreEntities} curated knowledge entities and supporting evidence.`,
   version: manifest.datasetVersion,
   url: "https://princeofpwn.github.io/Hugin/",
   distribution: {
@@ -33,12 +33,12 @@ const jsonLd = {
 
 <BaseLayout
   title="HUGIN"
-  description="Explore a curated technical knowledge graph, its relationships, and anonymous supporting evidence."
+  description="Explore a curated technical knowledge graph, its relationships, and supporting evidence."
   jsonLd={jsonLd}
 >
   <section class="wrap hero-home">
     <div>
-      <p class="eyebrow">Adversary research index · static and anonymous</p>
+      <p class="eyebrow">Adversary Research Index</p>
       <h1>Map tradecraft. Trace evidence. Design detection.</h1>
       <p class="lede">
         HUGIN connects techniques, Windows internals, detections, operational chains,
@@ -90,7 +90,7 @@ const jsonLd = {
       <dd>{coreEntities.filter((entity) => entity.kind === "lgtm_note").length.toLocaleString()}</dd>
     </div>
     <div class="metric">
-      <dt>Anonymous evidence records</dt>
+      <dt>Evidence records</dt>
       <dd>{manifest.counts.evidenceRecords.toLocaleString()}</dd>
     </div>
   </dl>
