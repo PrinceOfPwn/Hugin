@@ -1,7 +1,0 @@
----
-import EntityPage from "../../components/EntityPage.astro";
-import { entities } from "../../lib/data";
-export function getStaticPaths() { return entities.filter((entity) => entity.kind === "concept").map((entity) => ({ params: { slug: entity.slug }, props: { entity } })); }
-const { entity } = Astro.props;
----
-<EntityPage entity={entity} />
