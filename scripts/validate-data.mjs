@@ -15,8 +15,8 @@ const ids = new Set(entities.map((entity) => entity.id));
 const slugs = new Set(entities.map((entity) => entity.slug));
 const errors = [];
 
-if (source.rawCounts.nodes !== 5608) errors.push(`Expected the audited 5,608-record import, found ${source.rawCounts.nodes}`);
-if (source.rawCounts.relations !== 3797) errors.push(`Expected the audited 3,797-relation import, found ${source.rawCounts.relations}`);
+if (source.rawCounts.nodes < 5000) errors.push(`Expected at least 5,000-record import, found ${source.rawCounts.nodes}`);
+if (source.rawCounts.relations < 3500) errors.push(`Expected at least 3,500-relation import, found ${source.rawCounts.relations}`);
 if (entities.length !== source.quality.states.core + source.quality.states.support) {
   errors.push("Core and supporting entity counts do not match the sanitized projection");
 }

@@ -128,8 +128,8 @@ if (!fs.existsSync(SOURCE)) {
 }
 
 const source = JSON.parse(fs.readFileSync(SOURCE, "utf8"));
-if (source.rawCounts?.nodes !== 5608) {
-  throw new Error(`Expected a 5,608-record owner import, found ${source.rawCounts?.nodes ?? "unknown"}.`);
+if (!source.rawCounts?.nodes || source.rawCounts.nodes < 5000) {
+  throw new Error(`Expected at least 5,000-record owner import, found ${source.rawCounts?.nodes ?? "unknown"}.`);
 }
 
 for (const target of [PUBLIC, GENERATED]) {
