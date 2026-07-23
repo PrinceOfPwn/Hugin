@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-const ROOT = process.cwd();
 const SOURCE = path.resolve("data/source/public-graph.json");
 const PUBLIC = path.resolve("public/data");
 const GENERATED = path.resolve("src/generated");
@@ -107,7 +106,6 @@ const entities = source.nodes.map((node) => {
   };
 });
 
-const entityById = new Map(entities.map((entity) => [entity.id, entity]));
 const curated = source.edges.map((edge, index) => ({
   id: `curated:${index}:${shortHash(`${edge.source}:${edge.target}:${edge.type}`)}`,
   source: edge.source,
@@ -225,7 +223,7 @@ for (let index = 0; index < entities.length; index += 1) {
 }
 
 const galaxyIndex = new Map(GALAXY_DEFS.map((definition, index) => [definition[0], index]));
-const entityGraphNodes = entities.map((entity, index) => {
+const entityGraphNodes = entities.map((entity) => {
   const galaxy = galaxyIndex.get(entity.galaxyId);
   const baseAngle = (Math.PI * 2 * galaxy) / GALAXY_DEFS.length;
   const localAngle = ((Number.parseInt(shortHash(entity.id, 8), 16) % 100000) / 100000) * Math.PI * 2;

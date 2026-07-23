@@ -14,8 +14,9 @@ export default function GlobalSearch() {
     if (value.trim().length < 2) { setResults([]); setStatus(""); return; }
     setStatus("Searching…");
     const pagefindPath = "/Hugin/pagefind/pagefind.js";
-    if (!window.pagefind) window.pagefind = await import(/* @vite-ignore */ pagefindPath);
-    const response = await window.pagefind.search(value);
+    const pagefind = window.pagefind ?? await import(/* @vite-ignore */ pagefindPath);
+    window.pagefind = pagefind;
+    const response = await pagefind.search(value);
     const data = await Promise.all(response.results.slice(0, 6).map((result) => result.data()));
     setResults(data);
     setStatus(`${response.results.length.toLocaleString()} matches`);
