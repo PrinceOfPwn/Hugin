@@ -742,6 +742,7 @@ p {
   min-height: calc(100vh - var(--header));
   display: grid;
   grid-template-rows: auto minmax(620px, calc(100vh - var(--header) - 74px));
+  overflow: hidden;
 }
 
 .graph-topbar {
@@ -768,6 +769,7 @@ p {
 
 .graph-shell {
   min-height: 0;
+  height: 100%;
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr) 350px;
   background: var(--ink);
@@ -868,6 +870,7 @@ p {
   position: relative;
   min-width: 0;
   min-height: 620px;
+  height: 100%;
   background: #08070c;
 }
 

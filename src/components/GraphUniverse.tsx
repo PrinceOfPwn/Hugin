@@ -74,6 +74,7 @@ export default function GraphUniverse({ manifest }: { manifest: DatasetManifest 
   const graphRef = useRef<Graph | null>(null);
   const pathStart = useRef<string | null>(null);
   const modeRef = useRef<Mode>("universe");
+  const roRef = useRef<ResizeObserver | null>(null);
 
   const params = initialParams();
   const initialLayerNames = (params.get("edges") || "curated").split(",");
@@ -222,6 +223,12 @@ export default function GraphUniverse({ manifest }: { manifest: DatasetManifest 
     }
   }
 
+  // Keep a stable ref to selectNode so the sigma event closure never goes stale
+  const selectNodeRef = useRef<typeof selectNode>(selectNode);
+  useEffect(() => {
+    selectNodeRef.current = selectNode;
+  });
+
   useEffect(() => {
     if (!container.current) return;
     let cancelled = false;
@@ -280,7 +287,7 @@ export default function GraphUniverse({ manifest }: { manifest: DatasetManifest 
 
       renderer.current = sigma;
       applyVisibility(graph, selected);
-      sigma.on("clickNode", ({ node }) => selectNode(node, graph, sigma));
+      sigma.on("clickNode", ({ node }) => selectNodeRef.current(node, graph, sigma));
       sigma.on("enterNode", ({ node }) => {
         if (!graph.getNodeAttribute(node, "selected")) {
           graph.setNodeAttribute(node, "label", graph.getNodeAttribute(node, "originalLabel"));
@@ -297,15 +304,26 @@ export default function GraphUniverse({ manifest }: { manifest: DatasetManifest 
 
       const focus = initialParams().get("focus");
       if (focus && graph.hasNode(focus)) {
-        selectNode(focus, graph, sigma);
+        selectNodeRef.current(focus, graph, sigma);
       } else {
         setStatus(`${manifest.counts.coreEntities.toLocaleString()} knowledge nodes ready.`);
+      }
+
+      // Force Sigma to resize when the container dimensions change (e.g. after
+      // GitHub Pages finishes painting the full layout).
+      if (container.current) {
+        const ro = new ResizeObserver(() => {
+          if (!cancelled) sigma.refresh();
+        });
+        ro.observe(container.current);
+        roRef.current = ro;
       }
     });
 
     return () => {
       cancelled = true;
       renderer.current?.kill();
+      roRef.current?.disconnect();
     };
   }, [manifest, layers, k, showSources]);
 
@@ -467,8 +485,6 @@ export default function GraphUniverse({ manifest }: { manifest: DatasetManifest 
           <div
             ref={container}
             style={{ width: "100%", height: "100%" }}
-            role="img"
-            aria-label={`Interactive WebGL map of ${manifest.counts.coreEntities.toLocaleString()} HUGIN knowledge nodes`}
           />
           <p className="graph-hint">
             Scroll to zoom · drag to navigate · select a node to inspect · Path mode uses two selections
