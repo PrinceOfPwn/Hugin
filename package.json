@@ -1,0 +1,58 @@
+{
+  "name": "hugin-knowledge-universe",
+  "version": "2.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "overrides": {
+    "adm-zip": "^0.6.0",
+    "sharp": "^0.35.0",
+    "tmp": "^0.2.6",
+    "uuid": "^11.1.1"
+  },
+  "scripts": {
+    "data:import": "node scripts/import-public-data.mjs",
+    "data:build": "node scripts/build-data.mjs",
+    "data:validate": "node scripts/validate-data.mjs",
+    "data:export": "node scripts/export-dataset.mjs",
+    "prebuild": "npm run data:build && npm run data:validate",
+    "build": "astro build && pagefind --site dist",
+    "site:build": "astro build && pagefind --site dist",
+    "site:validate": "node scripts/check-public-artifact.mjs",
+    "dev": "astro dev",
+    "preview": "astro preview",
+    "check": "astro check && npm run data:validate",
+    "test:e2e": "playwright test",
+    "test:a11y": "playwright test tests/accessibility.spec.ts",
+    "test:budgets": "node scripts/check-budgets.mjs"
+  },
+  "dependencies": {
+    "@astrojs/react": "latest",
+    "@astrojs/sitemap": "latest",
+    "@huggingface/transformers": "latest",
+    "astro": "latest",
+    "graphology": "latest",
+    "marked": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "sanitize-html": "latest",
+    "sigma": "latest",
+    "three": "latest"
+  },
+  "devDependencies": {
+    "@astrojs/check": "latest",
+    "@axe-core/playwright": "latest",
+    "@emnapi/core": "1.11.2",
+    "@emnapi/runtime": "1.11.2",
+    "@lhci/cli": "latest",
+    "@playwright/test": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@types/sanitize-html": "latest",
+    "@types/three": "latest",
+    "pagefind": "latest",
+    "typescript": "latest"
+  }
+}
