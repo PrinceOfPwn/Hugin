@@ -1,12 +1,12 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import GraphUniverse from "../../components/GraphUniverse";
+import GraphThree from "../../components/GraphThree";
 import { manifest } from "../../lib/data";
 ---
 
 <BaseLayout
   title="Knowledge Graph"
-  description={`Explore ${manifest.counts.coreEntities.toLocaleString()} knowledge nodes across eight structured galaxies.`}
+  description={`Explore ${manifest.counts.coreEntities.toLocaleString()} knowledge nodes across eight structured galaxies in a live 3D universe.`}
 >
-  <GraphUniverse client:only="react" manifest={manifest} />
+  <GraphThree client:only="react" manifest={manifest} />
 </BaseLayout>
