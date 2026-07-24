@@ -528,20 +528,30 @@ const galaxies = GALAXY_DEFS.map(([id, name, description, color]) => ({
   supportCount: entities.filter((entity) => entity.galaxyId === id && entity.publishState === "support").length
 }));
 
-// Galaxy Z-centers must match GraphThreeV3 GALAXY_CENTERS for visual alignment
-const GALAXY_Z = {
-  techniques: 60, internals: -80, defenses: 40, chains: 120,
-  evidence: -260, sources: 220, gaps: -180, architecture: -140, tradecraft_qa: 150,
+
+// Galaxy 3D centers — must stay in sync with GraphThreeV3 GALAXY_CENTERS
+const GALAXY_CENTERS_3D = {
+  techniques:    [280, 40, 60],
+  internals:     [-200, 180, -80],
+  defenses:      [-240, -150, 40],
+  chains:        [100, -220, 120],
+  evidence:      [-80, 80, -260],
+  sources:       [60, 200, 220],
+  gaps:          [200, -80, -180],
+  architecture:  [-120, -200, -140],
+  tradecraft_qa: [0, 300, 150],
 };
 
 const entityGraphNodes = entities.map((entity) => {
   const galaxy = galaxyIndex.get(entity.galaxyId);
-  const baseAngle = (Math.PI * 2 * galaxy) / GALAXY_DEFS.length;
   const localAngle = ((Number.parseInt(shortHash(entity.id, 8), 16) % 100000) / 100000) * Math.PI * 2;
-  const radius = 52 + (Number.parseInt(shortHash(`${entity.id}:r`, 6), 16) % 176);
-  const centerRadius = 455;
-  const zCenter = GALAXY_Z[entity.galaxyId] ?? 0;
-  const zSpread = (Number.parseInt(shortHash(`${entity.id}:z`, 6), 16) % 100) - 50;
+  const localAngle2 = ((Number.parseInt(shortHash(`${entity.id}:b`, 8), 16) % 100000) / 100000) * Math.PI * 2;
+  const radius = 30 + (Number.parseInt(shortHash(`${entity.id}:r`, 6), 16) % 100);
+  const center = GALAXY_CENTERS_3D[entity.galaxyId] ?? [
+    Math.cos((Math.PI * 2 * galaxy) / GALAXY_DEFS.length) * 300,
+    Math.sin((Math.PI * 2 * galaxy) / GALAXY_DEFS.length) * 300,
+    0,
+  ];
   return {
     id: entity.id,
     label: entity.title,
@@ -552,9 +562,9 @@ const entityGraphNodes = entities.map((entity) => {
     summary: entity.summary,
     scope: entity.publishState,
     degree: entity.degree,
-    x: Number((Math.cos(baseAngle) * centerRadius + Math.cos(localAngle) * radius).toFixed(3)),
-    y: Number((Math.sin(baseAngle) * centerRadius + Math.sin(localAngle) * radius).toFixed(3)),
-    z: Number((zCenter + zSpread).toFixed(3)),
+    x: Number((center[0] + Math.cos(localAngle) * radius).toFixed(3)),
+    y: Number((center[1] + Math.sin(localAngle) * radius).toFixed(3)),
+    z: Number((center[2] + Math.cos(localAngle2) * (radius * 0.5)).toFixed(3)),
     size: Math.min(11, 2.1 + Math.log2(entity.degree + 1)),
     color: GALAXY_DEFS[galaxy][3]
   };
