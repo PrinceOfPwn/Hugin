@@ -230,7 +230,7 @@ export default function StarNodes({ nodes, hoveredId, selectedId, visibleSet, on
 
   const handlePointerMove = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
-    if (e.instanceId == null) return;
+    if (e.instanceId === null || e.instanceId === undefined) return;
     onHover(nodes[e.instanceId].id);
   };
 
@@ -241,7 +241,7 @@ export default function StarNodes({ nodes, hoveredId, selectedId, visibleSet, on
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
-    if (e.instanceId == null) return;
+    if (e.instanceId === null || e.instanceId === undefined) return;
     onClick(nodes[e.instanceId].id);
   };
 
