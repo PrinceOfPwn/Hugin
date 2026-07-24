@@ -33,3 +33,10 @@ hugin/cluster-specs/
 hugin/jobs-*.json
 release/
 *.zip
+
+# Raw un-sanitized training data stays local (only samples_normalized.jsonl is versioned).
+hugin/samples_export/
+hugin/samples_enriched.jsonl
+hugin/samples_premium_v5.jsonl
+# Large intermediate files
+samples_premium_v5.jsonl

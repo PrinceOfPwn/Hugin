@@ -50,54 +50,7 @@ const rawNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
 const rawEdges = Array.isArray(graph.edges) ? graph.edges : [];
 const rawContents = graph.contents && typeof graph.contents === "object" ? graph.contents : {};
 
-const absoluteUnix = /\/(?:Users|home)\/[^\s/]+\/[^\s)\]}>"']+/gi;
-const absoluteWindows = /[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)[^\s)\]}>"']+/gi;
-const localUser = /\b(?:emiperalta|tamarisk)\b/gi;
-const anonymousSourceUrl = /https?:\/\/(?:www\.)?(?:linktr\.ee\/offsecexam|sans\.org|offsec\.com|maldevacademy\.com)[^\s)\]}>"']*/gi;
-
-function anonymizeSourceNames(value) {
-  return value
-    .replace(/https?:\/\/[^\s)\]}>"']*offsec[^\s)\]}>"']*/gi, "[private-source]")
-    .replace(/\bSANS\s+SEC\d{3}(?:\.\d+)?\b/gi, "Source A")
-    .replace(/\bSEC\d{3}(?:\.\d+)?\b/gi, "Source A")
-    .replace(/\bSANS(?:\s+Institute)?\b/gi, "Source A")
-    .replace(/\bCertified\s+Red\s+Team\s+Operator\b|\bCRTO\b/gi, "Source B")
-    .replace(/\bMalDev(?:[_ -]*Academy)?\b/gi, "Source B")
-    .replace(/\bOffensive\s+Security\b|\bOffSec(?:[_ -]*[A-Za-z]+)?\b/gi, "Source B")
-    .replace(/OffSec/gi, "research")
-    .replace(/\b(Source [AB])(?:\s+\1)+\b/gi, "$1");
-}
-
-function sanitizeString(value) {
-  return anonymizeSourceNames(String(value))
-    .replace(absoluteUnix, "[private-source]")
-    .replace(absoluteWindows, "[private-source]")
-    .replace(localUser, "source-owner")
-    .replace(anonymousSourceUrl, "[private-source]")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/ +([,.;:])/g, "$1")
-    .trim();
-}
-
-function sanitize(value) {
-  if (typeof value === "string") return sanitizeString(value);
-  if (Array.isArray(value)) return value.map(sanitize);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(([key]) => ![
-          "source_path",
-          "source_key",
-          "sourceLabel",
-          "file_path",
-          "absolute_path",
-          "local_path"
-        ].includes(key))
-        .map(([key, child]) => [key, sanitize(child)])
-    );
-  }
-  return value;
-}
+import { sanitize, sanitizeString } from "./lib/sanitize.mjs";
 
 function publicIdFor(node) {
   const rawId = String(node.id);

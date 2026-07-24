@@ -60,6 +60,7 @@ const GALAXY_CENTERS: Record<string, [number, number, number]> = {
   sources:      [   60,  200,  220],
   gaps:         [  200,  -80, -180],
   architecture: [ -120, -200, -140],
+  tradecraft_qa: [ 0,   300,  150],
 };
 
 const GALAXY_COLORS: Record<string, string> = {
@@ -71,6 +72,7 @@ const GALAXY_COLORS: Record<string, string> = {
   sources: "#e056fd",    // Neon Magenta
   gaps: "#ff3366",       // Hot Coral
   architecture: "#9d4edd", // Deep Neon Violet
+  tradecraft_qa: "#00e5bf", // Bright Neon Teal
 };
 
 function compute3DLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, THREE.Vector3> {

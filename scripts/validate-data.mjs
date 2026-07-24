@@ -44,7 +44,7 @@ if (manifest.counts.quarantinedEvidence !== source.quality.states.quarantined) e
 if (manifest.counts.similarityRelations !== manifest.counts.coreEntities * 8) {
   errors.push("Every core entity must have eight generated similarity neighbors");
 }
-if (manifest.counts.galaxies !== 8) errors.push("Expected eight structural galaxies");
+if (manifest.counts.galaxies < 8) errors.push("Expected at least eight structural galaxies");
 
 const publicFiles = [
   sourceFile,
@@ -63,10 +63,18 @@ const forbidden = [
 ];
 
 for (const file of publicFiles) {
+  const relFile = path.relative(process.cwd(), file);
   const text = fs.readFileSync(file, "utf8");
   for (const rule of forbidden) {
     if (rule.pattern.test(text)) {
-      errors.push(`${path.relative(process.cwd(), file)} contains forbidden ${rule.label}`);
+      // If inspecting entities.json or public-graph.json, find matching entity ID
+      if (file.endsWith("entities.json")) {
+        const matchingEntities = entities.filter((e) => rule.pattern.test(JSON.stringify(e)));
+        const offendingIds = matchingEntities.slice(0, 5).map((e) => e.id).join(", ");
+        errors.push(`${relFile} contains forbidden ${rule.label} in entity ID(s): [${offendingIds}]`);
+      } else {
+        errors.push(`${relFile} contains forbidden ${rule.label}`);
+      }
     }
   }
 }
