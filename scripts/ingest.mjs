@@ -39,12 +39,7 @@ const LIMIT    = (() => {
   return f ? Number.parseInt(f.split("=")[1], 10) : Infinity;
 })();
 
-if (positional.length === 0) {
-  console.error("Usage: node scripts/ingest.mjs <input.jsonl> [--dry-run] [--limit=N] [--no-model]");
-  process.exit(1);
-}
-
-const INPUT_PATH = path.resolve(positional[0]);
+const INPUT_PATH = path.resolve(positional[0] ?? "hugin/samples_normalized.jsonl");
 if (!fs.existsSync(INPUT_PATH)) {
   console.error(`Input not found: ${INPUT_PATH}`);
   process.exit(1);
@@ -68,12 +63,15 @@ function truncate(value, len = 300) {
 
 // ── Sanitization (inline, no dep on sanitize.mjs for portability) ─────────────
 const SANITIZE_RULES = [
-  [/\b(?:OSED|OSEP|OSCP|OSWA|OSWP|PEN-200|PEN200|EXP-312|WEB-200|WEB200)\b/gi, "Source A"],
-  [/\bSANS[- ]?SEC\d{3}\b/gi, "Source B"],
-  [/\bCRTO\d?\b|\bCRTE\b|\bMalDev(?:Academy)?\b/gi, "Source B"],
-  [/\bOffensive\s+Security\b|\bOffSec\b/gi, "Source C"],
   [/https?:\/\/\S*(?:offsec\.com|offensive-security\.com|maldevacademy\.com|sans\.org)\S*/gi, "[private-url]"],
   [/\bAKI[A-Z0-9]{16,}\b/g, "[aws-key-id]"],
+  [/\b(?:OSED|OSEP|OSCP|OSWA|OSWP|PEN-200|PEN200|EXP-312|WEB-200|WEB200)\b/gi, "Source A"],
+  [/\bSANS[- ]?SEC\d{3}\b/gi, "Source B"],
+  [/\bCRTO\d?\b|\bCRTE\b/gi, "Source B"],
+  [/maldev[a-z0-9_-]*/gi, "Source B"],
+  [/\bOffensive\s+Security\b/gi, "Source C"],
+  [/(?:fake)?offensive-security\.(?:com|net|org)/gi, "[private-domain]"],
+  [/offsec[a-z0-9_-]*/gi, "Source C"],
   [/\b(?:emiperalta|tamarisk)\b/gi, "operator"],
   [/\bOWN_NOTES\b/gi, "curated-notes"],
 ];
@@ -425,6 +423,22 @@ async function main() {
   // Merge into graph
   graph.nodes    = [...(graph.nodes ?? []), ...newNodes];
   graph.contents = { ...(graph.contents ?? {}), ...newContents };
+
+  const coreCount        = graph.nodes.filter((n) => n.publishState === "core").length;
+  const supportCount     = graph.nodes.filter((n) => n.publishState === "support").length;
+  const evidenceCount    = graph.nodes.filter((n) => n.publishState === "evidence").length;
+  const quarantinedCount = graph.nodes.filter((n) => n.publishState === "quarantined").length;
+
+  graph.quality = {
+    ...(graph.quality || {}),
+    states: {
+      core: coreCount,
+      support: supportCount,
+      evidence: evidenceCount,
+      quarantined: quarantinedCount,
+    },
+  };
+
   graph.rawCounts = {
     nodes:     graph.nodes.length,
     relations: (graph.edges ?? []).length,

@@ -12,15 +12,15 @@ const anonymousSourceUrl = /https?:\/\/(?:www\.)?(?:linktr\.ee\/offsecexam|sans\
 
 export function anonymizeSourceNames(value) {
   return String(value || "")
-    .replace(/https?:\/\/[^\s)\]}>"']*offsec[^\s)\]}>"']*/gi, "[private-source]")
+    .replace(/https?:\/\/[^\s)\]}>"']*(?:offsec|maldev|sans|linktree)[^\s)\]}>"']*/gi, "[private-source]")
     .replace(/\bSANS\s+SEC\d{3}(?:\.\d+)?\b/gi, "Source A")
     .replace(/\bSEC\d{3}(?:\.\d+)?\b/gi, "Source A")
     .replace(/\bSANS(?:\s+Institute)?\b/gi, "Source A")
-    .replace(/\bCertified\s+Red\s+Team\s+Operator\b|\bCRTO\b/gi, "Source B")
-    .replace(/\bMalDev(?:[_ -]*Academy)?\b/gi, "Source B")
-    .replace(/\bOffensive\s+Security\b|\bOffSec(?:[_ -]*[A-Za-z]+)?\b/gi, "Source B")
-    .replace(/OffSec/gi, "research")
-    .replace(/\b(Source [AB])(?:\s+\1)+\b/gi, "$1");
+    .replace(/\bCertified\s+Red\s+Team\s+Operator\b|\bCRTO\d?\b|\bCRTE\b/gi, "Source B")
+    .replace(/maldev[a-z0-9_-]*/gi, "Source B")
+    .replace(/\bOffensive\s+Security\b/gi, "Source C")
+    .replace(/offsec[a-z0-9_-]*/gi, "Source C")
+    .replace(/\b(Source [A-C])(?:\s+\1)+\b/gi, "$1");
 }
 
 export function sanitizeString(value) {

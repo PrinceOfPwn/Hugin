@@ -107,13 +107,12 @@ const TEXT_RULES = [
   [/\bSANS(?:\s+Institute)?\b/gi, "Source B"],
   [/\bCRTO\d?\b/gi, "Source B"],
   [/\bCRTE\b/gi, "Source B"],
-  [/\bMalDev(?:[_ -]*(?:Academy|Malware))?\b/gi, "Source B"],
-  // Domain patterns without https:// prefix
-  [/(?<![a-zA-Z0-9])offensive-security\.com/gi, "[private-domain]"],
+  [/maldev[a-z0-9_-]*/gi, "Source B"],
   [/\bCertified\s+Red\s+Team(?:\s+Operator)?\b/gi, "Source B"],
-  // OffSec / Offensive Security as organization name
+  // OffSec / Offensive Security variants (catch all substrings including domains and fake domains)
   [/\bOffensive\s+Security\b/gi, "Source C"],
-  [/\bOffSec\b/gi, "Source C"],
+  [/(?:fake)?offensive-security\.(?:com|net|org)/gi, "[private-domain]"],
+  [/offsec[a-z0-9_-]*/gi, "Source C"],
   // Local filesystem paths
   [/\/(?:Users|home)\/[^\s/]+\/[^\s)\]}"']+/g, "[private-path]"],
   [/[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)[^\s)\]}"']+/g, "[private-path]"],
