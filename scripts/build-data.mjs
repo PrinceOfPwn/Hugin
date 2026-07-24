@@ -21,7 +21,8 @@ const GALAXY_DEFS = [
   ["evidence", "Evidence & Research Notes", "Curated synthesis, LGTM notes, and supporting observations.", "#b95f6b"],
   ["sources", "Source & Documentation", "Anonymous implementation sources and documentation.", "#6f7898"],
   ["gaps", "Research Gaps", "Open questions, proposals, and coverage gaps.", "#b89b5d"],
-  ["architecture", "Architecture & Patterns", "System architecture, reusable patterns, and maps.", "#9b6ca8"]
+  ["architecture", "Architecture & Patterns", "System architecture, reusable patterns, and maps.", "#9b6ca8"],
+  ["tradecraft_qa", "Tradecraft Q&A", "Operator-curated technical research notes: scenarios, full analysis, and MITRE coverage.", "#00e5bf"]
 ];
 
 const sha256 = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
@@ -61,6 +62,7 @@ function humanize(value) {
 }
 
 function galaxyFor(node) {
+  if (node.type === "tradecraft_qa" || node.galaxyId === "tradecraft_qa") return "tradecraft_qa";
   if (["technique", "playbook"].includes(node.type)) return "techniques";
   if (node.type === "concept") return "internals";
   if (node.type === "detection") return "defenses";
@@ -79,7 +81,8 @@ function routeFor(kind, slug) {
     playbook: "techniques",
     concept: "concepts",
     detection: "detections",
-    chain: "chains"
+    chain: "chains",
+    tradecraft_qa: "tradecraft"
   };
   return `/${roots[kind] ?? "entities"}/${slug}/`;
 }
@@ -253,47 +256,77 @@ function lexicalVector(text) {
   return Array.from(vector, (value) => value / norm);
 }
 
-async function createEmbeddings(texts) {
-  const engine = process.env.HUGIN_SIMILARITY_ENGINE || "transformers";
-  if (engine === "lexical") {
-    return { vectors: texts.map(lexicalVector), engine: "lexical-local" };
+const engine = process.env.HUGIN_SIMILARITY_ENGINE || "transformers";
+const engineTag = engine === "lexical" ? "lexical" : "minilm-q8";
+
+async function createEmbeddings(entitiesList) {
+  const cacheFile = path.resolve(".cache", `vector-store-${engineTag}-${shortHash(REVISION)}.json`);
+  fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+
+  let vectorStore = {};
+  if (fs.existsSync(cacheFile)) {
+    try {
+      vectorStore = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+    } catch {
+      vectorStore = {};
+    }
   }
 
-  const { env, pipeline } = await import("@huggingface/transformers");
-  env.cacheDir = path.resolve(process.env.HUGIN_MODEL_CACHE || ".hf-cache");
-  env.useFSCache = true;
-  env.allowRemoteModels = true;
-  const extractor = await pipeline("feature-extraction", MODEL, {
-    revision: REVISION,
-    dtype: "q8"
+  const items = entitiesList.map((entity) => {
+    const text = embeddingText(entity);
+    const key = sha256(`${entity.id}:${text}`);
+    return { entity, text, key };
   });
-  const vectors = [];
-  try {
-    for (let start = 0; start < texts.length; start += 64) {
-      const result = await extractor(texts.slice(start, start + 64), {
-        pooling: "mean",
-        normalize: true
+
+  const missing = items.filter((item) => !vectorStore[item.key]);
+
+  if (missing.length > 0) {
+    console.log(`Embedding ${missing.length} new/updated entities (${items.length - missing.length} cached)...`);
+
+    if (engine === "lexical") {
+      for (const item of missing) {
+        vectorStore[item.key] = lexicalVector(item.text);
+      }
+    } else {
+      const { env, pipeline } = await import("@huggingface/transformers");
+      env.cacheDir = path.resolve(process.env.HUGIN_MODEL_CACHE || ".hf-cache");
+      env.useFSCache = true;
+      env.allowRemoteModels = true;
+      const extractor = await pipeline("feature-extraction", MODEL, {
+        revision: REVISION,
+        dtype: "q8"
       });
-      vectors.push(...result.tolist());
-      console.log(`Embedded ${Math.min(start + 64, texts.length)}/${texts.length}`);
+      try {
+        const batchSize = 64;
+        for (let start = 0; start < missing.length; start += batchSize) {
+          const batch = missing.slice(start, start + batchSize);
+          const result = await extractor(batch.map((b) => b.text), {
+            pooling: "mean",
+            normalize: true
+          });
+          const list = result.tolist();
+          batch.forEach((item, i) => {
+            vectorStore[item.key] = list[i];
+          });
+          console.log(`Embedded ${Math.min(start + batchSize, missing.length)}/${missing.length} new items`);
+        }
+      } finally {
+        await extractor.dispose();
+      }
     }
-  } finally {
-    await extractor.dispose();
+
+    writeJson(cacheFile, vectorStore);
+  } else {
+    console.log(`All ${items.length} entity embeddings loaded from incremental cache.`);
   }
-  return { vectors, engine: MODEL };
+
+  const vectors = items.map((item) => vectorStore[item.key]);
+  return { vectors, engine: engine === "lexical" ? "lexical-local" : MODEL };
 }
 
 const texts = embeddingEntities.map(embeddingText);
 const corpusHash = sha256(texts.join("\n"));
-const embeddingCache = path.resolve(".cache", `embeddings-${corpusHash}-${shortHash(REVISION)}-q8.json`);
-let embeddings;
-if (fs.existsSync(embeddingCache)) {
-  embeddings = JSON.parse(fs.readFileSync(embeddingCache, "utf8"));
-} else {
-  embeddings = await createEmbeddings(texts);
-  fs.mkdirSync(path.dirname(embeddingCache), { recursive: true });
-  writeJson(embeddingCache, embeddings);
-}
+const embeddings = await createEmbeddings(embeddingEntities);
 
 const buckets = new Map();
 for (const entity of embeddingEntities) {

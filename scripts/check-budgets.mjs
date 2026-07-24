@@ -13,9 +13,26 @@ const check = (label, file, limit) => {
 
 check("Dashboard HTML", path.join(dist, "index.html"), 100 * 1024);
 const dataDir = path.join(dist, "data");
+if (!fs.existsSync(dataDir)) {
+  console.error(`Data directory not found: ${dataDir}. Run npm run build first.`);
+  process.exit(1);
+}
 const files = fs.readdirSync(dataDir);
-check("Graph base", path.join(dataDir, files.find((file) => file.startsWith("graph."))), 1024 * 1024);
-check("Similarity", path.join(dataDir, files.find((file) => file.startsWith("similarity."))), 1536 * 1024);
+
+const graphFile = files.find((file) => file.startsWith("graph."));
+if (!graphFile) {
+  console.error("Missing graph dataset file (graph.*.json) in dist/data");
+  process.exit(1);
+}
+
+const similarityFile = files.find((file) => file.startsWith("similarity."));
+if (!similarityFile) {
+  console.error("Missing similarity dataset file (similarity.*.json) in dist/data");
+  process.exit(1);
+}
+
+check("Graph base", path.join(dataDir, graphFile), 1024 * 1024);
+check("Similarity", path.join(dataDir, similarityFile), 1536 * 1024);
 for (const file of files.filter((name) => name.startsWith("content-"))) {
   if (gzipSize(path.join(dataDir, file)) > 200 * 1024) failures.push(`${file} exceeds 200 KiB gzip`);
 }
