@@ -14,7 +14,8 @@ const galaxyPositions = [
   [50, 90],
   [22, 82],
   [12, 53],
-  [22, 24]
+  [22, 24],
+  [50, 50],  // tradecraft_qa — centre
 ];
 const jsonLd = {
   "@context": "https://schema.org",
@@ -62,7 +63,7 @@ const jsonLd = {
           <a
             class="preview-galaxy"
             href={`/Hugin/graph/?galaxy=${galaxy.id}`}
-            style={`--galaxy-color:${galaxy.color};left:${galaxyPositions[index][0]}%;top:${galaxyPositions[index][1]}%`}
+          style={`--galaxy-color:${galaxy.color};left:${(galaxyPositions[index] ?? [50,50])[0]}%;top:${(galaxyPositions[index] ?? [50,50])[1]}%`}
           >
             <strong>{galaxy.name}</strong>
             <small>{galaxy.count.toLocaleString()} nodes</small>

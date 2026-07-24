@@ -14,7 +14,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -28,6 +28,8 @@ jobs:
             .cache
           key: hugin-minilm-q8-${{ hashFiles('data/source/public-graph.json', 'scripts/build-data.mjs', 'package-lock.json') }}
       - run: npm ci
+      - name: Import sanitized QA samples into graph
+        run: node scripts/import-qa.mjs hugin/samples_normalized.jsonl
       - env:
           HUGIN_SIMILARITY_ENGINE: transformers
           HUGIN_MODEL_CACHE: .hf-cache
