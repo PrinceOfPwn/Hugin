@@ -63,21 +63,6 @@ const CERT_MAP = {
   "maldev-academy":"Source B",
 };
 
-const MODEL_MAP = {
-  // Model names → generic identifiers
-  "alibaba/qwen3.6-plus":         "model-a",
-  "grok-4.3":                     "model-b",
-  "mimo-v2.5-pro":                "model-c",
-  "claude-sonnet-4-6":            "model-d",
-  "claude-sonnet-4-5":            "model-d",
-  "qwen3.6:27b-q4_k_m":          "model-e",
-  "external-premium-curator":     "model-f",
-  "gemini-3.5-flash":             "model-g",
-  "gemini-3.6-flash":             "model-g",
-  "deepseek-v4-pro":              "model-h",
-  "deepseek-v3":                  "model-h",
-};
-
 function anonCert(raw) {
   if (!raw) return null;
   const key = String(raw).toLowerCase().trim();
