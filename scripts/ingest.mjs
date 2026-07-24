@@ -203,8 +203,7 @@ async function loadModel() {
 }
 
 async function enrichWithModel(extracted) {
-  const { prompt, answer, task } = extracted;
-  const rawText = `${prompt}\n\n${answer}`.slice(0, 2000); // cap to avoid OOM
+  const { prompt, answer } = extracted;
 
   const systemPrompt = `You are a cybersecurity knowledge base assistant. Given a technical Q&A record, output a JSON object with:
 - "summary": 2-sentence technical summary (plain text, no markdown, max 200 chars)

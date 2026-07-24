@@ -41,6 +41,7 @@ jobs:
           path: |
             src/generated
             public/data
+            data/source/public-graph.json
           retention-days: 1
 
   build:
