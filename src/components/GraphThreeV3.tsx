@@ -69,44 +69,67 @@ const NOISE_EDGE = new Set(["similar_to"]);
 //  Guaranteed to spread nodes evenly, never collapses, O(N).
 // ═════════════════════════════════════════════════════════════════════════════
 
-function shortHash(s: string): number {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return (h >>> 0) / 0xffffffff;
-}
-function derivedPositions(nodes: GraphNodeIn[]): Map<string, THREE.Vector3> {
-  const perGalaxy = new Map<string, number>();
-  for (const n of nodes) if (!n.isGalaxy) perGalaxy.set(n.galaxyId, (perGalaxy.get(n.galaxyId) || 0) + 1);
+function compute3DLayout(nodes: GraphNodeIn[], edges: GraphEdgeIn[]): Map<string, THREE.Vector3> {
+  type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number };
+  const particles = new Map<string, Particle>();
 
-  const radius = new Map<string, number>();
-  for (const [g, c] of perGalaxy) radius.set(g, 90 + Math.cbrt(c) * 28);
-
-  const cursor = new Map<string, number>();
-  const result = new Map<string, THREE.Vector3>();
-  const sorted = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
-
-  for (const n of sorted) {
-    if (n.isGalaxy) {
-      const c = GALAXY_CENTERS[n.galaxyId] ?? [0, 0, 0];
-      result.set(n.id, new THREE.Vector3(c[0], c[1], c[2]));
-      continue;
-    }
+  nodes.forEach((n) => {
     const c = GALAXY_CENTERS[n.galaxyId] ?? [0, 0, 0];
-    const R = radius.get(n.galaxyId) ?? 140;
-    const idx   = cursor.get(n.galaxyId) ?? 0;
-    const total = perGalaxy.get(n.galaxyId) ?? 1;
-    cursor.set(n.galaxyId, idx + 1);
+    const spread = n.isGalaxy ? 10 : n.scope === "evidence" ? 80 : 160;
+    particles.set(n.id, {
+      x: c[0] + (Math.random() - 0.5) * spread,
+      y: c[1] + (Math.random() - 0.5) * spread,
+      z: c[2] + (Math.random() - 0.5) * spread,
+      vx: 0, vy: 0, vz: 0,
+    });
+  });
 
-    const phi   = Math.acos(1 - 2 * (idx + 0.5) / total);
-    const theta = Math.PI * (1 + Math.sqrt(5)) * idx;
-    const jitter = 0.6 + shortHash(n.id + ":r") * 0.4;
-    const r = R * jitter;
-    result.set(n.id, new THREE.Vector3(
-      c[0] + r * Math.sin(phi) * Math.cos(theta),
-      c[1] + r * Math.sin(phi) * Math.sin(theta),
-      c[2] + r * Math.cos(phi),
-    ));
+  const adj = new Map<string, string[]>();
+  nodes.forEach((n) => adj.set(n.id, []));
+  edges.forEach((e) => {
+    adj.get(e.source)?.push(e.target);
+    adj.get(e.target)?.push(e.source);
+  });
+
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const SPRING_K = 0.009;
+  const REST = 72;
+  const GAL_K = 0.004;
+  const DAMP = 0.80;
+  const ITERS = 80;
+
+  for (let iter = 0; iter < ITERS; iter++) {
+    const alpha = Math.pow(1 - iter / ITERS, 1.4);
+
+    particles.forEach((p, id) => {
+      let fx = 0, fy = 0, fz = 0;
+
+      for (const nid of adj.get(id) ?? []) {
+        const q = particles.get(nid);
+        if (!q) continue;
+        const dx = q.x - p.x, dy = q.y - p.y, dz = q.z - p.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.01;
+        const f = SPRING_K * (dist - REST) / dist;
+        fx += f * dx; fy += f * dy; fz += f * dz;
+      }
+
+      const gid = nodeById.get(id)?.galaxyId ?? "";
+      const [cx, cy, cz] = GALAXY_CENTERS[gid] ?? [0, 0, 0];
+      fx += (cx - p.x) * GAL_K * alpha;
+      fy += (cy - p.y) * GAL_K * alpha;
+      fz += (cz - p.z) * GAL_K * alpha;
+
+      p.vx = (p.vx + fx) * DAMP;
+      p.vy = (p.vy + fy) * DAMP;
+      p.vz = (p.vz + fz) * DAMP;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.z += p.vz;
+    });
   }
+
+  const result = new Map<string, THREE.Vector3>();
+  particles.forEach((p, id) => result.set(id, new THREE.Vector3(p.x, p.y, p.z)));
   return result;
 }
 
@@ -215,7 +238,7 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
         return m;
       }
     }
-    return derivedPositions(graphData.nodes);
+    return compute3DLayout(graphData.nodes, graphData.edges);
   }, [graphData]);
 
   // ─── Adjacency (curated only, no similarity noise) ────────────────────────
@@ -391,6 +414,12 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
           <Stars radius={800} depth={200} count={5000} factor={5} saturation={0} fade speed={0.3} />
 
           <GalaxyOrbs onSelect={handleGalaxyClick} />
+
+          <EdgeSet
+            edges={graphData.edges.filter((e) => !NOISE_EDGE.has(e.type))}
+            positions={positionsMap}
+            opacity={0.06}
+          />
 
           <NodeCloud
             nodes={visibleNodes}
