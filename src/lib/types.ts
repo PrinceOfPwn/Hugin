@@ -75,11 +75,18 @@ export interface DatasetManifest {
     quarantinedRelations: number;
     uniqueBodies: number;
     galaxies: number;
+    // AI pipeline fields (0 until enrich workflow runs)
+    aiEnrichedEntities?: number;
+    inferredRelations?: number;
+    bridgeConcepts?: number;
   };
   assets: Record<string, string>;
   similarityModel: string;
   similarityRevision: string;
   corpusHash: string;
+  // AI pipeline top-level fields
+  aiModel?: string;
+  topBridges?: string[];
 }
 
 export interface Galaxy {
