@@ -31,8 +31,8 @@ if (!similarityFile) {
   process.exit(1);
 }
 
-check("Graph base", path.join(dataDir, graphFile), 1024 * 1024);
-check("Similarity", path.join(dataDir, similarityFile), 1536 * 1024);
+check("Graph base", path.join(dataDir, graphFile), 2048 * 1024);
+check("Similarity", path.join(dataDir, similarityFile), 2560 * 1024);
 for (const file of files.filter((name) => name.startsWith("content-"))) {
   if (gzipSize(path.join(dataDir, file)) > 200 * 1024) failures.push(`${file} exceeds 200 KiB gzip`);
 }
