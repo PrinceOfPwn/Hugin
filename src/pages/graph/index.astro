@@ -2,20 +2,16 @@
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import GraphThreeV3 from "../../components/GraphThreeV3";
 import { manifest, entities, curatedRelations } from "../../lib/data";
+import fs from "node:fs";
+import path from "node:path";
 
-// Build the graphData prop that GraphThreeV3 expects.
-// positions is a Map<id, THREE.Vector3> — we pass it as a serialisable plain
-// object and let the component deserialise it (V3 accepts Map OR plain object
-// because it reads graphData.positions.get(id) which works on Map).
-// We ship everything except the Map constructor here; the component fills
-// positions from the x/y/z baked into each node (see GraphThreeV3 comment).
-//
-// GraphThreeV3 type: graphData: { nodes, edges, positions: Map<string, Vector3> }
-// The positions Map is built client-side inside GraphThreeV3 from node.x/y coords.
-// We pass nodes with {x,y} and an empty Map; V3 will coerce correctly because
-// it calls `graphData.positions.get(id) ?? new THREE.Vector3()` and falls back
-// gracefully. To give it real positions we build them here as a plain object
-// (Astro serialises the prop to JSON so Map isn't available) and reconstruct.
+// Load pre-computed 3D positions from build-data.mjs output.
+// Falls back to empty object if file doesn't exist yet (first-run or local dev).
+const posFile = path.resolve("src/generated/graph-positions.json");
+const rawPositions: Record<string, { x: number; y: number; z: number }> =
+  fs.existsSync(posFile)
+    ? JSON.parse(fs.readFileSync(posFile, "utf8"))
+    : {};
 
 const graphNodes = entities.map((e) => ({
   id: e.id,
@@ -39,10 +35,9 @@ const graphEdges = curatedRelations.map((r) => ({
   type: r.type,
 }));
 
-// Positions are built client-side by GraphThreeV3 — pass as empty object,
-// component will fall back to THREE.Vector3(0,0,0) per node then layout
-// applies. The actual 3D layout is computed in the component itself.
-const graphData = { nodes: graphNodes, edges: graphEdges, positions: {} };
+// Pass positions as a plain {id:{x,y,z}} record — GraphThreeV3 converts it
+// to a Map<string, THREE.Vector3> internally.
+const graphData = { nodes: graphNodes, edges: graphEdges, positions: rawPositions };
 ---
 
 <BaseLayout

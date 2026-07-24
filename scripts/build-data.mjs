@@ -528,12 +528,20 @@ const galaxies = GALAXY_DEFS.map(([id, name, description, color]) => ({
   supportCount: entities.filter((entity) => entity.galaxyId === id && entity.publishState === "support").length
 }));
 
+// Galaxy Z-centers must match GraphThreeV3 GALAXY_CENTERS for visual alignment
+const GALAXY_Z = {
+  techniques: 60, internals: -80, defenses: 40, chains: 120,
+  evidence: -260, sources: 220, gaps: -180, architecture: -140, tradecraft_qa: 150,
+};
+
 const entityGraphNodes = entities.map((entity) => {
   const galaxy = galaxyIndex.get(entity.galaxyId);
   const baseAngle = (Math.PI * 2 * galaxy) / GALAXY_DEFS.length;
   const localAngle = ((Number.parseInt(shortHash(entity.id, 8), 16) % 100000) / 100000) * Math.PI * 2;
   const radius = 52 + (Number.parseInt(shortHash(`${entity.id}:r`, 6), 16) % 176);
   const centerRadius = 455;
+  const zCenter = GALAXY_Z[entity.galaxyId] ?? 0;
+  const zSpread = (Number.parseInt(shortHash(`${entity.id}:z`, 6), 16) % 100) - 50;
   return {
     id: entity.id,
     label: entity.title,
@@ -546,6 +554,7 @@ const entityGraphNodes = entities.map((entity) => {
     degree: entity.degree,
     x: Number((Math.cos(baseAngle) * centerRadius + Math.cos(localAngle) * radius).toFixed(3)),
     y: Number((Math.sin(baseAngle) * centerRadius + Math.sin(localAngle) * radius).toFixed(3)),
+    z: Number((zCenter + zSpread).toFixed(3)),
     size: Math.min(11, 2.1 + Math.log2(entity.degree + 1)),
     color: GALAXY_DEFS[galaxy][3]
   };
@@ -660,5 +669,10 @@ writeJson(path.join(GENERATED, "bodies.json"), bodies);
 writeJson(path.join(GENERATED, "evidence.json"), evidence);
 writeJson(path.join(GENERATED, "evidence-by-entity.json"), evidenceByEntity);
 writeJson(path.join(GENERATED, "quality.json"), assetPayloads.quality);
+// Slim position map: id → {x,y,z} — consumed by the 3D graph page
+const graphPositions = Object.fromEntries(
+  entityGraphNodes.map(({ id, x, y, z }) => [id, { x, y, z }])
+);
+writeJson(path.join(GENERATED, "graph-positions.json"), graphPositions);
 
 console.log(JSON.stringify(manifest, null, 2));
