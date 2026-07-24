@@ -239,6 +239,21 @@ graph.nodes = [...(graph.nodes || []), ...newNodes];
 graph.edges = [...(graph.edges || []), ...newEdges];
 graph.contents = { ...(graph.contents || {}), ...newContents };
 
+const coreCount        = graph.nodes.filter((n) => n.publishState === "core").length;
+const supportCount     = graph.nodes.filter((n) => n.publishState === "support").length;
+const evidenceCount    = graph.nodes.filter((n) => n.publishState === "evidence").length;
+const quarantinedCount = graph.nodes.filter((n) => n.publishState === "quarantined").length;
+
+graph.quality = {
+  ...(graph.quality || {}),
+  states: {
+    core: coreCount,
+    support: supportCount,
+    evidence: evidenceCount,
+    quarantined: quarantinedCount,
+  },
+};
+
 // Patch rawCounts so build-data.mjs doesn't reject the file
 graph.rawCounts = {
   nodes: graph.nodes.length,
