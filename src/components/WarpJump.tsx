@@ -197,7 +197,7 @@ const WarpJump: React.FC<WarpJumpProps> = ({
         pulseRef.current.lookAt(camera.position);
         const s = THREE.MathUtils.lerp(40, 1, e);
         pulseRef.current.scale.setScalar(s);
-        (pulseRef.current.material as THREE.MeshBasicMaterial).opacity = 1.0 - lt;
+        (pulseRef.current.material as THREE.Material).opacity = 1.0 - lt;
       }
     } else {
       if (pulseRef.current) pulseRef.current.visible = false;
@@ -238,7 +238,7 @@ const WarpJump: React.FC<WarpJumpProps> = ({
           shockRef.current.position.copy(startTo.current);
           shockRef.current.lookAt(camera.position);
           shockRef.current.scale.setScalar(1 + lt * 40);
-          (shockRef.current.material as THREE.MeshBasicMaterial).opacity = 1.0 - lt;
+          (shockRef.current.material as THREE.Material).opacity = 1.0 - lt;
         }
       }
     }
@@ -267,7 +267,7 @@ const WarpJump: React.FC<WarpJumpProps> = ({
     
     // Update Flash
     if (flashRef.current) {
-      (flashRef.current.material as THREE.MeshBasicMaterial).opacity = flashIntensity;
+      (flashRef.current.material as THREE.Material).opacity = flashIntensity;
     }
     
     // Update Chromatic Aberration
