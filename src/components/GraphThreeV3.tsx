@@ -115,14 +115,14 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
   const [camVelocity, setCamVelocity] = useState(0);
   const controlsRef = useRef<CameraControls>(null);
 
-  // Normalise positions: accept Map, plain {id:{x,y,z}} record, or empty object.
-  // When positions is empty (Astro page passes {}) we compute 3D layout from
-  // galaxy centers + deterministic per-node offsets matching build-data.mjs.
+  // Compute 3D layout using the same spring-physics engine as the original GraphThree.
+  // Runs once (memo) when graphData changes. Accepts pre-built Map, plain {id:{x,y,z}},
+  // or empty {} — in the empty case runs the physics simulation.
   const positionsMap = useMemo<Map<string, THREE.Vector3>>(() => {
     const raw = graphData.positions;
     if (raw instanceof Map) return raw as Map<string, THREE.Vector3>;
 
-    // If it's a non-empty plain record, convert it
+    // Plain record with positions pre-computed (from graph-positions.json)
     const keys = Object.keys(raw);
     if (keys.length > 0) {
       const m = new Map<string, THREE.Vector3>();
@@ -133,31 +133,64 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
       return m;
     }
 
-    // Empty — compute layout from GALAXY_CENTERS + hash-based offsets
-    const m = new Map<string, THREE.Vector3>();
-    const galaxyIds = Object.keys(GALAXY_CENTERS);
-    const nodesByGalaxy = new Map<string, string[]>();
-    for (const n of graphData.nodes) {
-      if (!nodesByGalaxy.has(n.galaxyId)) nodesByGalaxy.set(n.galaxyId, []);
-      nodesByGalaxy.get(n.galaxyId)!.push(n.id);
-    }
-    for (const gId of galaxyIds) {
-      const center = GALAXY_CENTERS[gId] ?? [0, 0, 0];
-      const members = nodesByGalaxy.get(gId) ?? [];
-      members.forEach((id, i) => {
-        const angle = (i / Math.max(members.length, 1)) * Math.PI * 2;
-        const radius = 40 + (id.charCodeAt(0) % 80);
-        m.set(id, new THREE.Vector3(
-          center[0] + Math.cos(angle) * radius,
-          center[1] + (id.charCodeAt(1) % 30) - 15,
-          center[2] + Math.sin(angle) * radius,
-        ));
+    // Empty — run spring-physics layout (same as original GraphThree.tsx)
+    type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number };
+    const particles = new Map<string, Particle>();
+    graphData.nodes.forEach((n) => {
+      const c = GALAXY_CENTERS[n.galaxyId] ?? [0, 0, 0];
+      const spread = n.isGalaxy ? 10 : 160;
+      particles.set(n.id, {
+        x: c[0] + (Math.random() - 0.5) * spread,
+        y: c[1] + (Math.random() - 0.5) * spread,
+        z: c[2] + (Math.random() - 0.5) * spread,
+        vx: 0, vy: 0, vz: 0,
+      });
+    });
+
+    // Build adjacency inline for spring simulation
+    const adj = new Map<string, string[]>();
+    graphData.nodes.forEach((n) => adj.set(n.id, []));
+    graphData.edges.forEach((e) => {
+      adj.get(e.source)?.push(e.target);
+      adj.get(e.target)?.push(e.source);
+    });
+
+    const nodeById2 = new Map(graphData.nodes.map((n) => [n.id, n]));
+    const SPRING_K = 0.009, REST = 72, GAL_K = 0.004, DAMP = 0.80, ITERS = 80;
+
+    for (let iter = 0; iter < ITERS; iter++) {
+      const alpha = Math.pow(1 - iter / ITERS, 1.4);
+      particles.forEach((p, id) => {
+        let fx = 0, fy = 0, fz = 0;
+        for (const nid of adj.get(id) ?? []) {
+          const q = particles.get(nid);
+          if (!q) continue;
+          const dx = q.x - p.x, dy = q.y - p.y, dz = q.z - p.z;
+          const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) + 0.01;
+          const f = SPRING_K * (dist - REST) / dist;
+          fx += f * dx; fy += f * dy; fz += f * dz;
+        }
+        const gid = nodeById2.get(id)?.galaxyId ?? "";
+        const [cx, cy, cz] = GALAXY_CENTERS[gid] ?? [0, 0, 0];
+        fx += (cx - p.x) * GAL_K * alpha;
+        fy += (cy - p.y) * GAL_K * alpha;
+        fz += (cz - p.z) * GAL_K * alpha;
+        p.vx = (p.vx + fx) * DAMP;
+        p.vy = (p.vy + fy) * DAMP;
+        p.vz = (p.vz + fz) * DAMP;
+        p.x += p.vx; p.y += p.vy; p.z += p.vz;
       });
     }
-    return m;
+
+    const result = new Map<string, THREE.Vector3>();
+    particles.forEach((p, id) => result.set(id, new THREE.Vector3(p.x, p.y, p.z)));
+    return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphData]);
 
-  // Adjacency & typed adjacency
+  }, [graphData]);
+
+  // Adjacency for interaction (neighborhood mode + shockwave BFS)
   const adjacency = useMemo(() => {
     const a = new Map<string, string[]>();
     graphData.nodes.forEach((n) => a.set(n.id, []));
