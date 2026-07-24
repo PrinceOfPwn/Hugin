@@ -28,8 +28,8 @@ jobs:
             .cache
           key: hugin-minilm-q8-${{ hashFiles('data/source/public-graph.json', 'scripts/build-data.mjs', 'package-lock.json') }}
       - run: npm ci
-      - name: Import sanitized QA samples into graph
-        run: node scripts/import-qa.mjs hugin/samples_normalized.jsonl
+      - name: Ingest sanitized QA samples into graph
+        run: node scripts/ingest.mjs hugin/samples_normalized.jsonl --no-model
       - env:
           HUGIN_SIMILARITY_ENGINE: transformers
           HUGIN_MODEL_CACHE: .hf-cache
