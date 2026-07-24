@@ -188,8 +188,6 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphData]);
 
-  }, [graphData]);
-
   // Adjacency for interaction (neighborhood mode + shockwave BFS)
   const adjacency = useMemo(() => {
     const a = new Map<string, string[]>();
