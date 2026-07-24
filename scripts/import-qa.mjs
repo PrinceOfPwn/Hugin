@@ -242,7 +242,7 @@ graph.contents = { ...(graph.contents || {}), ...newContents };
 const coreCount        = graph.nodes.filter((n) => n.publishState === "core").length;
 const supportCount     = graph.nodes.filter((n) => n.publishState === "support").length;
 const evidenceCount    = graph.nodes.filter((n) => n.publishState === "evidence").length;
-const quarantinedCount = graph.nodes.filter((n) => n.publishState === "quarantined").length;
+const quarantinedCount = (graph.quality?.quarantinedNodes || []).length || (graph.quality?.states?.quarantined ?? 190);
 
 graph.quality = {
   ...(graph.quality || {}),
