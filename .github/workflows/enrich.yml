@@ -56,6 +56,8 @@ jobs:
     timeout-minutes: 340   # 5h40m — allow full re-run headroom; incremental exits in minutes
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0    # needed for rebase-before-push after long runs
 
       - uses: actions/setup-node@v6
         with:
@@ -121,8 +123,17 @@ jobs:
             echo "No enrichment changes."
           else
             COUNT=$(git diff --staged --numstat | wc -l | tr -d ' ')
+            # Enrichment can run for hours; main often advances during that
+            # window. Rebase against remote before pushing, and retry with
+            # a fresh rebase on rejection.
+            git pull --rebase origin main
             git commit -m "enrich: auto-generated ($(date -u +%F) · $COUNT files)"
-            git push
+            for i in 1 2 3; do
+              if git push; then break; fi
+              echo "Push rejected (attempt $i) — pulling and retrying"
+              git pull --rebase origin main
+              sleep 5
+            done
           fi
 
       - name: Upload enrichment summary

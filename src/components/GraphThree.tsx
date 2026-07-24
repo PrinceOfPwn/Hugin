@@ -6,8 +6,8 @@ import {
   useCallback,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Html } from "@react-three/drei";
-import { EffectComposer, Bloom } from "@react-three/postprocessing";
+import { OrbitControls, Html, Stars } from "@react-three/drei";
+import { EffectComposer, Bloom, ChromaticAberration } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { DatasetManifest, EvidenceRecord } from "../lib/types";
 import { parseAndCleanSummary } from "../lib/summaryParser";
@@ -52,27 +52,27 @@ type GraphData = {
 // ─── 3D Layout & Constants ────────────────────────────────────────────────────
 
 const GALAXY_CENTERS: Record<string, [number, number, number]> = {
-  techniques:   [  280,   40,   60],
-  internals:    [ -200,  180,  -80],
-  defenses:     [ -240, -150,   40],
-  chains:       [  100, -220,  120],
-  evidence:     [  -80,   80, -260],
-  sources:      [   60,  200,  220],
-  gaps:         [  200,  -80, -180],
-  architecture: [ -120, -200, -140],
-  tradecraft_qa: [ 0,   300,  150],
+  techniques:    [ 280,   40,   60],
+  internals:     [-200,  180,  -80],
+  defenses:      [-240, -150,   40],
+  chains:        [ 100, -220,  120],
+  evidence:      [ -80,   80, -260],
+  sources:       [  60,  200,  220],
+  gaps:          [ 200,  -80, -180],
+  architecture:  [-120, -200, -140],
+  tradecraft_qa: [   0,  300,  150],
 };
 
 const GALAXY_COLORS: Record<string, string> = {
-  techniques: "#ff0055", // Bright Neon Crimson / Pink
-  internals: "#00f0ff",  // Electric Cyan
-  defenses: "#00ff66",   // Neon Lime Green
-  chains: "#ffb703",     // Electric Gold / Amber
-  evidence: "#00e5ff",   // Bright Turquoise
-  sources: "#e056fd",    // Neon Magenta
-  gaps: "#ff3366",       // Hot Coral
-  architecture: "#9d4edd", // Deep Neon Violet
-  tradecraft_qa: "#00e5bf", // Bright Neon Teal
+  techniques: "#ff0055",
+  internals: "#00f0ff",
+  defenses: "#00ff66",
+  chains: "#ffb703",
+  evidence: "#00e5ff",
+  sources: "#e056fd",
+  gaps: "#ff3366",
+  architecture: "#9d4edd",
+  tradecraft_qa: "#00e5bf",
 };
 
 function compute3DLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, THREE.Vector3> {
@@ -143,32 +143,30 @@ function compute3DLayout(nodes: GraphNode[], edges: GraphEdge[]): Map<string, TH
 
 const SPHERE = new THREE.SphereGeometry(1, 12, 8);
 
-// ─── Galaxy Clouds (Animación de Fondo) ───────────────────────────────────────
+// ─── Galaxy Clouds (Spiral Particles) ─────────────────────────────────────────
 
 function GalaxyCloud({ center, color }: { center: [number, number, number], color: string }) {
   const ref = useRef<THREE.Points>(null);
 
   const [geo, mat] = useMemo(() => {
-    const N = 1500;
+    const N = 2000;
     const pos = new Float32Array(N * 3);
     const col = new Float32Array(N * 3);
     const c = new THREE.Color(color);
 
     for (let i = 0; i < N; i++) {
-      // Distribución espiral para efecto galaxia
       const r = Math.pow(Math.random(), 0.5) * 140;
       const branchAngle = Math.random() * Math.PI * 2;
-      const spinAngle = r * 0.04; // Fuerza de los brazos espirales
+      const spinAngle = r * 0.04;
       
       const randomX = (Math.random() - 0.5) * 20 * (1 - r / 140);
-      const randomY = (Math.random() - 0.5) * 12 * (1 - r / 140); // Aplanado en Y
+      const randomY = (Math.random() - 0.5) * 12 * (1 - r / 140);
       const randomZ = (Math.random() - 0.5) * 20 * (1 - r / 140);
 
       pos[i * 3]     = Math.cos(branchAngle + spinAngle) * r + randomX;
       pos[i * 3 + 1] = randomY;
       pos[i * 3 + 2] = Math.sin(branchAngle + spinAngle) * r + randomZ;
 
-      // Degradar el color hacia el borde
       const fade = 1 - r / 140;
       col[i * 3]     = c.r * fade;
       col[i * 3 + 1] = c.g * fade;
@@ -184,8 +182,8 @@ function GalaxyCloud({ center, color }: { center: [number, number, number], colo
       sizeAttenuation: true,
       vertexColors: true,
       transparent: true,
-      opacity: 0.4,
-      blending: THREE.AdditiveBlending, // Brillo aditivo
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     return [g, m] as const;
@@ -194,7 +192,6 @@ function GalaxyCloud({ center, color }: { center: [number, number, number], colo
   useFrame(({ clock }) => {
     if (ref.current) {
       const t = clock.getElapsedTime();
-      // Rotación lenta de la galaxia sobre su eje
       ref.current.rotation.y = t * 0.05;
     }
   });
@@ -210,48 +207,6 @@ function GalaxyClouds() {
       ))}
     </>
   );
-}
-
-// ─── Star field ───────────────────────────────────────────────────────────────
-
-function StarField() {
-  const ref = useRef<THREE.Points>(null);
-
-  const [geo, mat] = useMemo(() => {
-    const N = 4000;
-    const pos = new Float32Array(N * 3);
-    const col = new Float32Array(N * 3);
-    for (let i = 0; i < N; i++) {
-      const r = 650 + Math.random() * 450;
-      const th = Math.random() * Math.PI * 2;
-      const ph = Math.acos(2 * Math.random() - 1);
-      pos[i * 3]     = r * Math.sin(ph) * Math.cos(th);
-      pos[i * 3 + 1] = r * Math.sin(ph) * Math.sin(th);
-      pos[i * 3 + 2] = r * Math.cos(ph);
-
-      const t = Math.random();
-      col[i * 3]     = 0.4 + t * 0.4;
-      col[i * 3 + 1] = 0.4 + t * 0.3;
-      col[i * 3 + 2] = 0.6 + t * 0.4;
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-    const m = new THREE.PointsMaterial({
-      size: 1.2,
-      sizeAttenuation: true,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.8,
-    });
-    return [g, m] as const;
-  }, []);
-
-  useFrame(({ clock }) => {
-    if (ref.current) ref.current.rotation.y = clock.getElapsedTime() * 0.005;
-  });
-
-  return <points ref={ref} geometry={geo} material={mat} />;
 }
 
 // ─── Node instanced mesh ──────────────────────────────────────────────────────
@@ -285,14 +240,14 @@ function GraphNodes({
     [hoveredNode, positions]
   );
 
-  // Material estandarizado con Tone Mapping correcto para que no sature a blanco
   const mat = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        roughness: 0.35,
-        metalness: 0.15,
-        toneMapped: true,
-        emissiveIntensity: 0.8, 
+        roughness: 0.2,
+        metalness: 0.1,
+        toneMapped: false,
+        emissive: new THREE.Color(0xffffff),
+        emissiveIntensity: 1.5,
       }),
     []
   );
@@ -323,7 +278,6 @@ function GraphNodes({
     const m = new THREE.Matrix4();
     const color = new THREE.Color();
     const WHITE = new THREE.Color(0xffffff);
-    const SELECTED_COLOR = new THREE.Color(0xff8899);
 
     nodes.forEach((n, i) => {
       const pos = positions.get(n.id) ?? new THREE.Vector3();
@@ -335,12 +289,17 @@ function GraphNodes({
       const floatX = Math.cos(t * 0.22 + phases[i] * 0.7) * 0.8;
 
       let s = n.scope === "evidence" ? 2.2 : Math.max(3.6, n.size * 1.5);
+      let emissive = 1.5;
+
       if (!isVisible) {
         s = 0.001;
+        emissive = 0.0;
       } else if (isSelected) {
-        s *= 2.2 + Math.sin(t * 3.5) * 0.25;
+        s *= 2.2 + Math.sin(t * 4.0) * 0.4;
+        emissive = 4.0;
       } else if (isHovered) {
-        s *= 1.8;
+        s *= 1.8 + Math.sin(t * 6.0) * 0.2;
+        emissive = 3.5;
       }
 
       m.makeScale(s, s, s);
@@ -348,23 +307,20 @@ function GraphNodes({
       mesh.setMatrixAt(i, m);
 
       const baseColorStr = GALAXY_COLORS[n.galaxyId] || n.color;
-      if (isSelected) {
-        color.copy(SELECTED_COLOR);
-        // El emisivo ayuda a que el Bloom lo detecte más fuertemente
-        mesh.material instanceof THREE.MeshStandardMaterial && (mesh.material.emissive = color.clone());
-      } else if (isHovered) {
-        color.set(baseColorStr).lerp(WHITE, 0.4);
-        mesh.material instanceof THREE.MeshStandardMaterial && (mesh.material.emissive = color.clone());
+      if (isSelected || isHovered) {
+        color.set(baseColorStr).lerp(WHITE, 0.8);
       } else {
         color.set(baseColorStr);
-        mesh.material instanceof THREE.MeshStandardMaterial && (mesh.material.emissive = color.clone().multiplyScalar(0.6)); // Brillo base moderado
-        if (!isVisible) color.set(0x05050a);
       }
       mesh.setColorAt(i, color);
     });
 
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    
+    if (mesh.material instanceof THREE.MeshStandardMaterial) {
+      mesh.material.emissiveIntensity = THREE.MathUtils.lerp(mesh.material.emissiveIntensity, 2.0, 0.1);
+    }
   });
 
   const handleMove = useCallback(
@@ -402,22 +358,24 @@ function GraphNodes({
         >
           <div
             style={{
-              background: "rgba(4, 3, 13, 0.92)",
-              border: `1px solid ${GALAXY_COLORS[hoveredNode.galaxyId] || "#38bdf8"}`,
-              boxShadow: `0 0 16px ${GALAXY_COLORS[hoveredNode.galaxyId] || "#38bdf8"}66`,
-              borderRadius: "8px",
-              padding: "8px 14px",
+              background: "rgba(0, 8, 20, 0.85)",
+              border: `1px solid ${GALAXY_COLORS[hoveredNode.galaxyId] || "#00ffff"}`,
+              boxShadow: `0 0 20px ${GALAXY_COLORS[hoveredNode.galaxyId] || "#00ffff"}AA`,
+              borderRadius: "4px",
+              padding: "6px 12px",
               whiteSpace: "nowrap",
-              color: "#ffffff",
-              fontFamily: "Inter, sans-serif",
-              backdropFilter: "blur(8px)",
+              color: "#00ff66",
+              fontFamily: "monospace",
+              backdropFilter: "blur(4px)",
               zIndex: 1000,
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
             }}
           >
-            <div style={{ fontSize: "0.68rem", color: GALAXY_COLORS[hoveredNode.galaxyId] || "#38bdf8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              {hoveredNode.galaxyId} · {hoveredNode.kind.replace(/_/g, " ")}
+            <div style={{ fontSize: "0.6rem", color: GALAXY_COLORS[hoveredNode.galaxyId] || "#00ffff", fontWeight: 700, opacity: 0.8 }}>
+              {hoveredNode.galaxyId} :: {hoveredNode.kind.replace(/_/g, " ")}
             </div>
-            <div style={{ fontSize: "0.95rem", fontWeight: 700, marginTop: "2px" }}>
+            <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#fff" }}>
               {hoveredNode.label}
             </div>
           </div>
@@ -440,46 +398,104 @@ function GraphEdges({
   visibleSet: Set<string> | null;
   selectedId: string | null;
 }) {
-  const [geo, mat] = useMemo(() => {
-    const active: GraphEdge[] = [];
-    const inactive: GraphEdge[] = [];
+  const meshRef = useRef<THREE.LineSegments>(null);
+  const triggerTime = useRef<number | null>(null);
+  
+  const { geometry, activeIndices } = useMemo(() => {
+    const active: number[] = [];
+    const all: GraphEdge[] = [];
 
     for (const e of edges) {
       if (!positions.has(e.source) || !positions.has(e.target)) continue;
       if (visibleSet && (!visibleSet.has(e.source) || !visibleSet.has(e.target))) continue;
+      
+      const idx = all.length;
       if (selectedId && (e.source === selectedId || e.target === selectedId)) {
-        active.push(e);
-      } else {
-        inactive.push(e);
+        active.push(idx);
       }
+      all.push(e);
     }
 
-    const all = [...inactive, ...active];
     const verts = new Float32Array(all.length * 6);
     const colors = new Float32Array(all.length * 6);
-    const DIM = new THREE.Color(0x1d1730);
-    const LIT = new THREE.Color(0x38bdf8);
+    const DIM = new THREE.Color(0x00ffff).multiplyScalar(0.15);
+    const LIT = new THREE.Color(0x00ffff);
 
     all.forEach((e, i) => {
       const sp = positions.get(e.source)!;
       const tp = positions.get(e.target)!;
       verts.set([sp.x, sp.y, sp.z, tp.x, tp.y, tp.z], i * 6);
-      const c = i >= inactive.length ? LIT : DIM;
+      const c = active.includes(i) ? LIT : DIM;
       colors.set([c.r, c.g, c.b, c.r, c.g, c.b], i * 6);
     });
 
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(verts, 3));
     g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    const m = new THREE.LineBasicMaterial({
-      vertexColors: true,
-      transparent: true,
-      opacity: visibleSet ? 0.85 : 0.18,
-    });
-    return [g, m] as const;
+    
+    return { geometry: g, activeIndices: active };
   }, [edges, positions, visibleSet, selectedId]);
 
-  return <lineSegments geometry={geo} material={mat} />;
+  useEffect(() => {
+    if (selectedId) {
+      triggerTime.current = performance.now();
+    } else {
+      triggerTime.current = null;
+    }
+  }, [selectedId]);
+
+  const material = useMemo(() => {
+    return new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    });
+  }, []);
+
+  useFrame(({ clock }) => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    
+    const t = clock.getElapsedTime();
+    const colorAttr = mesh.geometry.attributes.color;
+    
+    // Base subtle pulse
+    const baseIntensity = 0.1 + Math.sin(t * 0.5) * 0.05;
+    
+    // Shockwave logic
+    let shockwave = 0;
+    if (triggerTime.current) {
+      const elapsed = (performance.now() - triggerTime.current) / 1000;
+      if (elapsed < 2.5) {
+        shockwave = Math.max(0, 1 - elapsed / 2.5);
+        shockwave = shockwave * Math.sin(elapsed * 12.0);
+      }
+    }
+
+    const colors = colorAttr.array as Float32Array;
+    const DIM = new THREE.Color(0x00ffff).multiplyScalar(baseIntensity);
+    const LIT = new THREE.Color(0xffffff);
+    const ARC = new THREE.Color(0x00ff66);
+
+    for (let i = 0; i < edges.length; i++) {
+      const isActive = activeIndices.includes(i);
+      const c = isActive ? LIT.clone().lerp(ARC, shockwave > 0 ? Math.abs(shockwave) : 0) : DIM;
+      
+      colors[i * 6]     = c.r;
+      colors[i * 6 + 1] = c.g;
+      colors[i * 6 + 2] = c.b;
+      colors[i * 6 + 3] = c.r;
+      colors[i * 6 + 4] = c.g;
+      colors[i * 6 + 5] = c.b;
+    }
+    
+    colorAttr.needsUpdate = true;
+  });
+
+  return <lineSegments ref={meshRef} geometry={geometry} material={material} />;
 }
 
 // ─── Smooth camera rig ────────────────────────────────────────────────────────
@@ -512,23 +528,26 @@ function SelectionRing({ position }: { position: THREE.Vector3 }) {
   const mat = useMemo(
     () =>
       new THREE.MeshBasicMaterial({
-        color: 0xff8899,
+        color: 0x00ff66,
         transparent: true,
-        opacity: 0.65,
-        side: THREE.BackSide,
+        opacity: 0.8,
+        side: THREE.DoubleSide,
+        toneMapped: false,
       }),
     []
   );
-  const geo = useMemo(() => new THREE.TorusGeometry(12, 0.6, 8, 48), []);
+  const geo = useMemo(() => new THREE.TorusGeometry(14, 0.8, 8, 64), []);
 
   useFrame(({ clock }) => {
     const m = ref.current;
     if (!m) return;
     const t = clock.getElapsedTime();
-    const s = 1 + Math.sin(t * 2.8) * 0.2;
+    const s = 1 + Math.sin(t * 3.0) * 0.3;
     m.scale.setScalar(s);
-    mat.opacity = 0.4 + Math.sin(t * 2.8) * 0.25;
+    mat.opacity = 0.4 + Math.sin(t * 3.0) * 0.4;
     m.position.copy(position);
+    m.rotation.x = t * 0.5;
+    m.rotation.y = t * 0.3;
   });
 
   return <mesh ref={ref} geometry={geo} material={mat} />;
@@ -763,7 +782,7 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
         <aside className="graph-rail" aria-label="Graph view controls">
           <fieldset>
             <legend>View</legend>
-            {(["universe", "galaxy", "neighborhood"] as Mode[]).map((val) => (
+            {(["universe", "galaxy", "neighborhood", "path"] as Mode[]).map((val) => (
               <div className="graph-mode" key={val}>
                 <input
                   id={`mode-${val}`}
@@ -852,19 +871,17 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
           <Canvas
             camera={{ position: [0, 0, 620], fov: 58, near: 1, far: 4000 }}
             gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
-            style={{ background: "#04030d" }}
+            style={{ background: "#000005" }}
             dpr={[1, 1.5]}
           >
-            <color attach="background" args={["#04030d"]} />
+            <color attach="background" args={["#000005"]} />
+            <fogExp2 attach="fog" args={["#000814", 0.0008]} />
 
-            {/* Iluminación re-balanceda para no saturar a blanco los neón */}
-            <ambientLight intensity={0.15} color="#5566ff" />
-            <pointLight position={[300, 300, 200]} intensity={1.5} color="#00ffff" distance={1500} />
-            <pointLight position={[-300, -200, -300]} intensity={1.2} color="#ff00aa" distance={1200} />
-            <pointLight position={[0, -400, 200]} intensity={0.8} color="#a855f7" distance={1000} />
-
-            <StarField />
-            {/* Nubes animadas representando las galaxias */}
+            <ambientLight intensity={0.1} color="#3322ff" />
+            <pointLight position={[300, 300, 200]} intensity={2.0} color="#00ffff" distance={1500} />
+            <pointLight position={[-300, -200, -300]} intensity={1.5} color="#ff00aa" distance={1200} />
+            
+            <Stars radius={400} depth={50} count={8000} factor={4} saturation={0} fade speed={1} />
             <GalaxyClouds />
 
             {graphData && (
@@ -903,11 +920,16 @@ export default function GraphThree({ manifest }: { manifest: DatasetManifest }) 
 
             <EffectComposer>
               <Bloom
-                luminanceThreshold={0.2} // Subimos el umbral para que el fondo no brille
+                intensity={3}
+                luminanceThreshold={0.15}
                 luminanceSmoothing={0.9}
-                intensity={0.8} // Menos intensidad para evitar la mancha blanca
                 radius={0.8}
-                mipmapBlur // Mejora calidad del blur
+                mipmapBlur
+              />
+              <ChromaticAberration
+                offset={[0.0005, 0.0005]}
+                radialModulation={false}
+                modulationOffset={0}
               />
             </EffectComposer>
           </Canvas>

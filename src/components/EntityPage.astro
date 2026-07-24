@@ -24,13 +24,75 @@ const html = rawBody
   : "";
 
 const structuredInfo = parseAndCleanSummary(entity.summary, entity.title);
-const { cleanSummary, tier, mitre, tags, files, linesOfInterest } = structuredInfo;
+const {
+  cleanSummary,
+  tier,
+  mitre,
+  tags,
+  files,
+  linesOfInterest,
+  keyFunctions,
+  requires: metaRequires,
+  enables: metaEnables,
+} = structuredInfo;
 
 const effectiveTier = tier || entity.tier;
 const effectiveTags = tags && tags.length ? tags : entity.tags;
 const effectiveMitre = mitre && mitre.length ? mitre : entity.mitre;
 
-// === Neighbors with direction ===
+// === AI enrichment + bridge fields (not yet in the shared Entity type, always optional) ===
+interface AIEnrichment {
+  summary?: string;
+  mitre?: string[];
+  apis?: string[];
+  iocs?: string[];
+  tags?: string[];
+  chains_with?: string[];
+  alternatives?: string[];
+  counters?: string[];
+  stealth?: number;
+  complexity?: number;
+  os_requirements?: string;
+  confidence?: number;
+  model?: string;
+  enrichedAt?: string;
+}
+interface BridgeInfo {
+  total_neighbors: number;
+  own_galaxy: number;
+  foreign_galaxies: Record<string, number>;
+}
+type Enriched = Entity & { _ai?: AIEnrichment; bridge_score?: number; _bridge?: BridgeInfo };
+const enriched = entity as Enriched;
+const ai = enriched._ai;
+const bridgeScore = enriched.bridge_score ?? 0;
+const bridge = enriched._bridge;
+const isBridge = bridgeScore >= 0.4;
+const foreignGalaxyEntries = bridge
+  ? Object.entries(bridge.foreign_galaxies).sort((a, b) => b[1] - a[1])
+  : [];
+const maxForeignCount = foreignGalaxyEntries.length ? foreignGalaxyEntries[0][1] : 1;
+
+function resolveIds(ids?: string[]): Entity[] {
+  if (!ids || !ids.length) return [];
+  const out: Entity[] = [];
+  for (const id of ids) {
+    const found = entityById.get(id);
+    if (found) out.push(found);
+  }
+  return out;
+}
+const aiChainsWith = resolveIds(ai?.chains_with);
+const aiAlternatives = resolveIds(ai?.alternatives);
+const aiCounters = resolveIds(ai?.counters);
+const hasAttackContext = aiChainsWith.length > 0 || aiAlternatives.length > 0 || aiCounters.length > 0;
+
+function meterSegments(value: number | undefined, max = 5): boolean[] {
+  const v = value ?? 0;
+  return Array.from({ length: max }, (_, i) => i < v);
+}
+
+// === Neighbors (curated relations touching this entity) ===
 const rawRelations = curatedRelations.filter(
   (e) => e.source === entity.id || e.target === entity.id
 );
@@ -45,14 +107,14 @@ for (const edge of rawRelations) {
   const otherId = direction === "outgoing" ? edge.target : edge.source;
   const other = entityById.get(otherId);
   if (!other) continue;
-  const k = `${edge.type}:${other.id}`;
+  const k = `${edge.type}:${other.id}:${direction}`;
   if (seen.has(k)) continue;
   seen.add(k);
   neighbors.push({ edge, entity: other, direction });
 }
 neighbors.sort((a, b) => b.entity.degree - a.entity.degree);
 
-// === Edge type colors (synced with 3D view) ===
+// === Edge type colors (synced with the 3D graph palette) ===
 const EDGE_COLORS: Record<string, string> = {
   enables: "#00f0ff",
   counters: "#ff334c",
@@ -69,43 +131,41 @@ const EDGE_COLORS: Record<string, string> = {
 };
 const edgeColor = (t: string) => EDGE_COLORS[t] ?? "#8896b0";
 
-// === Group by direction + edge type ===
-const groupsMap = new Map<
-  string,
-  { direction: "incoming" | "outgoing"; type: string; items: typeof neighbors }
->();
+// Grouped by relation type only (not direction) so each edge semantic gets exactly one
+// collapsible section, matching the color language used in the 3D neighborhood view.
+const groupsMap = new Map<string, { type: string; items: typeof neighbors }>();
 for (const n of neighbors) {
-  const key = `${n.direction}:${n.edge.type}`;
-  if (!groupsMap.has(key)) {
-    groupsMap.set(key, { direction: n.direction, type: n.edge.type, items: [] });
-  }
-  groupsMap.get(key)!.items.push(n);
+  if (!groupsMap.has(n.edge.type)) groupsMap.set(n.edge.type, { type: n.edge.type, items: [] });
+  groupsMap.get(n.edge.type)!.items.push(n);
 }
-const signalGroups = Array.from(groupsMap.values())
+const relatedGroups = Array.from(groupsMap.values())
   .map((g) => ({
     ...g,
     color: edgeColor(g.type),
     count: g.items.length,
     preview: g.items.slice(0, 3).map((i) => i.entity.title),
   }))
-  .sort((a, b) => {
-    if (a.direction !== b.direction) return a.direction === "outgoing" ? -1 : 1;
-    return b.count - a.count;
-  });
+  .sort((a, b) => b.count - a.count);
 
-// === Kind flags ===
+// === Kind flags — every one of the 12 kinds gets an explicit branch below ===
 const isTechnique = entity.kind === "technique";
-const isConcept = entity.kind === "concept";
+const isQA = entity.kind === "tradecraft_qa";
 const isChain = entity.kind === "chain";
 const isDetection = entity.kind === "detection";
-const isSource = entity.kind === "source" || entity.kind === "source-extract";
+const isConcept = entity.kind === "concept";
 const isLgtmNote = entity.kind === "lgtm_note";
-const isCentered = ["playbook", "documentation", "reference", "pattern"].includes(
-  entity.kind
-);
+const isPlaybook = entity.kind === "playbook";
+const isSource = entity.kind === "source" || entity.kind === "source-extract";
+const isDocRef = entity.kind === "documentation" || entity.kind === "reference";
+const isPattern = entity.kind === "pattern";
+const isKnownKind =
+  isTechnique || isQA || isChain || isDetection || isConcept || isLgtmNote ||
+  isPlaybook || isSource || isDocRef || isPattern;
+const hasRail = isTechnique || isPattern;
 
 const KIND_GLYPH: Record<string, string> = {
   technique: "★",
+  tradecraft_qa: "?",
   chain: "⧫",
   detection: "⬡",
   concept: "●",
@@ -135,38 +195,105 @@ const gColor = GALAXY_COLORS[entity.galaxyId] ?? "#00f0ff";
 const tierColor = (t?: string) => {
   if (!t) return "#8896b0";
   const u = t.toUpperCase();
-  if (u === "S") return "#ff334c";  // critical / novel
-  if (u === "A") return "#ffb800";  // advanced
-  if (u === "B") return "#00f0ff";  // solid
-  if (u === "C") return "#8896b0";  // basic
+  if (u === "S") return "#ff334c";
+  if (u === "A") return "#ffb800";
+  if (u === "B") return "#00f0ff";
+  if (u === "C") return "#8896b0";
   return "#8896b0";
 };
 const tColor = tierColor(effectiveTier);
 
-// === Evidence for lgtm_note ===
-const evidenceRecs = evidenceFor(entity.id, 1);
-const evidenceRec: EvidenceRecord | undefined = evidenceRecs[0];
-const qScore = evidenceRec?.qualityScore ?? 0;
-const qColor = qScore >= 80 ? "#38ff6b" : qScore >= 60 ? "#ffb800" : "#ff334c";
+// === Evidence, sorted by quality (worst last) ===
+const evidenceRecs: EvidenceRecord[] = evidenceFor(entity.id, 25)
+  .slice()
+  .sort((a, b) => b.qualityScore - a.qualityScore);
+const qColorFor = (q: number) => (q >= 80 ? "#38ff6b" : q >= 60 ? "#ffb800" : "#ff334c");
 
 // === Kind-specific neighbor views ===
-const referencedBy = neighbors
-  .filter((n) => n.direction === "incoming" && n.entity.kind === "technique")
-  .slice(0, 5);
+const referencedBy = neighbors.filter(
+  (n) => n.direction === "incoming" && (n.entity.kind === "technique" || n.entity.kind === "detection")
+);
 
 const chainSteps = neighbors
   .filter((n) => n.direction === "outgoing" && n.edge.type === "chains_to")
   .sort((a, b) => (a.edge.rank ?? 999) - (b.edge.rank ?? 999));
 
 const catchesList = neighbors
-  .filter((n) => n.direction === "outgoing" && n.edge.type === "detects")
+  .filter((n) => n.edge.type === "detects" || n.edge.type === "counters")
   .sort((a, b) => b.entity.degree - a.entity.degree);
+
+const playbookRequires = neighbors.filter(
+  (n) => n.direction === "outgoing" && n.edge.type === "requires"
+);
+const playbookEnables = neighbors.filter(
+  (n) => n.direction === "outgoing" && n.edge.type === "enables"
+);
 
 const locText = (l: any) => (typeof l === "string" ? l : l?.loc ?? "");
 const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
+const primaryFile = files && files.length ? files[0] : undefined;
+const primaryLoc = linesOfInterest && linesOfInterest.length ? locText(linesOfInterest[0]) : undefined;
+
+// === Q&A: title is the question, body/summary carries the answer + any inlined steps ===
+// Steps in ingested QA samples arrive as "1. foo 2. bar 3. baz" run together in one sentence,
+// not as markdown list items, so a lookahead-based split is needed rather than a line split.
+function extractSteps(text: string): string[] {
+  if (!text) return [];
+  const matches = text.match(/\d+\.\s+((?:(?!\d+\.\s).)+)/gs);
+  if (!matches || matches.length < 2) return [];
+  return matches.map((m) => m.replace(/^\d+\.\s*/, "").trim()).filter((s) => s.length > 0);
+}
+const qaQuestion = entity.title;
+const qaSteps = isQA ? extractSteps(`${cleanSummary} ${rawBody}`) : [];
+const playbookSteps = isPlaybook ? extractSteps(rawBody || cleanSummary) : [];
+
+function buildJsonLd(e: Entity, summary: string) {
+  const base: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    name: e.title,
+    identifier: e.id,
+    description: summary,
+  };
+  if (isQA) {
+    return {
+      ...base,
+      "@type": "QAPage",
+      mainEntity: {
+        "@type": "Question",
+        name: qaQuestion,
+        text: summary,
+        acceptedAnswer: { "@type": "Answer", text: summary },
+      },
+    };
+  }
+  if (isChain) {
+    return {
+      ...base,
+      "@type": "HowTo",
+      step: chainSteps.map((s, i) => ({ "@type": "HowToStep", position: i + 1, name: s.entity.title })),
+    };
+  }
+  if (isTechnique) {
+    return {
+      ...base,
+      "@type": "TechArticle",
+      proficiencyLevel: effectiveTier,
+      about: (effectiveMitre ?? []).join(", "),
+      ...(ai?.os_requirements ? { operatingSystem: ai.os_requirements } : {}),
+    };
+  }
+  if (isConcept || isDocRef) {
+    return { ...base, "@type": "DefinedTerm" };
+  }
+  if (isSource) {
+    return { ...base, "@type": "SoftwareSourceCode", codeRepository: primaryFile };
+  }
+  return { ...base, "@type": "Article" };
+}
+const jsonLd = buildJsonLd(entity, cleanSummary || entity.summary);
 ---
 
-<BaseLayout title={entity.title} description={cleanSummary || entity.summary}>
+<BaseLayout title={entity.title} description={cleanSummary || entity.summary} jsonLd={jsonLd}>
   <article
     class="ep"
     style={`--accent:${gColor};--gcolor:${gColor};--tcolor:${tColor};`}
@@ -218,8 +345,20 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
           )}
         </div>
       </div>
-      <h1 class={isSource ? "title title-mono" : "title"}>{entity.title}</h1>
+
+      {isBridge && bridge && (
+        <div class="bridge-badge">
+          <span class="ico">◈</span>
+          Multi-domain concept — bridges {Object.keys(bridge.foreign_galaxies).length} galax{Object.keys(bridge.foreign_galaxies).length === 1 ? "y" : "ies"}
+        </div>
+      )}
+
+      <h1 class={isSource ? "title title-mono" : isLgtmNote ? "title title-note" : "title"}>
+        {isQA ? qaQuestion : entity.title}
+      </h1>
+
       <p class="summary">{cleanSummary || entity.summary}</p>
+
       {effectiveTags && effectiveTags.length > 0 && (
         <div class="tags">
           {effectiveTags.map((t) => (
@@ -230,190 +369,505 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
       <div class="rec">REC · {entity.id} · DEG {entity.degree}</div>
     </header>
 
-    {/* === SIGNAL TRAFFIC === */}
-    {signalGroups.length > 0 && (
-      <section class="signal">
-        <div class="heading">
-          <span class="htxt">SIGNAL TRAFFIC</span>
-          <span class="dim">/ {neighbors.length} edges · {signalGroups.length} channels</span>
+    {/* === AI ENRICHMENT (top position, kinds without a rail) === */}
+    {ai && !hasRail && (
+      <section class="ai-panel ai-panel-top">
+        <div class="ai-head">
+          <span class="ai-pill">AI-enriched · {ai.model || "Qwen3-4B"}</span>
         </div>
-        <div class="rows">
-          {signalGroups.map((g) => (
-            <div class="signal-row" style={`--rowcolor:${g.color}`}>
-              <div class="label">
-                <span class="arrow">{g.direction === "outgoing" ? "→" : "←"}</span>
-                <span class="type">{g.type}</span>
+        <div class="ai-grid">
+          {ai.stealth != null && (
+            <div class="meter-row">
+              <span class="meter-label">Stealth</span>
+              <span class="meter">
+                {meterSegments(ai.stealth).map((on) => <span class={on ? "seg on" : "seg"} />)}
+              </span>
+            </div>
+          )}
+          {ai.complexity != null && (
+            <div class="meter-row">
+              <span class="meter-label">Complexity</span>
+              <span class="meter">
+                {meterSegments(ai.complexity).map((on) => <span class={on ? "seg on" : "seg"} />)}
+              </span>
+            </div>
+          )}
+          {ai.os_requirements && (
+            <div class="fact-row">
+              <span class="fact-label">OS</span>
+              <span class="fact-value mono">{ai.os_requirements}</span>
+            </div>
+          )}
+        </div>
+        {ai.apis && ai.apis.length > 0 && (
+          <div class="chip-block">
+            <span class="chip-block-label">APIs</span>
+            <div class="chip-row">
+              {ai.apis.map((a) => <span class="chip chip-mono">{a}</span>)}
+            </div>
+          </div>
+        )}
+        {ai.iocs && ai.iocs.length > 0 && (
+          <div class="chip-block">
+            <span class="chip-block-label">IOCs</span>
+            <div class="chip-row">
+              {ai.iocs.map((a) => <span class="chip chip-mono chip-ioc">{a}</span>)}
+            </div>
+          </div>
+        )}
+        {ai.confidence != null && (
+          <div class="ai-confidence">Model confidence: {ai.confidence}/5</div>
+        )}
+      </section>
+    )}
+
+    {bridge && !hasRail && foreignGalaxyEntries.length > 0 && (
+      <section class="bridge-strip-wrap">
+        <div class="label">Cross-galaxy neighbors</div>
+        <div class="bridge-strip">
+          {foreignGalaxyEntries.map(([gId, count]) => (
+            <div class="bridge-bar-row">
+              <span class="bridge-gname" style={`color:${GALAXY_COLORS[gId] ?? "#8896b0"}`}>{gId}</span>
+              <div class="bridge-bar-track">
+                <div
+                  class="bridge-bar-fill"
+                  style={`width:${Math.max(6, (count / maxForeignCount) * 100)}%;background:${GALAXY_COLORS[gId] ?? "#8896b0"}`}
+                />
               </div>
-              <div class="count">{String(g.count).padStart(2, "0")}</div>
-              <div class="targets">
-                {g.preview.map((t, i) => (
-                  <>
-                    {i > 0 && <span class="tsep">·</span>}
-                    <span class="tname">{t}</span>
-                  </>
-                ))}
-                {g.count > 3 && <span class="more">+{g.count - 3}</span>}
-              </div>
+              <span class="bridge-count">{count}</span>
             </div>
           ))}
         </div>
       </section>
     )}
 
-    {/* === BODY (kind-adaptive) === */}
-    <section class="body">
-      {isCentered && (
-        <div class="centered">
-          {html ? (
-            <div class="prose" set:html={html} />
-          ) : (
-            <p class="empty">No body content.</p>
+    {/* === MAIN AREA === */}
+    {hasRail ? (
+      <div class="layout-split">
+        <div class="main-col">
+          {isTechnique && (
+            <>
+              {files && files.length > 0 && (
+                <div class="body-section">
+                  <div class="label">Implementation</div>
+                  <div class="files-box">
+                    {files.map((f) => (
+                      <div class="file">
+                        <span class="bullet">◆</span>
+                        <span class="path">{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {linesOfInterest && linesOfInterest.length > 0 && (
+                <div class="body-section">
+                  <div class="label">Key Code Locations</div>
+                  <div class="lines-of-interest">
+                    {linesOfInterest.map((l) => (
+                      <div class="line">
+                        <span class="loc">{locText(l)}</span>
+                        {locNote(l) && <span class="note"> {locNote(l)}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {html && (
+                <div class="body-section">
+                  <div class="label">Full Technical Specification</div>
+                  <div class="prose" set:html={html} />
+                </div>
+              )}
+              {hasAttackContext && (
+                <div class="body-section">
+                  <div class="label">Attack Context</div>
+                  <div class="attack-context">
+                    {aiChainsWith.length > 0 && (
+                      <div class="attack-group attack-chains">
+                        <div class="attack-group-head">Chains with</div>
+                        {aiChainsWith.map((n) => (
+                          <a class="mini-card" href={`/Hugin${n.route}`}>
+                            <span class="g">{KIND_GLYPH[n.kind] ?? "·"}</span>
+                            <span class="t">{n.title}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {aiAlternatives.length > 0 && (
+                      <div class="attack-group attack-alts">
+                        <div class="attack-group-head">Alternatives</div>
+                        {aiAlternatives.map((n) => (
+                          <a class="mini-card" href={`/Hugin${n.route}`}>
+                            <span class="g">{KIND_GLYPH[n.kind] ?? "·"}</span>
+                            <span class="t">{n.title}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {aiCounters.length > 0 && (
+                      <div class="attack-group attack-counters">
+                        <div class="attack-group-head">Countered by</div>
+                        {aiCounters.map((n) => (
+                          <a class="mini-card" href={`/Hugin${n.route}`}>
+                            <span class="g">{KIND_GLYPH[n.kind] ?? "·"}</span>
+                            <span class="t">{n.title}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {isPattern && (
+            <>
+              {html ? (
+                <div class="body-section">
+                  <div class="label">Pattern</div>
+                  <div class="prose" set:html={html} />
+                </div>
+              ) : (
+                <p class="empty">No body content.</p>
+              )}
+              {hasAttackContext && (
+                <div class="body-section">
+                  <div class="label">Related Patterns</div>
+                  <div class="attack-context">
+                    {aiAlternatives.length > 0 && (
+                      <div class="attack-group attack-alts">
+                        <div class="attack-group-head">Alternatives</div>
+                        {aiAlternatives.map((n) => (
+                          <a class="mini-card" href={`/Hugin${n.route}`}>
+                            <span class="g">{KIND_GLYPH[n.kind] ?? "·"}</span>
+                            <span class="t">{n.title}</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
-      )}
 
-      {isTechnique && (
-        <>
-          {files && files.length > 0 && (
-            <div class="body-section">
-              <div class="label">Implementation</div>
-              <div class="files-box">
-                {files.map((f) => (
-                  <div class="file">
-                    <span class="bullet">◆</span>
-                    <span class="path">{f}</span>
+        <aside class="rail">
+          {ai && (
+            <div class="rail-section ai-panel">
+              <div class="ai-head">
+                <span class="ai-pill">AI-enriched · {ai.model || "Qwen3-4B"}</span>
+              </div>
+              {ai.stealth != null && (
+                <div class="meter-row">
+                  <span class="meter-label">Stealth</span>
+                  <span class="meter">
+                    {meterSegments(ai.stealth).map((on) => <span class={on ? "seg on" : "seg"} />)}
+                  </span>
+                </div>
+              )}
+              {ai.complexity != null && (
+                <div class="meter-row">
+                  <span class="meter-label">Complexity</span>
+                  <span class="meter">
+                    {meterSegments(ai.complexity).map((on) => <span class={on ? "seg on" : "seg"} />)}
+                  </span>
+                </div>
+              )}
+              {ai.os_requirements && (
+                <div class="fact-row">
+                  <span class="fact-label">OS</span>
+                  <span class="fact-value mono">{ai.os_requirements}</span>
+                </div>
+              )}
+              {ai.apis && ai.apis.length > 0 && (
+                <div class="chip-block">
+                  <span class="chip-block-label">APIs</span>
+                  <div class="chip-row">
+                    {ai.apis.map((a) => <span class="chip chip-mono">{a}</span>)}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {linesOfInterest && linesOfInterest.length > 0 && (
-            <div class="body-section">
-              <div class="label">Key Code Locations</div>
-              <div class="lines-of-interest">
-                {linesOfInterest.map((l) => (
-                  <div class="line">
-                    <span class="loc">{locText(l)}</span>
-                    {locNote(l) && <span class="note"> {locNote(l)}</span>}
+                </div>
+              )}
+              {ai.iocs && ai.iocs.length > 0 && (
+                <div class="chip-block">
+                  <span class="chip-block-label">IOCs</span>
+                  <div class="chip-row">
+                    {ai.iocs.map((a) => <span class="chip chip-mono chip-ioc">{a}</span>)}
                   </div>
-                ))}
+                </div>
+              )}
+              {ai.confidence != null && (
+                <div class="ai-confidence">Model confidence: {ai.confidence}/5</div>
+              )}
+            </div>
+          )}
+          {keyFunctions && keyFunctions.length > 0 && (
+            <div class="rail-section">
+              <div class="rail-title">Key Functions</div>
+              <div class="chip-row">
+                {keyFunctions.map((f) => <span class="chip chip-mono">{f}</span>)}
               </div>
             </div>
           )}
-          {html && (
-            <div class="body-section">
-              <div class="label">Full Technical Specification</div>
-              <div class="prose" set:html={html} />
-            </div>
-          )}
-        </>
-      )}
-
-      {isConcept && (
-        <>
-          <blockquote class="concept-def">{cleanSummary || entity.summary}</blockquote>
-          {html && <div class="prose" set:html={html} />}
-          {referencedBy.length > 0 && (
-            <div class="referenced-by">
-              <div class="head">
-                <span>Referenced by</span>
-                <span class="cnt">{referencedBy.length}</span>
-              </div>
-              {referencedBy.map((n) => (
-                <a href={`/Hugin${n.entity.route}`}>
-                  <span class="g">★</span>
-                  <span class="t">{n.entity.title}</span>
-                  <span class="k">{n.entity.galaxyId}</span>
-                </a>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {isChain && (
-        <>
-          {chainSteps.length > 0 && (
-            <div class="body-section">
-              <div class="label">Sequence · {chainSteps.length} steps</div>
-              <div class="chain-steps">
-                {chainSteps.map((s, i) => (
-                  <a class="chain-step" href={`/Hugin${s.entity.route}`}>
-                    <div class="num">{String(i + 1).padStart(2, "0")}</div>
-                    <div class="info">
-                      <div class="t">{s.entity.title}</div>
-                      <div class="s">
-                        {s.entity.summary || s.entity.subgalaxy || s.entity.galaxyId}
-                      </div>
+          {bridge && foreignGalaxyEntries.length > 0 && (
+            <div class="rail-section">
+              <div class="rail-title">Cross-galaxy neighbors</div>
+              <div class="bridge-strip">
+                {foreignGalaxyEntries.map(([gId, count]) => (
+                  <div class="bridge-bar-row">
+                    <span class="bridge-gname" style={`color:${GALAXY_COLORS[gId] ?? "#8896b0"}`}>{gId}</span>
+                    <div class="bridge-bar-track">
+                      <div
+                        class="bridge-bar-fill"
+                        style={`width:${Math.max(6, (count / maxForeignCount) * 100)}%;background:${GALAXY_COLORS[gId] ?? "#8896b0"}`}
+                      />
                     </div>
-                    <div class="rank">r{String(s.edge.rank ?? i + 1).padStart(2, "0")}</div>
+                    <span class="bridge-count">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </aside>
+      </div>
+    ) : (
+      <section class="body single">
+        {isQA && (
+          <div class="qa-block">
+            <div class="label">Answer</div>
+            {html ? <div class="prose" set:html={html} /> : <p class="prose">{cleanSummary || entity.summary}</p>}
+            {qaSteps.length > 0 && (
+              <div class="body-section">
+                <div class="label">Operator Steps</div>
+                <ol class="op-steps">
+                  {qaSteps.map((s) => <li>{s}</li>)}
+                </ol>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isChain && (
+          <>
+            {chainSteps.length > 0 && (
+              <div class="body-section">
+                <div class="label">Sequence · {chainSteps.length} steps</div>
+                <div class="timeline">
+                  {chainSteps.map((s, i) => (
+                    <a class="timeline-step" href={`/Hugin${s.entity.route}`}>
+                      <div class="timeline-rail">
+                        <div class="num">{String(i + 1).padStart(2, "0")}</div>
+                        {i < chainSteps.length - 1 && <div class="connector" />}
+                      </div>
+                      <div class="info">
+                        <div class="t">{s.entity.title}</div>
+                        <div class="s">
+                          {s.entity.summary || s.entity.subgalaxy || s.entity.galaxyId}
+                        </div>
+                      </div>
+                      <div class="rank">r{String(s.edge.rank ?? i + 1).padStart(2, "0")}</div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            {html && <div class="prose" set:html={html} />}
+          </>
+        )}
+
+        {isDetection && (
+          <>
+            {catchesList.length > 0 && (
+              <div class="catches-card">
+                <div class="head">
+                  <span class="ico">⬡</span>
+                  <span class="htxt">DETECTS</span>
+                  <span class="cnt">{catchesList.length}</span>
+                </div>
+                {catchesList.map((n) => (
+                  <a class="item" href={`/Hugin${n.entity.route}`}>
+                    <span class="g">★</span>
+                    <span class="t">{n.entity.title}</span>
+                    <span class="k">{n.entity.galaxyId}</span>
+                    <span class="etype">{n.edge.type}</span>
                   </a>
                 ))}
               </div>
-            </div>
-          )}
-          {html && <div class="prose" set:html={html} />}
-        </>
-      )}
+            )}
+            {html && <div class="prose" set:html={html} />}
+          </>
+        )}
 
-      {isDetection && (
-        <>
-          {catchesList.length > 0 && (
-            <div class="catches-card">
-              <div class="head">
-                <span class="ico">⬡</span>
-                <span class="htxt">CATCHES</span>
-                <span class="cnt">{catchesList.length}</span>
+        {isConcept && (
+          <>
+            <blockquote class="concept-def">{cleanSummary || entity.summary}</blockquote>
+            {html && <div class="prose" set:html={html} />}
+            {referencedBy.length > 0 && (
+              <div class="referenced-by">
+                <div class="head">
+                  <span>Where this appears</span>
+                  <span class="cnt">{referencedBy.length}</span>
+                </div>
+                {referencedBy.map((n) => (
+                  <a href={`/Hugin${n.entity.route}`}>
+                    <span class="g">{KIND_GLYPH[n.entity.kind] ?? "·"}</span>
+                    <span class="t">{n.entity.title}</span>
+                    <span class="k">{n.entity.galaxyId}</span>
+                  </a>
+                ))}
               </div>
-              {catchesList.map((n) => (
-                <a class="item" href={`/Hugin${n.entity.route}`}>
-                  <span class="g">★</span>
-                  <span class="t">{n.entity.title}</span>
-                  <span class="k">{n.entity.galaxyId}</span>
-                </a>
-              ))}
-            </div>
-          )}
-          {html && <div class="prose" set:html={html} />}
-        </>
-      )}
+            )}
+          </>
+        )}
 
-      {isSource && html && <div class="prose" set:html={html} />}
+        {isLgtmNote && (
+          <>
+            <pre class="verbatim">{entity.summary}</pre>
+            {html && <div class="prose" set:html={html} />}
+            {evidenceRecs.length > 0 && (
+              <div class="body-section">
+                <div class="label">Related Evidence</div>
+                {evidenceRecs.map((r) => (
+                  <div class="evidence-card">
+                    <div class="ehead">
+                      <span class="et">{r.title}</span>
+                      <span class="epill" style={`--qc:${qColorFor(r.qualityScore)}`}>Q {r.qualityScore}</span>
+                    </div>
+                    <div class="etopic">{r.topic}</div>
+                    <p class="esummary">{r.summary}</p>
+                    {r.keyCues && r.keyCues.length > 0 && (
+                      <div class="chip-row">
+                        {r.keyCues.map((c) => <span class="chip">{c}</span>)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
 
-      {isLgtmNote && (
-        <>
-          {evidenceRec && (
-            <div class="lgtm-badge" style={`--qcolor:${qColor};--qcolor-bg:${qColor}14;`}>
-              <span class="lbl">QUALITY</span>
-              <span class="score">Q {evidenceRec.qualityScore}</span>
-            </div>
-          )}
-          {evidenceRec?.keyCues && evidenceRec.keyCues.length > 0 && (
-            <div class="key-cues">
-              {evidenceRec.keyCues.map((c) => (
-                <span class="cue">{c}</span>
-              ))}
-            </div>
-          )}
-          {html && <div class="prose" set:html={html} />}
-        </>
-      )}
-    </section>
+        {isPlaybook && (
+          <>
+            {html && <div class="prose" set:html={html} />}
+            {playbookSteps.length > 0 && (
+              <div class="body-section">
+                <div class="label">Checklist</div>
+                <div class="playbook-cards">
+                  {playbookSteps.map((s, i) => (
+                    <div class="playbook-card">
+                      <span class="pnum">{String(i + 1).padStart(2, "0")}</span>
+                      <span class="ptext">{s}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(playbookRequires.length > 0 || (metaRequires && metaRequires.length > 0)) && (
+              <div class="body-section">
+                <div class="label">Prerequisites</div>
+                {playbookRequires.length > 0 ? (
+                  <div class="mini-card-row">
+                    {playbookRequires.map((n) => (
+                      <a class="mini-card" href={`/Hugin${n.entity.route}`}>
+                        <span class="g">{KIND_GLYPH[n.entity.kind] ?? "·"}</span>
+                        <span class="t">{n.entity.title}</span>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div class="chip-row">
+                    {metaRequires!.map((r) => <span class="chip">{r}</span>)}
+                  </div>
+                )}
+              </div>
+            )}
+            {(playbookEnables.length > 0 || (metaEnables && metaEnables.length > 0)) && (
+              <div class="body-section">
+                <div class="label">Outputs</div>
+                {playbookEnables.length > 0 ? (
+                  <div class="mini-card-row">
+                    {playbookEnables.map((n) => (
+                      <a class="mini-card" href={`/Hugin${n.entity.route}`}>
+                        <span class="g">{KIND_GLYPH[n.entity.kind] ?? "·"}</span>
+                        <span class="t">{n.entity.title}</span>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div class="chip-row">
+                    {metaEnables!.map((r) => <span class="chip">{r}</span>)}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
 
-    {/* === CONNECTED KNOWLEDGE === */}
-    {signalGroups.length > 0 && (
-      <section class="ck">
+        {isSource && (
+          <>
+            <div class="source-chip-row">
+              {primaryFile && <span class="chip chip-mono file-chip">{primaryFile}</span>}
+              {primaryLoc && <span class="chip chip-mono line-chip">{primaryLoc}</span>}
+            </div>
+            {html ? <div class="prose source-mono" set:html={html} /> : <p class="empty">No body content.</p>}
+          </>
+        )}
+
+        {isDocRef && (
+          <>
+            {html ? <div class="prose doc-body" set:html={html} /> : <p class="empty">No body content.</p>}
+          </>
+        )}
+
+        {!isKnownKind && (
+          <>
+            {html ? <div class="prose" set:html={html} /> : <p class="empty">No body content.</p>}
+          </>
+        )}
+      </section>
+    )}
+
+    {/* === EVIDENCE (generic, any kind other than lgtm_note which shows it inline above) === */}
+    {!isLgtmNote && evidenceRecs.length > 0 && (
+      <section class="evidence-section">
         <div class="heading">
-          <span class="htxt">CONNECTED KNOWLEDGE</span>
+          <span class="htxt">ANONYMOUS EVIDENCE</span>
+          <span class="dim">/ {evidenceRecs.length} records</span>
+        </div>
+        {evidenceRecs.map((r) => (
+          <div class="evidence-card">
+            <div class="ehead">
+              <span class="et">{r.title}</span>
+              <span class="epill" style={`--qc:${qColorFor(r.qualityScore)}`}>Q {r.qualityScore}</span>
+            </div>
+            <div class="etopic">{r.topic}</div>
+            <p class="esummary">{r.summary}</p>
+            {r.keyCues && r.keyCues.length > 0 && (
+              <div class="chip-row">
+                {r.keyCues.map((c) => <span class="chip">{c}</span>)}
+              </div>
+            )}
+          </div>
+        ))}
+      </section>
+    )}
+
+    {/* === RELATED KNOWLEDGE (grouped strictly by relation type) === */}
+    {relatedGroups.length > 0 && (
+      <section class="rk">
+        <div class="heading">
+          <span class="htxt">RELATED KNOWLEDGE</span>
           <span class="dim">
-            / {signalGroups.length} groups · {neighbors.length} nodes
+            / {relatedGroups.length} groups · {neighbors.length} nodes
           </span>
         </div>
-        {signalGroups.map((g) => (
-          <details class="ck-group" style={`--groupcolor:${g.color}`}>
+        {relatedGroups.map((g) => (
+          <details class="rk-group" style={`--groupcolor:${g.color}`}>
             <summary>
               <span class="chev">▸</span>
-              <span class="arrow">{g.direction === "outgoing" ? "→" : "←"}</span>
               <span class="type">{g.type}</span>
               <span class="count">{String(g.count).padStart(2, "0")}</span>
               <span class="preview">
@@ -423,7 +877,8 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
             </summary>
             <div class="content">
               {g.items.map((n) => (
-                <a class="ck-node" href={`/Hugin${n.entity.route}`}>
+                <a class="rk-node" href={`/Hugin${n.entity.route}`}>
+                  <span class="arrow">{n.direction === "outgoing" ? "→" : "←"}</span>
                   <span class="glyph">{KIND_GLYPH[n.entity.kind] ?? "·"}</span>
                   <div class="info">
                     <div class="meta">
@@ -458,6 +913,27 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
   </article>
 </BaseLayout>
 
+<script>
+  // Code fences are the only place operators copy-paste from; everything else on the page is prose.
+  document.querySelectorAll(".ep .prose pre").forEach((pre) => {
+    const preEl = pre as HTMLElement;
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.type = "button";
+    btn.textContent = "Copy";
+    btn.addEventListener("click", () => {
+      const code = preEl.querySelector("code");
+      const text = code ? code.textContent ?? "" : preEl.textContent ?? "";
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = "Copied";
+        setTimeout(() => (btn.textContent = "Copy"), 1500);
+      });
+    });
+    preEl.style.position = "relative";
+    preEl.appendChild(btn);
+  });
+</script>
+
 <style>
   /* === BASE === */
   .ep {
@@ -470,7 +946,7 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
     --accent: #00f0ff;
     --bg-panel: rgba(255, 255, 255, 0.015);
     --bg-panel-hover: rgba(255, 255, 255, 0.045);
-    max-width: 1100px;
+    max-width: 1180px;
     margin: 0 auto;
     padding: 0 24px 96px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -486,19 +962,23 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
   .ep .crumb,
   .ep .eyebrow,
   .ep .tag,
-  .ep .signal-row,
-  .ep .ck-group summary,
-  .ep .ck-node .meta,
+  .ep .chip-mono,
+  .ep .rk-group summary,
+  .ep .rk-node .meta,
   .ep .files-box,
   .ep .lines-of-interest,
-  .ep .lgtm-badge,
-  .ep .key-cues .cue,
+  .ep .evidence-card .epill,
   .ep .referenced-by .head,
   .ep .catches-card .head,
-  .ep .chain-step .num,
-  .ep .chain-step .rank,
-  .ep .ck-node .glyph,
+  .ep .timeline-step .num,
+  .ep .timeline-step .rank,
+  .ep .rk-node .glyph,
   .ep .title-mono,
+  .ep .verbatim,
+  .ep .source-mono,
+  .ep .op-steps,
+  .ep .playbook-card .pnum,
+  .ep .fact-value,
   .ep .threedee {
     font-family: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
   }
@@ -585,12 +1065,8 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
     flex-shrink: 0;
   }
   @keyframes glyph-pulse {
-    0%, 100% {
-      text-shadow: 0 0 16px var(--accent), 0 0 32px rgba(0, 240, 255, 0.25);
-    }
-    50% {
-      text-shadow: 0 0 28px var(--accent), 0 0 52px rgba(0, 240, 255, 0.55);
-    }
+    0%, 100% { text-shadow: 0 0 16px var(--accent), 0 0 32px rgba(0, 240, 255, 0.25); }
+    50% { text-shadow: 0 0 28px var(--accent), 0 0 52px rgba(0, 240, 255, 0.55); }
   }
   .hero .eyebrow {
     display: flex;
@@ -602,20 +1078,10 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
     text-transform: uppercase;
     color: var(--fg-dim);
   }
-  .hero .eyebrow .dot {
-    color: var(--fg-faint);
-  }
-  .hero .eyebrow .kind {
-    color: var(--fg);
-  }
-  .hero .eyebrow .galaxy {
-    color: var(--gcolor);
-    text-shadow: 0 0 12px var(--gcolor);
-  }
-  .hero .eyebrow .tier {
-    color: var(--tcolor);
-    text-shadow: 0 0 10px var(--tcolor);
-  }
+  .hero .eyebrow .dot { color: var(--fg-faint); }
+  .hero .eyebrow .kind { color: var(--fg); }
+  .hero .eyebrow .galaxy { color: var(--gcolor); text-shadow: 0 0 12px var(--gcolor); }
+  .hero .eyebrow .tier { color: var(--tcolor); text-shadow: 0 0 10px var(--tcolor); }
   .hero .eyebrow .mitre {
     color: var(--accent);
     font-size: 10px;
@@ -623,6 +1089,19 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
     border: 1px solid var(--border-strong);
     background: rgba(0, 240, 255, 0.04);
     letter-spacing: 0.08em;
+  }
+  .bridge-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: #ffdc4c;
+    border: 1px solid #ffdc4c;
+    background: linear-gradient(180deg, rgba(255, 220, 76, 0.1), transparent);
+    padding: 5px 12px;
+    margin-bottom: 16px;
+    text-shadow: 0 0 10px rgba(255, 220, 76, 0.5);
   }
   .hero .title {
     font-size: 2.4rem;
@@ -644,6 +1123,11 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
     display: inline-block;
     max-width: 100%;
   }
+  .hero .title-note {
+    font-size: 1.3rem;
+    font-weight: 500;
+    color: var(--fg);
+  }
   .hero .summary {
     font-size: 1rem;
     line-height: 1.6;
@@ -651,12 +1135,7 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
     max-width: 780px;
     margin: 0 0 20px;
   }
-  .hero .tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 16px;
-  }
+  .hero .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
   .hero .tag {
     font-size: 10px;
     letter-spacing: 0.06em;
@@ -666,55 +1145,118 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
     text-transform: lowercase;
     background: rgba(255, 255, 255, 0.02);
   }
-  .hero .rec {
-    font-size: 10px;
-    color: var(--fg-faint);
-    letter-spacing: 0.1em;
+  .hero .rec { font-size: 10px; color: var(--fg-faint); letter-spacing: 0.1em; }
+  .hero .rec::before { content: "▸ "; color: var(--accent); }
+
+  /* === AI PANEL === */
+  .ai-panel {
+    border: 1px solid rgba(0, 240, 255, 0.25);
+    background: linear-gradient(180deg, rgba(0, 240, 255, 0.04), transparent);
+    padding: 16px 18px;
+    box-shadow: 0 0 24px -12px var(--accent);
   }
-  .hero .rec::before {
-    content: "▸ ";
+  .ai-panel-top { margin: 24px 0; }
+  .ai-head { margin-bottom: 12px; }
+  .ai-pill {
+    display: inline-block;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
     color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 3px 9px;
+    background: rgba(0, 240, 255, 0.06);
+  }
+  .ai-grid { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+  .meter-row, .fact-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+  }
+  .meter-label, .fact-label {
+    width: 78px;
+    flex-shrink: 0;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 10px;
+  }
+  .meter { display: flex; gap: 3px; }
+  .meter .seg {
+    width: 18px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+  }
+  .meter .seg.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+  .fact-value { color: #fff; font-size: 11px; }
+  .chip-block { margin-top: 12px; }
+  .chip-block-label {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+    margin-bottom: 6px;
+  }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-size: 10px;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .chip-mono { color: var(--accent); border-color: rgba(0, 240, 255, 0.25); background: rgba(0, 240, 255, 0.04); }
+  .chip-ioc { color: #ff334c; border-color: rgba(255, 51, 76, 0.3); background: rgba(255, 51, 76, 0.05); }
+  .ai-confidence {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--fg-dim);
+    text-transform: uppercase;
   }
 
-  /* === SIGNAL TRAFFIC === */
-  .signal {
-    padding: 24px 0;
-    border-bottom: 1px solid var(--border);
-    position: relative;
-    overflow: hidden;
+  /* === BRIDGE STRIP === */
+  .bridge-strip-wrap { padding: 18px 0; border-bottom: 1px solid var(--border); }
+  .bridge-strip-wrap .label,
+  .rail-section .rail-title {
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+    margin-bottom: 10px;
   }
-  .signal::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 25%;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    animation: traffic-sweep 4.5s linear infinite;
-    opacity: 0;
+  .bridge-strip { display: flex; flex-direction: column; gap: 6px; }
+  .bridge-bar-row { display: grid; grid-template-columns: 90px 1fr 28px; align-items: center; gap: 8px; font-size: 10px; }
+  .bridge-gname { text-transform: uppercase; letter-spacing: 0.06em; }
+  .bridge-bar-track { height: 6px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); }
+  .bridge-bar-fill { height: 100%; }
+  .bridge-count { color: var(--fg-dim); text-align: right; }
+
+  /* === LAYOUT SPLIT (technique / pattern) === */
+  .layout-split { display: grid; grid-template-columns: 1fr 300px; gap: 40px; padding: 32px 0; border-bottom: 1px solid var(--border); }
+  .main-col { min-width: 0; }
+  .rail { display: flex; flex-direction: column; gap: 20px; }
+  .rail-section {
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    padding: 14px 16px;
   }
-  @keyframes traffic-sweep {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    10% {
-      opacity: 0.7;
-    }
-    90% {
-      opacity: 0.7;
-    }
-    100% {
-      transform: translateX(400%);
-      opacity: 0;
-    }
-  }
-  .signal .heading,
-  .ck .heading,
-  .body-section .label,
-  .referenced-by .head,
-  .catches-card .head {
+
+  /* === BODY === */
+  .body.single { padding: 32px 0; border-bottom: 1px solid var(--border); }
+  .body-section { margin-bottom: 32px; }
+  .body-section:last-child { margin-bottom: 0; }
+  .empty { color: var(--fg-faint); font-style: italic; }
+  .label {
     font-size: 10px;
     letter-spacing: 0.22em;
     text-transform: uppercase;
@@ -725,698 +1267,262 @@ const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
     gap: 10px;
     font-family: "JetBrains Mono", monospace;
   }
-  .signal .heading::before,
-  .ck .heading::before,
-  .body-section .label::before {
-    content: "▸";
-    color: var(--accent);
-    font-size: 9px;
-  }
-  .ck .heading::after {
-    content: "";
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-    margin-left: 6px;
-  }
-  .signal .heading .dim,
-  .ck .heading .dim {
-    color: var(--fg-faint);
-    font-size: 10px;
-    letter-spacing: 0.18em;
-  }
-  .signal .rows {
-    display: flex;
-    flex-direction: column;
-  }
-  .signal-row {
-    display: grid;
-    grid-template-columns: 220px 48px 1fr;
-    align-items: center;
-    gap: 18px;
-    padding: 10px 0;
-    border-bottom: 1px solid var(--border);
-    font-size: 12px;
-    transition: background 0.15s;
-  }
-  .signal-row:last-child {
-    border-bottom: none;
-  }
-  .signal-row:hover {
-    background: rgba(255, 255, 255, 0.015);
-  }
-  .signal-row .label {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-  }
-  .signal-row .arrow {
-    font-size: 16px;
-    color: var(--rowcolor);
-    text-shadow: 0 0 10px var(--rowcolor);
-    line-height: 1;
-  }
-  .signal-row .type {
-    color: var(--rowcolor);
-    font-weight: 500;
-  }
-  .signal-row .count {
-    font-size: 11px;
-    color: var(--fg-dim);
-    text-align: center;
-    padding: 2px 0;
-    border: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.02);
-  }
-  .signal-row .targets {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px 8px;
-    font-size: 11px;
-    color: var(--fg-dim);
-    overflow: hidden;
-  }
-  .signal-row .targets .tsep {
-    color: var(--fg-faint);
-  }
-  .signal-row .targets .tname {
-    color: var(--fg);
-  }
-  .signal-row .targets .more {
-    color: var(--fg-faint);
-    font-size: 10px;
-    margin-left: 6px;
-    letter-spacing: 0.08em;
-  }
-
-  /* === BODY === */
-  .body {
-    padding: 32px 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .body-section {
-    margin-bottom: 32px;
-  }
-  .body-section:last-child {
-    margin-bottom: 0;
-  }
-  .centered {
-    max-width: 720px;
-    margin: 0 auto;
-  }
-  .empty {
-    color: var(--fg-faint);
-    font-style: italic;
-  }
+  .label::before { content: "▸"; color: var(--accent); font-size: 9px; }
 
   /* files box */
-  .files-box {
-    border: 1px solid var(--border);
-    background: var(--bg-panel);
-    padding: 14px 16px;
-    font-size: 12px;
-  }
-  .files-box .file {
-    padding: 5px 0;
-    color: var(--fg);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .files-box .file .bullet {
-    color: var(--accent);
-    font-size: 8px;
-    text-shadow: 0 0 8px var(--accent);
-  }
-  .files-box .file .path {
-    color: #fff;
-    word-break: break-all;
-  }
+  .files-box { border: 1px solid var(--border); background: var(--bg-panel); padding: 14px 16px; font-size: 12px; }
+  .files-box .file { padding: 5px 0; color: var(--fg); display: flex; align-items: center; gap: 10px; }
+  .files-box .file .bullet { color: var(--accent); font-size: 8px; text-shadow: 0 0 8px var(--accent); }
+  .files-box .file .path { color: #fff; word-break: break-all; }
 
   /* lines of interest */
-  .lines-of-interest {
-    border-left: 2px solid var(--border-strong);
-    padding: 6px 0 6px 16px;
-    font-size: 12px;
-    color: var(--fg-dim);
-  }
-  .lines-of-interest .line {
-    padding: 5px 0;
-    line-height: 1.5;
-  }
-  .lines-of-interest .loc {
-    color: var(--accent);
-    margin-right: 10px;
-  }
-  .lines-of-interest .note {
-    color: var(--fg-dim);
-  }
+  .lines-of-interest { border-left: 2px solid var(--border-strong); padding: 6px 0 6px 16px; font-size: 12px; color: var(--fg-dim); }
+  .lines-of-interest .line { padding: 5px 0; line-height: 1.5; }
+  .lines-of-interest .loc { color: var(--accent); margin-right: 10px; }
+  .lines-of-interest .note { color: var(--fg-dim); }
 
-  /* prose */
-  .prose {
-    font-size: 0.95rem;
-    line-height: 1.7;
-    max-width: 780px;
-    color: var(--fg);
-  }
-  .prose :global(h1),
-  .prose :global(h2),
-  .prose :global(h3),
-  .prose :global(h4) {
-    font-size: 1.15rem;
-    letter-spacing: -0.01em;
-    margin: 24px 0 12px;
-    color: #fff;
-    font-weight: 600;
+  /* prose - full content, never clipped */
+  .prose { font-size: 0.95rem; line-height: 1.7; max-width: 780px; color: var(--fg); }
+  .prose :global(h1), .prose :global(h2), .prose :global(h3), .prose :global(h4) {
+    font-size: 1.15rem; letter-spacing: -0.01em; margin: 24px 0 12px; color: #fff; font-weight: 600;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   }
-  .prose :global(h1) {
-    font-size: 1.4rem;
-  }
-  .prose :global(h2) {
-    font-size: 1.25rem;
-  }
-  .prose :global(p) {
-    margin: 0 0 14px;
-  }
-  .prose :global(ul),
-  .prose :global(ol) {
-    margin: 0 0 14px;
-    padding-left: 22px;
-  }
-  .prose :global(li) {
-    margin: 4px 0;
-  }
+  .prose :global(h1) { font-size: 1.4rem; }
+  .prose :global(h2) { font-size: 1.25rem; }
+  .prose :global(p) { margin: 0 0 14px; }
+  .prose :global(ul), .prose :global(ol) { margin: 0 0 14px; padding-left: 22px; }
+  .prose :global(li) { margin: 4px 0; }
   .prose :global(code) {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 0.85em;
-    padding: 1px 5px;
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--accent);
-    border: 1px solid rgba(0, 240, 255, 0.15);
+    font-family: "JetBrains Mono", monospace; font-size: 0.85em; padding: 1px 5px;
+    background: rgba(255, 255, 255, 0.05); color: var(--accent); border: 1px solid rgba(0, 240, 255, 0.15);
   }
   .prose :global(pre) {
-    background: rgba(0, 0, 0, 0.5);
-    border: 1px solid var(--border);
-    padding: 14px;
-    overflow-x: auto;
-    margin: 0 0 16px;
-    font-size: 12px;
-    line-height: 1.5;
+    background: rgba(0, 0, 0, 0.5); border: 1px solid var(--border); padding: 14px 44px 14px 14px;
+    overflow-x: auto; margin: 0 0 16px; font-size: 12px; line-height: 1.5; position: relative;
   }
-  .prose :global(pre) :global(code) {
-    padding: 0;
-    background: none;
-    border: none;
-    color: var(--fg);
+  .prose :global(pre) :global(code) { padding: 0; background: none; border: none; color: var(--fg); }
+  .prose :global(a) { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(0, 240, 255, 0.3); transition: border-color 0.15s; }
+  .prose :global(a:hover) { border-color: var(--accent); }
+  .prose :global(blockquote) { border-left: 2px solid var(--accent); padding-left: 16px; margin: 0 0 16px; color: var(--fg-dim); font-style: italic; }
+  .prose :global(table) { border-collapse: collapse; width: 100%; margin: 0 0 16px; font-size: 13px; }
+  .prose :global(th), .prose :global(td) { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+  .prose :global(th) { background: rgba(255, 255, 255, 0.03); color: #fff; }
+  .copy-btn {
+    position: absolute; top: 8px; right: 8px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--fg-dim); background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-strong);
+    padding: 3px 8px; cursor: pointer; font-family: inherit;
   }
-  .prose :global(a) {
-    color: var(--accent);
-    text-decoration: none;
-    border-bottom: 1px solid rgba(0, 240, 255, 0.3);
-    transition: border-color 0.15s;
+  .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .source-mono { font-family: "JetBrains Mono", "SF Mono", monospace; font-size: 0.85rem; max-width: none; }
+  .doc-body { max-width: 860px; }
+
+  /* Q&A */
+  .qa-block .prose { max-width: 860px; }
+  .op-steps { list-style: none; counter-reset: op; padding-left: 0; max-width: 780px; }
+  .op-steps li {
+    counter-increment: op; position: relative; padding: 8px 0 8px 34px; color: var(--fg);
+    border-bottom: 1px solid var(--border); font-size: 0.9rem;
   }
-  .prose :global(a:hover) {
-    border-color: var(--accent);
-  }
-  .prose :global(blockquote) {
-    border-left: 2px solid var(--accent);
-    padding-left: 16px;
-    margin: 0 0 16px;
-    color: var(--fg-dim);
-    font-style: italic;
-  }
-  .prose :global(table) {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 0 0 16px;
-    font-size: 13px;
-  }
-  .prose :global(th),
-  .prose :global(td) {
-    border: 1px solid var(--border);
-    padding: 8px 12px;
-    text-align: left;
-  }
-  .prose :global(th) {
-    background: rgba(255, 255, 255, 0.03);
-    color: #fff;
+  .op-steps li:last-child { border-bottom: none; }
+  .op-steps li::before {
+    content: counter(op); position: absolute; left: 0; top: 8px; width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center; color: var(--accent);
+    border: 1px solid var(--accent); font-size: 11px; background: rgba(0, 240, 255, 0.05);
   }
 
   /* concept */
   .concept-def {
-    border-left: 2px solid var(--accent);
-    padding: 6px 0 6px 18px;
-    font-size: 1.1rem;
-    line-height: 1.55;
-    font-style: italic;
-    color: #fff;
-    margin: 0 0 28px;
-    max-width: 780px;
-    font-family: Georgia, "Times New Roman", serif;
+    border-left: 2px solid var(--accent); padding: 6px 0 6px 18px; font-size: 1.1rem; line-height: 1.55;
+    font-style: italic; color: #fff; margin: 0 0 28px; max-width: 780px; font-family: Georgia, "Times New Roman", serif;
   }
-  .referenced-by {
-    margin-top: 28px;
-    border: 1px solid var(--border);
-    background: var(--bg-panel);
-    padding: 14px 18px;
+  .referenced-by { margin-top: 28px; border: 1px solid var(--border); background: var(--bg-panel); padding: 14px 18px; }
+  .referenced-by .head, .catches-card .head {
+    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--fg-faint);
+    margin-bottom: 10px; display: flex; align-items: center; gap: 10px;
   }
-  .referenced-by .head {
-    margin-bottom: 10px;
+  .referenced-by .head .cnt { color: var(--accent); font-size: 10px; margin-left: 4px; }
+  .referenced-by a, .catches-card .item {
+    display: flex; align-items: baseline; gap: 10px; padding: 8px 0; text-decoration: none; color: var(--fg);
+    border-bottom: 1px solid var(--border); transition: color 0.15s;
   }
-  .referenced-by .head::before {
-    content: "≈";
-  }
-  .referenced-by .head .cnt {
-    color: var(--accent);
-    font-size: 10px;
-    margin-left: 4px;
-  }
-  .referenced-by a {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    padding: 8px 0;
-    text-decoration: none;
-    color: var(--fg);
-    border-bottom: 1px solid var(--border);
-    transition: color 0.15s;
-  }
-  .referenced-by a:last-child {
-    border-bottom: none;
-  }
-  .referenced-by a:hover {
-    color: var(--accent);
-  }
-  .referenced-by a:hover .g {
-    text-shadow: 0 0 12px var(--accent);
-  }
-  .referenced-by a .g {
-    font-size: 14px;
-    color: var(--accent);
-    flex-shrink: 0;
-  }
-  .referenced-by a .t {
-    flex: 1;
-    color: #fff;
-  }
-  .referenced-by a:hover .t {
-    color: var(--accent);
-  }
-  .referenced-by a .k {
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--fg-faint);
+  .referenced-by a:last-child, .catches-card .item:last-child { border-bottom: none; }
+  .referenced-by a:hover { color: var(--accent); }
+  .referenced-by a .g { font-size: 14px; color: var(--accent); flex-shrink: 0; }
+  .referenced-by a .t { flex: 1; color: #fff; }
+  .referenced-by a:hover .t { color: var(--accent); }
+  .referenced-by a .k, .catches-card .item .k {
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-faint);
   }
 
-  /* chain steps */
-  .chain-steps {
-    display: flex;
-    flex-direction: column;
-  }
-  .chain-step {
-    display: flex;
-    align-items: flex-start;
-    gap: 16px;
-    padding: 14px 0;
-    border-bottom: 1px solid var(--border);
-    text-decoration: none;
-    color: var(--fg);
+  /* timeline (chain) */
+  .timeline { display: flex; flex-direction: column; }
+  .timeline-step {
+    display: flex; align-items: flex-start; gap: 16px; padding: 14px 0; text-decoration: none; color: var(--fg);
     transition: background 0.15s;
   }
-  .chain-step:last-child {
-    border-bottom: none;
+  .timeline-step:hover { background: var(--bg-panel); }
+  .timeline-rail { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+  .timeline-step .num {
+    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--accent); color: var(--accent); font-size: 12px; border-radius: 50%;
+    background: rgba(0, 240, 255, 0.05); transition: all 0.2s;
   }
-  .chain-step:hover {
-    background: var(--bg-panel);
-  }
-  .chain-step .num {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid var(--accent);
-    color: var(--accent);
-    font-size: 12px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background: rgba(0, 240, 255, 0.05);
-    transition: all 0.2s;
-  }
-  .chain-step:hover .num {
-    box-shadow: 0 0 16px -2px var(--accent);
-    background: rgba(0, 240, 255, 0.14);
-  }
-  .chain-step .info {
-    flex: 1;
-    min-width: 0;
-  }
-  .chain-step .info .t {
-    font-size: 1rem;
-    color: #fff;
-    margin-bottom: 4px;
+  .timeline-step:hover .num { box-shadow: 0 0 16px -2px var(--accent); background: rgba(0, 240, 255, 0.14); }
+  .connector { width: 1px; flex: 1; min-height: 18px; background: var(--border-strong); margin: 4px 0; }
+  .timeline-step .info { flex: 1; min-width: 0; }
+  .timeline-step .info .t {
+    font-size: 1rem; color: #fff; margin-bottom: 4px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   }
-  .chain-step:hover .info .t {
-    color: var(--accent);
-  }
-  .chain-step .info .s {
-    font-size: 0.85rem;
-    color: var(--fg-dim);
-    line-height: 1.5;
-  }
-  .chain-step .rank {
-    font-size: 10px;
-    color: var(--fg-faint);
-    letter-spacing: 0.1em;
-    flex-shrink: 0;
-  }
+  .timeline-step:hover .info .t { color: var(--accent); }
+  .timeline-step .info .s { font-size: 0.85rem; color: var(--fg-dim); line-height: 1.5; }
+  .timeline-step .rank { font-size: 10px; color: var(--fg-faint); letter-spacing: 0.1em; flex-shrink: 0; }
 
   /* detection catches */
   .catches-card {
-    border: 1px solid #ff334c;
-    background: linear-gradient(180deg, rgba(255, 51, 76, 0.08), rgba(255, 51, 76, 0.02));
-    padding: 14px 18px;
-    margin-bottom: 28px;
-    position: relative;
-    overflow: hidden;
+    border: 1px solid #ff334c; background: linear-gradient(180deg, rgba(255, 51, 76, 0.08), rgba(255, 51, 76, 0.02));
+    padding: 14px 18px; margin-bottom: 28px;
   }
-  .catches-card::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 25%;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, #ff334c, transparent);
-    animation: traffic-sweep 3s linear infinite;
-    opacity: 0;
-  }
-  .catches-card .head {
-    color: #ff334c;
-    margin-bottom: 12px;
-    text-shadow: 0 0 12px rgba(255, 51, 76, 0.45);
-  }
-  .catches-card .head::before {
-    content: none;
-  }
-  .catches-card .head .ico {
-    font-size: 14px;
-    color: #ff334c;
-    text-shadow: 0 0 12px #ff334c;
-  }
-  .catches-card .head .cnt {
-    color: #ff334c;
-    font-weight: 600;
-    margin-left: 4px;
-  }
-  .catches-card .item {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    padding: 7px 0;
-    text-decoration: none;
-    color: var(--fg);
-    border-bottom: 1px solid rgba(255, 51, 76, 0.12);
-    transition: color 0.15s;
-  }
-  .catches-card .item:last-child {
-    border-bottom: none;
-  }
-  .catches-card .item:hover {
-    color: #ff334c;
-  }
-  .catches-card .item .g {
-    color: #ff334c;
-    font-size: 12px;
-    text-shadow: 0 0 8px #ff334c;
-  }
-  .catches-card .item .t {
-    flex: 1;
-    color: #fff;
-  }
-  .catches-card .item:hover .t {
-    color: #ff334c;
-  }
-  .catches-card .item .k {
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--fg-faint);
+  .catches-card .head { color: #ff334c; text-shadow: 0 0 12px rgba(255, 51, 76, 0.45); }
+  .catches-card .head .ico { font-size: 14px; color: #ff334c; text-shadow: 0 0 12px #ff334c; }
+  .catches-card .head .cnt { color: #ff334c; font-weight: 600; margin-left: 4px; }
+  .catches-card .item { border-bottom-color: rgba(255, 51, 76, 0.12); }
+  .catches-card .item:hover { color: #ff334c; }
+  .catches-card .item .g { color: #ff334c; font-size: 12px; text-shadow: 0 0 8px #ff334c; }
+  .catches-card .item .t { flex: 1; color: #fff; }
+  .catches-card .item:hover .t { color: #ff334c; }
+  .catches-card .item .etype { font-size: 9px; color: var(--fg-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  /* lgtm verbatim */
+  .verbatim {
+    white-space: pre-wrap; word-break: break-word; font-size: 0.85rem; line-height: 1.6; color: var(--fg-dim);
+    border: 1px solid var(--border); background: rgba(255, 255, 255, 0.015); padding: 16px 18px; margin-bottom: 24px; max-width: 860px;
   }
 
-  /* lgtm */
-  .lgtm-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 14px;
-    border: 1px solid var(--qcolor, var(--accent));
-    background: linear-gradient(180deg, var(--qcolor-bg, rgba(0, 240, 255, 0.08)), transparent);
-    margin-bottom: 20px;
+  /* evidence */
+  .evidence-section { padding: 32px 0; border-bottom: 1px solid var(--border); }
+  .evidence-section .heading, .rk .heading {
+    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--fg-faint); margin-bottom: 16px;
+    display: flex; align-items: center; gap: 10px; font-family: "JetBrains Mono", monospace;
   }
-  .lgtm-badge .lbl {
-    font-size: 10px;
-    letter-spacing: 0.2em;
-    color: var(--qcolor);
-    text-transform: uppercase;
+  .evidence-section .heading::before, .rk .heading::before { content: "▸"; color: var(--accent); font-size: 9px; }
+  .rk .heading::after { content: ""; flex: 1; height: 1px; background: var(--border); margin-left: 6px; }
+  .evidence-section .heading .dim, .rk .heading .dim { color: var(--fg-faint); font-size: 10px; letter-spacing: 0.18em; }
+  .evidence-card {
+    border: 1px solid var(--border); background: var(--bg-panel); padding: 14px 18px; margin-bottom: 12px;
   }
-  .lgtm-badge .score {
-    color: #fff;
-    font-size: 18px;
-    font-weight: 600;
-    text-shadow: 0 0 12px var(--qcolor);
+  .evidence-card:last-child { margin-bottom: 0; }
+  .ehead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+  .ehead .et { color: #fff; font-weight: 500; font-size: 0.95rem; }
+  .epill {
+    flex-shrink: 0; font-size: 10px; padding: 2px 8px; color: var(--qc); border: 1px solid var(--qc);
+    background: color-mix(in srgb, var(--qc) 12%, transparent);
   }
-  .key-cues {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 20px;
-  }
-  .key-cues .cue {
-    font-size: 10px;
-    letter-spacing: 0.06em;
-    padding: 3px 8px;
-    border: 1px solid var(--accent);
-    color: var(--accent);
-    background: rgba(0, 240, 255, 0.04);
-    text-transform: lowercase;
-  }
+  .etopic { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-faint); margin-bottom: 8px; }
+  .esummary { font-size: 0.88rem; line-height: 1.55; color: var(--fg); margin: 0 0 8px; }
 
-  /* === CONNECTED KNOWLEDGE === */
-  .ck {
-    padding: 32px 0 0;
+  /* attack context */
+  .attack-context { display: flex; flex-direction: column; gap: 16px; }
+  .attack-group { border-left: 2px solid var(--fg-faint); padding: 4px 0 4px 14px; }
+  .attack-group-head { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-dim); margin-bottom: 8px; }
+  .attack-chains { border-color: #ffb800; }
+  .attack-chains .attack-group-head { color: #ffb800; }
+  .attack-alts { border-color: #9d4edd; }
+  .attack-alts .attack-group-head { color: #9d4edd; }
+  .attack-counters { border-color: #ff334c; }
+  .attack-counters .attack-group-head { color: #ff334c; }
+  .mini-card-row, .attack-group { display: flex; flex-wrap: wrap; gap: 8px; }
+  .attack-group { flex-direction: column; align-items: flex-start; }
+  .mini-card {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg);
+    text-decoration: none; border: 1px solid var(--border); padding: 5px 10px; background: rgba(255, 255, 255, 0.02);
+    transition: border-color 0.15s, color 0.15s;
   }
-  .ck .heading .dim {
-    color: var(--fg-faint);
+  .mini-card:hover { color: var(--accent); border-color: var(--accent); }
+  .mini-card .g { font-size: 11px; color: var(--accent); }
+
+  /* playbook */
+  .playbook-cards { display: flex; flex-direction: column; gap: 8px; }
+  .playbook-card {
+    display: flex; align-items: flex-start; gap: 12px; border: 1px solid var(--border); background: var(--bg-panel);
+    padding: 12px 16px;
   }
-  .ck-group {
-    border: 1px solid var(--border);
-    border-left: 2px solid var(--groupcolor);
-    margin-bottom: 6px;
-    background: var(--bg-panel);
-    overflow: hidden;
+  .playbook-card .pnum { color: var(--accent); font-size: 12px; flex-shrink: 0; }
+  .playbook-card .ptext { font-size: 0.9rem; color: var(--fg); line-height: 1.5; }
+
+  /* source chips */
+  .source-chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .file-chip { color: #fff; }
+  .line-chip { color: var(--accent); }
+
+  /* === RELATED KNOWLEDGE === */
+  .rk { padding: 32px 0 0; }
+  .rk-group {
+    border: 1px solid var(--border); border-left: 2px solid var(--groupcolor); margin-bottom: 6px;
+    background: var(--bg-panel); overflow: hidden;
   }
-  .ck-group[open] {
-    background: rgba(255, 255, 255, 0.025);
-  }
-  .ck-group summary {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 11px 14px;
-    cursor: pointer;
-    list-style: none;
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--fg-dim);
-    user-select: none;
+  .rk-group[open] { background: rgba(255, 255, 255, 0.025); }
+  .rk-group summary {
+    display: flex; align-items: center; gap: 12px; padding: 11px 14px; cursor: pointer; list-style: none;
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-dim); user-select: none;
     transition: background 0.15s;
   }
-  .ck-group summary::-webkit-details-marker {
-    display: none;
+  .rk-group summary::-webkit-details-marker { display: none; }
+  .rk-group summary:hover { background: var(--bg-panel-hover); }
+  .rk-group summary .chev { font-size: 10px; color: var(--groupcolor); text-shadow: 0 0 8px var(--groupcolor); transition: transform 0.2s; display: inline-block; }
+  .rk-group[open] summary .chev { transform: rotate(90deg); }
+  .rk-group summary .type { color: var(--groupcolor); font-weight: 500; }
+  .rk-group summary .count { color: var(--fg); font-size: 11px; padding: 1px 6px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.03); }
+  .rk-group summary .preview {
+    flex: 1; color: var(--fg-dim); text-transform: none; letter-spacing: 0; font-size: 11px;
+    white-space: normal; word-break: break-word;
   }
-  .ck-group summary:hover {
-    background: var(--bg-panel-hover);
+  .rk-group .content { padding: 4px 0 12px; }
+  .rk-node {
+    display: flex; gap: 12px; padding: 12px 14px 12px 26px; border-top: 1px solid var(--border);
+    text-decoration: none; color: var(--fg); transition: background 0.15s;
   }
-  .ck-group summary .chev {
-    font-size: 10px;
-    color: var(--groupcolor);
-    text-shadow: 0 0 8px var(--groupcolor);
-    transition: transform 0.2s;
-    display: inline-block;
+  .rk-node:first-child { border-top: none; }
+  .rk-node:hover { background: var(--bg-panel-hover); }
+  .rk-node .arrow { color: var(--groupcolor); font-size: 14px; text-shadow: 0 0 8px var(--groupcolor); flex-shrink: 0; }
+  .rk-node .glyph {
+    font-size: 18px; color: var(--groupcolor); width: 22px; flex-shrink: 0; text-shadow: 0 0 12px var(--groupcolor);
+    line-height: 1.4; text-align: center;
   }
-  .ck-group[open] summary .chev {
-    transform: rotate(90deg);
+  .rk-node .info { flex: 1; min-width: 0; }
+  .rk-node .info .meta {
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-faint); margin-bottom: 5px;
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
   }
-  .ck-group summary .arrow {
-    color: var(--groupcolor);
-    font-size: 14px;
-    text-shadow: 0 0 8px var(--groupcolor);
-  }
-  .ck-group summary .type {
-    color: var(--groupcolor);
-    font-weight: 500;
-  }
-  .ck-group summary .count {
-    color: var(--fg);
-    font-size: 11px;
-    padding: 1px 6px;
-    border: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.03);
-  }
-  .ck-group summary .preview {
-    flex: 1;
-    color: var(--fg-dim);
-    text-transform: none;
-    letter-spacing: 0;
-    font-size: 11px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .ck-group .content {
-    padding: 4px 0 12px;
-  }
-  .ck-node {
-    display: flex;
-    gap: 14px;
-    padding: 12px 14px 12px 26px;
-    border-top: 1px solid var(--border);
-    text-decoration: none;
-    color: var(--fg);
-    transition: background 0.15s;
-  }
-  .ck-node:first-child {
-    border-top: none;
-  }
-  .ck-node:hover {
-    background: var(--bg-panel-hover);
-  }
-  .ck-node .glyph {
-    font-size: 18px;
-    color: var(--groupcolor);
-    width: 22px;
-    flex-shrink: 0;
-    text-shadow: 0 0 12px var(--groupcolor);
-    line-height: 1.4;
-    text-align: center;
-  }
-  .ck-node .info {
-    flex: 1;
-    min-width: 0;
-  }
-  .ck-node .info .meta {
-    font-size: 10px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--fg-faint);
-    margin-bottom: 5px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-wrap: wrap;
-  }
-  .ck-node .info .meta .m-sep {
-    color: var(--fg-faint);
-    margin: 0 4px;
-  }
-  .ck-node .info .t {
-    font-size: 0.95rem;
-    color: #fff;
-    margin-bottom: 4px;
+  .rk-node .info .meta .m-sep { color: var(--fg-faint); margin: 0 4px; }
+  .rk-node .info .t {
+    font-size: 0.95rem; color: #fff; margin-bottom: 4px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   }
-  .ck-node:hover .info .t {
-    color: var(--groupcolor);
+  .rk-node:hover .info .t { color: var(--groupcolor); }
+  .rk-node .info .s { font-size: 0.85rem; color: var(--fg-dim); line-height: 1.5; }
+  .rk-node .rationale {
+    flex: 0 0 220px; max-width: 220px; font-size: 11px; color: var(--fg-dim); font-style: italic;
+    padding-left: 14px; border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px;
   }
-  .ck-node .info .s {
-    font-size: 0.85rem;
-    color: var(--fg-dim);
-    line-height: 1.5;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .ck-node .rationale {
-    flex: 0 0 220px;
-    max-width: 220px;
-    font-size: 11px;
-    color: var(--fg-dim);
-    font-style: italic;
-    padding-left: 14px;
-    border-left: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .ck-node .rationale .rtext {
-    line-height: 1.4;
-  }
-  .ck-node .rationale .rank {
-    font-size: 9px;
-    color: var(--groupcolor);
-    letter-spacing: 0.1em;
-    font-style: normal;
-    text-shadow: 0 0 6px var(--groupcolor);
-  }
+  .rk-node .rationale .rtext { line-height: 1.4; }
+  .rk-node .rationale .rank { font-size: 9px; color: var(--groupcolor); letter-spacing: 0.1em; font-style: normal; text-shadow: 0 0 6px var(--groupcolor); }
 
   /* === RESPONSIVE === */
+  @media (max-width: 900px) {
+    .layout-split { grid-template-columns: 1fr; }
+  }
   @media (max-width: 760px) {
-    .ep {
-      padding: 0 16px 64px;
+    .ep { padding: 0 16px 64px; }
+    .crumb { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .hero { padding: 24px 0 24px; }
+    .hero .title { font-size: 1.8rem; }
+    .hero .title-mono { font-size: 1.1rem; }
+    .rk-node { flex-wrap: wrap; padding-left: 14px; }
+    .rk-node .rationale {
+      flex: 1 1 100%; max-width: none; border-left: none; border-top: 1px solid var(--border);
+      padding-left: 0; padding-top: 8px;
     }
-    .crumb {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 10px;
-    }
-    .hero {
-      padding: 24px 0 24px;
-    }
-    .hero .title {
-      font-size: 1.8rem;
-    }
-    .hero .title-mono {
-      font-size: 1.1rem;
-    }
-    .signal-row {
-      grid-template-columns: 1fr auto;
-      grid-template-areas:
-        "label count"
-        "targets targets";
-      gap: 6px 12px;
-      padding: 12px 0;
-    }
-    .signal-row .label {
-      grid-area: label;
-    }
-    .signal-row .count {
-      grid-area: count;
-    }
-    .signal-row .targets {
-      grid-area: targets;
-    }
-    .ck-node {
-      flex-wrap: wrap;
-      padding-left: 14px;
-    }
-    .ck-node .rationale {
-      flex: 1 1 100%;
-      max-width: none;
-      border-left: none;
-      border-top: 1px solid var(--border);
-      padding-left: 0;
-      padding-top: 8px;
-    }
+    .bridge-bar-row { grid-template-columns: 70px 1fr 24px; }
   }
 </style>
