@@ -78,12 +78,6 @@ const MODEL_MAP = {
   "deepseek-v3":                  "model-h",
 };
 
-function anonModel(raw) {
-  if (!raw) return null;
-  const key = String(raw).toLowerCase().trim();
-  return MODEL_MAP[key] ?? (key.includes("qwen") ? "model-e" : key.includes("gemini") ? "model-g" : key.includes("claude") ? "model-d" : "model-x");
-}
-
 function anonCert(raw) {
   if (!raw) return null;
   const key = String(raw).toLowerCase().trim();
@@ -132,15 +126,6 @@ function sanitizeText(value) {
   }
   // Collapse double spaces
   return s.replace(/[ \t]{2,}/g, " ").replace(/ +([,.;:])/g, "$1").trim();
-}
-
-function sanitizeDeep(value) {
-  if (typeof value === "string") return sanitizeText(value);
-  if (Array.isArray(value)) return value.map(sanitizeDeep);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, sanitizeDeep(v)]));
-  }
-  return value;
 }
 
 // ── Task type normalization ───────────────────────────────────────────────────
