@@ -2,17 +2,9 @@
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import GraphThreeV3 from "../../components/GraphThreeV3";
 import { manifest, entities, curatedRelations } from "../../lib/data";
-import fs from "node:fs";
-import path from "node:path";
 
-// Load pre-computed 3D positions from build-data.mjs output.
-// Falls back to empty object if file doesn't exist yet (first-run or local dev).
-const posFile = path.resolve("src/generated/graph-positions.json");
-const rawPositions: Record<string, { x: number; y: number; z: number }> =
-  fs.existsSync(posFile)
-    ? JSON.parse(fs.readFileSync(posFile, "utf8"))
-    : {};
-
+// Pass nodes + edges; positions is empty so GraphThreeV3 runs the same
+// spring-physics layout as the original GraphThree.tsx (compute3DLayout).
 const graphNodes = entities.map((e) => ({
   id: e.id,
   label: e.title,
@@ -35,9 +27,8 @@ const graphEdges = curatedRelations.map((r) => ({
   type: r.type,
 }));
 
-// Pass positions as a plain {id:{x,y,z}} record — GraphThreeV3 converts it
-// to a Map<string, THREE.Vector3> internally.
-const graphData = { nodes: graphNodes, edges: graphEdges, positions: rawPositions };
+// Empty positions → GraphThreeV3 runs spring-physics layout client-side
+const graphData = { nodes: graphNodes, edges: graphEdges, positions: {} };
 ---
 
 <BaseLayout
