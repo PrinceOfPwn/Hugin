@@ -916,21 +916,20 @@ const jsonLd = buildJsonLd(entity, cleanSummary || entity.summary);
 <script>
   // Code fences are the only place operators copy-paste from; everything else on the page is prose.
   document.querySelectorAll(".ep .prose pre").forEach((pre) => {
-    const preEl = pre as HTMLElement;
     const btn = document.createElement("button");
     btn.className = "copy-btn";
     btn.type = "button";
     btn.textContent = "Copy";
     btn.addEventListener("click", () => {
-      const code = preEl.querySelector("code");
-      const text = code ? code.textContent ?? "" : preEl.textContent ?? "";
+      const code = pre.querySelector("code");
+      const text = code ? code.textContent ?? "" : pre.textContent ?? "";
       navigator.clipboard.writeText(text).then(() => {
         btn.textContent = "Copied";
         setTimeout(() => (btn.textContent = "Copy"), 1500);
       });
     });
-    preEl.style.position = "relative";
-    preEl.appendChild(btn);
+    (pre as HTMLElement).style.position = "relative";
+    pre.appendChild(btn);
   });
 </script>
 

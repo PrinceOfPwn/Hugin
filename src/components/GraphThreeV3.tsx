@@ -2,32 +2,23 @@ import {
   useCallback, useEffect, useMemo, useRef, useState,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Stars, CameraControls } from "@react-three/drei";
-import { EffectComposer, Bloom, ChromaticAberration } from "@react-three/postprocessing";
+import { Stars, OrbitControls } from "@react-three/drei";
+import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
-import type { DatasetManifest, EvidenceRecord } from "../lib/types";
+import type { DatasetManifest } from "../lib/types";
 
-import GlyphNodes from "./GlyphNodes";
-import type { GlyphNodeData, NodeKind } from "./GlyphNodes";
-import SemanticEdges from "./SemanticEdges";
-import type { EdgeType, SemanticEdge } from "./SemanticEdges";
-import FreeFlyCamera from "./FreeFlyCamera";
-import ClickShockwave from "./ClickShockwave";
-import HolographicGrid from "./HolographicGrid";
-import AmbientDust from "./AmbientDust";
-import WarpJump from "./WarpJump";
-import KindLegend from "./KindLegend";
-import RichInspector from "./RichInspector";
+import NodeCloud from "./NodeCloud";
+import type { NodeDatum } from "./NodeCloud";
+import EdgeSet, { EDGE_COLOR } from "./EdgeSet";
 
-type Mode = "universe" | "galaxy" | "neighborhood" | "path";
-type CameraMode = "orbit" | "freefly";
+type Mode = "universe" | "galaxy" | "neighborhood";
 
 type GraphNodeIn = {
   id: string; label: string; kind: string; galaxyId: string; category: string;
-  route: string; summary: string; scope: "core" | "support" | "structure" | "evidence";
+  route: string; summary: string;
+  scope: "core" | "support" | "structure" | "evidence";
   degree: number; size: number; color: string; isGalaxy?: boolean;
   tier?: "S" | "A" | "B" | "C";
-  rawEvidence?: EvidenceRecord;
 };
 type GraphEdgeIn = {
   id: string; source: string; target: string; type: string;
@@ -39,169 +30,186 @@ type GraphDataIn = {
   positions?: Map<string, THREE.Vector3> | Record<string, { x: number; y: number; z: number }>;
 };
 
+// ═════════════════════════════════════════════════════════════════════════════
+//  Layout constants
+// ═════════════════════════════════════════════════════════════════════════════
+
 const GALAXY_CENTERS: Record<string, [number, number, number]> = {
-  techniques: [280,40,60], internals: [-200,180,-80], defenses: [-240,-150,40],
-  chains: [100,-220,120], evidence: [-80,80,-260], sources: [60,200,220],
-  gaps: [200,-80,-180], architecture: [-120,-200,-140], tradecraft_qa: [0,300,150],
+  techniques:    [ 340,   40,   60],
+  internals:     [-260,  200,  -80],
+  defenses:      [-300, -180,   40],
+  chains:        [ 120, -260,  140],
+  evidence:      [-100,  100, -300],
+  sources:       [  80,  240,  260],
+  gaps:          [ 240, -100, -220],
+  architecture:  [-140, -240, -160],
+  tradecraft_qa: [   0,  360,  180],
 };
 const GALAXY_COLORS: Record<string, string> = {
-  techniques: "#ff2244", internals: "#00f0ff", defenses: "#39ff14",
-  chains: "#ffb700", evidence: "#00e5ff", sources: "#e040fb",
-  gaps: "#ff5555", architecture: "#9d4edd", tradecraft_qa: "#00e5bf",
+  techniques:    "#ff2244",
+  internals:     "#00f0ff",
+  defenses:      "#39ff14",
+  chains:        "#ffb700",
+  evidence:      "#00e5ff",
+  sources:       "#e040fb",
+  gaps:          "#ff5555",
+  architecture:  "#9d4edd",
+  tradecraft_qa: "#00e5bf",
+};
+const GALAXY_LABELS: Record<string, string> = {
+  techniques: "Techniques", internals: "Internals", defenses: "Defenses",
+  chains: "Attack Chains", evidence: "Evidence", sources: "Sources",
+  gaps: "Gaps", architecture: "Architecture", tradecraft_qa: "Q&A",
 };
 
-const VALID_EDGE_TYPES: EdgeType[] = [
-  "enables", "counters", "detects", "chains_to", "requires",
-  "implements", "derived_from", "alternative_to", "related",
-  "concept_link", "reference", "enhances",
-];
-const VALID_NODE_KINDS: NodeKind[] = [
-  "technique", "chain", "detection", "concept", "lgtm_note",
-  "playbook", "source", "source-extract", "documentation", "reference", "pattern",
-];
+const NOISE_EDGE = new Set(["similar_to"]);
 
-// similarity edges are exploratory noise — off by default (75K would blow the GPU)
-const NOISE_EDGE_TYPES = new Set<string>(["similar_to"]);
-const MAX_EDGES_RENDERED = 4000;
+// ═════════════════════════════════════════════════════════════════════════════
+//  Deterministic 3D layout — hash-based Fibonacci sphere per galaxy.
+//  Guaranteed to spread nodes evenly, never collapses, O(N).
+// ═════════════════════════════════════════════════════════════════════════════
+
+function shortHash(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) / 0xffffffff;
+}
+function derivedPositions(nodes: GraphNodeIn[]): Map<string, THREE.Vector3> {
+  const perGalaxy = new Map<string, number>();
+  for (const n of nodes) if (!n.isGalaxy) perGalaxy.set(n.galaxyId, (perGalaxy.get(n.galaxyId) || 0) + 1);
+
+  const radius = new Map<string, number>();
+  for (const [g, c] of perGalaxy) radius.set(g, 90 + Math.cbrt(c) * 28);
+
+  const cursor = new Map<string, number>();
+  const result = new Map<string, THREE.Vector3>();
+  const sorted = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
+
+  for (const n of sorted) {
+    if (n.isGalaxy) {
+      const c = GALAXY_CENTERS[n.galaxyId] ?? [0, 0, 0];
+      result.set(n.id, new THREE.Vector3(c[0], c[1], c[2]));
+      continue;
+    }
+    const c = GALAXY_CENTERS[n.galaxyId] ?? [0, 0, 0];
+    const R = radius.get(n.galaxyId) ?? 140;
+    const idx   = cursor.get(n.galaxyId) ?? 0;
+    const total = perGalaxy.get(n.galaxyId) ?? 1;
+    cursor.set(n.galaxyId, idx + 1);
+
+    const phi   = Math.acos(1 - 2 * (idx + 0.5) / total);
+    const theta = Math.PI * (1 + Math.sqrt(5)) * idx;
+    const jitter = 0.6 + shortHash(n.id + ":r") * 0.4;
+    const r = R * jitter;
+    result.set(n.id, new THREE.Vector3(
+      c[0] + r * Math.sin(phi) * Math.cos(theta),
+      c[1] + r * Math.sin(phi) * Math.sin(theta),
+      c[2] + r * Math.cos(phi),
+    ));
+  }
+  return result;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Galaxy orbs — 9 big glowing points marking each galaxy center. Always
+//  visible, always clickable to warp/zoom.
+// ═════════════════════════════════════════════════════════════════════════════
+
+function GalaxyOrbs({ onSelect }: { onSelect: (galaxyId: string) => void }) {
+  const [geo, mat] = useMemo(() => {
+    const entries = Object.entries(GALAXY_CENTERS);
+    const positions = new Float32Array(entries.length * 3);
+    const colors = new Float32Array(entries.length * 3);
+    const c = new THREE.Color();
+    for (let i = 0; i < entries.length; i++) {
+      const [gid, pos] = entries[i];
+      positions[i * 3]     = pos[0];
+      positions[i * 3 + 1] = pos[1];
+      positions[i * 3 + 2] = pos[2];
+      c.set(GALAXY_COLORS[gid] || "#ffffff");
+      colors[i * 3]     = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    g.setAttribute("color",    new THREE.BufferAttribute(colors, 3));
+    const m = new THREE.PointsMaterial({
+      size: 90, sizeAttenuation: true, vertexColors: true,
+      transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    return [g, m];
+  }, []);
+
+  const ids = useMemo(() => Object.keys(GALAXY_CENTERS), []);
+
+  return (
+    <points
+      geometry={geo}
+      material={mat}
+      onClick={(e) => { e.stopPropagation(); const i = (e as any).index; if (i != null) onSelect(ids[i]); }}
+    />
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Camera focus animator — smooth lerp to a target on selection
+// ═════════════════════════════════════════════════════════════════════════════
+
+function CameraFocuser({ target, distance = 180 }: { target: THREE.Vector3 | null; distance?: number }) {
+  const { camera } = useThree();
+  const tgt = useRef(new THREE.Vector3());
+  const cur = useRef(new THREE.Vector3());
+  const active = useRef(false);
+
+  useEffect(() => {
+    if (!target) return;
+    tgt.current.copy(target);
+    cur.current.set(target.x + distance, target.y + distance * 0.6, target.z + distance);
+    active.current = true;
+  }, [target, distance]);
+
+  useFrame(() => {
+    if (!active.current) return;
+    camera.position.lerp(cur.current, 0.06);
+    camera.lookAt(tgt.current);
+    if (camera.position.distanceTo(cur.current) < 2) active.current = false;
+  });
+  return null;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  Main
+// ═════════════════════════════════════════════════════════════════════════════
 
 interface Props {
   graphData: GraphDataIn;
   manifest: DatasetManifest;
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  DETERMINISTIC 3D LAYOUT
-//
-//  The previous version ran spring-physics on 9445 nodes × 78K edges in the
-//  browser — that collapses every galaxy into a tight clump (each node has
-//  ~15 neighbors all pulling toward the same centroid).
-//
-//  This layout is O(N), hash-derived, always spread. Nodes stay clickable
-//  because they never overlap: each entity gets a stable spherical position
-//  around its galaxy center, distance 40..180 units, evenly distributed in
-//  spherical coordinates.
-// ═════════════════════════════════════════════════════════════════════════════
-function shortHash(s: string, len = 8): string {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return (h >>> 0).toString(16).padStart(8, "0").slice(0, len);
-}
-function derivedPositions(nodes: GraphNodeIn[]): Map<string, THREE.Vector3> {
-  // Distribute nodes evenly in a sphere shell around each galaxy center.
-  // Larger galaxies get proportionally bigger shells so density stays constant.
-  const perGalaxy = new Map<string, number>();
-  for (const n of nodes) if (!n.isGalaxy) perGalaxy.set(n.galaxyId, (perGalaxy.get(n.galaxyId) || 0) + 1);
-
-  const galaxyRadius = new Map<string, number>();
-  for (const [gid, count] of perGalaxy) {
-    // radius ∝ cbrt(count) so density (nodes per volume) stays constant across galaxies
-    galaxyRadius.set(gid, 55 + Math.cbrt(count) * 22);
-  }
-
-  const galaxyCursor = new Map<string, number>();
-  const galaxyTotal = perGalaxy;
-  const m = new Map<string, THREE.Vector3>();
-
-  // pre-sort by ID so positions are deterministic across builds
-  const sorted = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
-
-  for (const n of sorted) {
-    if (n.isGalaxy) {
-      const c = GALAXY_CENTERS[n.galaxyId] ?? [0, 0, 0];
-      m.set(n.id, new THREE.Vector3(c[0], c[1], c[2]));
-      continue;
-    }
-    const c = GALAXY_CENTERS[n.galaxyId] ?? [0, 0, 0];
-    const R = galaxyRadius.get(n.galaxyId) ?? 100;
-
-    // Fibonacci-sphere for even distribution within the shell
-    const idx   = galaxyCursor.get(n.galaxyId) ?? 0;
-    const total = galaxyTotal.get(n.galaxyId) ?? 1;
-    galaxyCursor.set(n.galaxyId, idx + 1);
-
-    const phi     = Math.acos(1 - 2 * (idx + 0.5) / total);
-    const theta   = Math.PI * (1 + Math.sqrt(5)) * idx;
-
-    // radial jitter from hash so it doesn't look like a perfect shell
-    const h = parseInt(shortHash(`${n.id}:r`, 6), 16) / 0xffffff;
-    const r = R * (0.55 + h * 0.45);
-
-    m.set(n.id, new THREE.Vector3(
-      c[0] + r * Math.sin(phi) * Math.cos(theta),
-      c[1] + r * Math.sin(phi) * Math.sin(theta),
-      c[2] + r * Math.cos(phi),
-    ));
-  }
-  return m;
-}
-
-function GalaxyCloud({ center, color }: { center: [number, number, number]; color: string }) {
-  const ref = useRef<THREE.Points>(null);
-  const [geo, mat] = useMemo(() => {
-    const N = 800;   // reduced from 2000 — each galaxy had 2K particles × 9 = 18K point overhead
-    const pos = new Float32Array(N * 3);
-    const col = new Float32Array(N * 3);
-    const c = new THREE.Color(color);
-    for (let i = 0; i < N; i++) {
-      const r = Math.pow(Math.random(), 0.5) * 160;
-      const branch = Math.random() * Math.PI * 2;
-      const spin = r * 0.04;
-      pos[i*3]   = Math.cos(branch+spin)*r + (Math.random()-0.5)*20*(1-r/160);
-      pos[i*3+1] = (Math.random()-0.5)*12*(1-r/160);
-      pos[i*3+2] = Math.sin(branch+spin)*r + (Math.random()-0.5)*20*(1-r/160);
-      const f = 1 - r/160;
-      col[i*3]=c.r*f; col[i*3+1]=c.g*f; col[i*3+2]=c.b*f;
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-    const m = new THREE.PointsMaterial({
-      size: 1.6, sizeAttenuation: true, vertexColors: true, transparent: true,
-      opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false,
-    });
-    return [g, m];
-  }, [color]);
-  useFrame(({ clock }) => { if (ref.current) ref.current.rotation.y = clock.getElapsedTime() * 0.04; });
-  return <points ref={ref} geometry={geo} material={mat} position={center} />;
-}
-
-function CameraVelocityTracker({ onVelocity }: { onVelocity: (v: number) => void }) {
-  const { camera } = useThree();
-  const prev = useRef(new THREE.Vector3());
-  useFrame(() => {
-    const d = camera.position.distanceTo(prev.current);
-    onVelocity(d);
-    prev.current.copy(camera.position);
-  });
-  return null;
-}
-
 export default function GraphThreeV3({ graphData, manifest }: Props) {
   const [mode, setMode] = useState<Mode>("universe");
-  const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
   const [selected, setSelected] = useState<GraphNodeIn | null>(null);
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [depth, setDepth] = useState(1);
-  const [showSimilarity, setShowSimilarity] = useState(false);
+  const [hovered, setHovered] = useState<{ id: string; screen: { x: number; y: number } } | null>(null);
+  const [focusPos, setFocusPos] = useState<THREE.Vector3 | null>(null);
+  const [galaxyFilter, setGalaxyFilter] = useState<string | null>(null);
 
-  const [activeKinds, setActiveKinds] = useState<Set<string>>(new Set(VALID_NODE_KINDS));
-  const [activeEdgeTypes, setActiveEdgeTypes] = useState<Set<string>>(new Set(VALID_EDGE_TYPES));
-
-  const [shockwave, setShockwave] = useState<{ origin: THREE.Vector3; id: string; color: string } | null>(null);
-  const [warp, setWarp] = useState<{ from: THREE.Vector3; to: THREE.Vector3; color: string } | null>(null);
-  const [camVelocity, setCamVelocity] = useState(0);
-  const controlsRef = useRef<CameraControls>(null);
-
-  // Positions — server-supplied if present, else derive deterministically.
+  // ─── Positions ────────────────────────────────────────────────────────────
   const positionsMap = useMemo<Map<string, THREE.Vector3>>(() => {
     const raw = graphData.positions;
-    if (raw instanceof Map && raw.size > 0) return raw;
-    if (raw && typeof raw === "object" && !(raw instanceof Map)) {
+    if (raw instanceof Map && raw.size > 0) {
+      // sanity: reject if all positions are (0,0,0)
+      let nonZero = 0;
+      for (const v of raw.values()) if (v.x !== 0 || v.y !== 0 || v.z !== 0) { nonZero++; break; }
+      if (nonZero > 0) return raw;
+    }
+    if (raw && !(raw instanceof Map) && typeof raw === "object") {
       const keys = Object.keys(raw);
       if (keys.length > 0) {
         const m = new Map<string, THREE.Vector3>();
         for (const k of keys) {
-          const v = (raw as Record<string, { x: number; y: number; z: number }>)[k];
+          const v = (raw as any)[k];
           m.set(k, new THREE.Vector3(v.x, v.y, v.z));
         }
         return m;
@@ -210,346 +218,317 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
     return derivedPositions(graphData.nodes);
   }, [graphData]);
 
-  // Adjacency (curated + inferred only — similarity ignored)
+  // ─── Adjacency (curated only, no similarity noise) ────────────────────────
   const adjacency = useMemo(() => {
     const a = new Map<string, string[]>();
-    graphData.nodes.forEach((n) => a.set(n.id, []));
+    for (const n of graphData.nodes) a.set(n.id, []);
     for (const e of graphData.edges) {
-      if (NOISE_EDGE_TYPES.has(e.type)) continue;
+      if (NOISE_EDGE.has(e.type)) continue;
       a.get(e.source)?.push(e.target);
       a.get(e.target)?.push(e.source);
     }
     return a;
   }, [graphData]);
 
-  const visibleSet = useMemo<Set<string> | null>(() => {
-    if (mode === "neighborhood" && selected) {
-      const vis = new Set([selected.id]);
-      let frontier = new Set([selected.id]);
-      for (let h = 0; h < depth; h++) {
-        const next = new Set<string>();
-        for (const id of frontier) for (const nid of adjacency.get(id) ?? []) if (!vis.has(nid)) { vis.add(nid); next.add(nid); }
-        frontier = next;
-      }
-      return vis;
-    }
-    return null;
-  }, [mode, selected, depth, adjacency]);
-
-  const glyphNodes: GlyphNodeData[] = useMemo(() => {
+  // ─── Node list — filtered by galaxy in galaxy mode ────────────────────────
+  const visibleNodes = useMemo<NodeDatum[]>(() => {
     return graphData.nodes
-      .filter((n) => !n.isGalaxy && activeKinds.has(n.kind))
+      .filter((n) => !n.isGalaxy)
+      .filter((n) => !galaxyFilter || n.galaxyId === galaxyFilter)
       .map((n) => ({
         id: n.id,
         position: positionsMap.get(n.id) ?? new THREE.Vector3(),
-        color: GALAXY_COLORS[n.galaxyId] || n.color,
-        // Bumped baseline size so clicks are easier at ~500 unit distance.
-        // techniques get a larger baseline (readable at overview zoom).
-        size: Math.max(4.5, n.size * 1.7),
-        kind: (VALID_NODE_KINDS.includes(n.kind as NodeKind) ? n.kind : "reference") as NodeKind,
-        tier: n.tier,
+        color: GALAXY_COLORS[n.galaxyId] || n.color || "#888",
+        size: Math.max(2.4, (n.tier === "S" ? 5.5 : n.tier === "A" ? 4.2 : n.tier === "B" ? 3.2 : 2.6) + Math.log2(n.degree + 1) * 0.4),
+        kind: n.kind,
+        galaxyId: n.galaxyId,
       }));
-  }, [graphData, activeKinds, positionsMap]);
-
-  // Edges — filter aggressively so the GPU doesn't melt.
-  //
-  //   1. similarity edges hidden by default (toggle to show)
-  //   2. When hidden but selected is set, show only similarity edges touching selected
-  //   3. Hard cap MAX_EDGES_RENDERED — priority to edges touching selected/hovered.
-  const semanticEdges: SemanticEdge[] = useMemo(() => {
-    const collected: SemanticEdge[] = [];
-    for (const e of graphData.edges) {
-      if (visibleSet && (!visibleSet.has(e.source) || !visibleSet.has(e.target))) continue;
-      if (!activeEdgeTypes.has(e.type)) continue;
-      if (NOISE_EDGE_TYPES.has(e.type)) {
-        if (!showSimilarity) {
-          // still allow similarity edges touching selected — helpful for exploration
-          if (!selected || (e.source !== selected.id && e.target !== selected.id)) continue;
-        }
-      }
-      collected.push({
-        id: e.id, source: e.source, target: e.target,
-        type: (VALID_EDGE_TYPES.includes(e.type as EdgeType) ? e.type : "related") as EdgeType,
-      });
-    }
-    if (collected.length <= MAX_EDGES_RENDERED) return collected;
-
-    const focusId = selected?.id ?? hovered ?? null;
-    const priority: SemanticEdge[] = [];
-    const rest: SemanticEdge[] = [];
-    for (const e of collected) {
-      if (focusId && (e.source === focusId || e.target === focusId)) priority.push(e);
-      else rest.push(e);
-    }
-    const budget = MAX_EDGES_RENDERED - priority.length;
-    return budget > 0 ? [...priority, ...rest.slice(0, budget)] : priority.slice(0, MAX_EDGES_RENDERED);
-  }, [graphData.edges, activeEdgeTypes, visibleSet, selected, hovered, showSimilarity]);
+  }, [graphData.nodes, positionsMap, galaxyFilter]);
 
   const nodeById = useMemo(() => {
     const m = new Map<string, GraphNodeIn>();
-    graphData.nodes.forEach((n) => m.set(n.id, n));
+    for (const n of graphData.nodes) m.set(n.id, n);
     return m;
   }, [graphData]);
 
-  const relatedItems = useMemo(() => {
+  // ─── Edges — hidden unless a node is focused ──────────────────────────────
+  // Design decision: showing ALL 2945 curated edges at once was a visual mess.
+  // Instead, show edges progressively: on hover show that node's edges muted;
+  // on select show that node's edges highlighted. Zero edges shown otherwise.
+  const focusId = selected?.id ?? hovered?.id ?? null;
+
+  const focusEdges = useMemo(() => {
+    if (!focusId) return [];
+    return graphData.edges.filter(
+      (e) => !NOISE_EDGE.has(e.type) && (e.source === focusId || e.target === focusId)
+    );
+  }, [graphData.edges, focusId]);
+
+  // ─── Dimmed set — when a node is selected, dim everything not connected ──
+  const dimmedSet = useMemo<Set<string> | null>(() => {
+    if (!selected) return null;
+    const connected = new Set([selected.id]);
+    for (const nid of adjacency.get(selected.id) ?? []) connected.add(nid);
+    return connected;
+  }, [selected, adjacency]);
+
+  // ─── Related items for the inspector, grouped by edge type ────────────────
+  const related = useMemo(() => {
     if (!selected) return [];
-    return graphData.edges
-      .filter((e) => (e.source === selected.id || e.target === selected.id) && !NOISE_EDGE_TYPES.has(e.type))
-      .map((e) => {
-        const isOut = e.source === selected.id;
-        const otherId = isOut ? e.target : e.source;
-        const other = nodeById.get(otherId);
-        if (!other) return null;
-        return {
-          edgeType: e.type,
-          direction: (isOut ? "outgoing" : "incoming") as "outgoing" | "incoming",
-          otherId,
-          otherLabel: other.label,
-          otherKind: other.kind,
-          otherGalaxy: other.galaxyId,
-        };
-      })
-      .filter(Boolean) as any;
+    const grouped = new Map<string, Array<{ id: string; label: string; kind: string; direction: "out" | "in" }>>();
+    for (const e of graphData.edges) {
+      if (NOISE_EDGE.has(e.type)) continue;
+      const isOut = e.source === selected.id;
+      const isIn  = e.target === selected.id;
+      if (!isOut && !isIn) continue;
+      const otherId = isOut ? e.target : e.source;
+      const other = nodeById.get(otherId);
+      if (!other) continue;
+      if (!grouped.has(e.type)) grouped.set(e.type, []);
+      grouped.get(e.type)!.push({ id: other.id, label: other.label, kind: other.kind, direction: isOut ? "out" : "in" });
+    }
+    return [...grouped.entries()].map(([type, items]) => ({ type, items })).sort((a, b) => b.items.length - a.items.length);
   }, [selected, graphData.edges, nodeById]);
 
+  // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleNodeClick = useCallback((id: string) => {
     const node = nodeById.get(id);
     if (!node) return;
     setSelected(node);
     const pos = positionsMap.get(id);
-    if (pos) {
-      setShockwave({ origin: pos.clone(), id, color: GALAXY_COLORS[node.galaxyId] || "#00f0ff" });
-      if (cameraMode === "orbit" && controlsRef.current) {
-        controlsRef.current.setLookAt(
-          pos.x + 90, pos.y + 40, pos.z + 90,
-          pos.x, pos.y, pos.z, true,
-        );
-      }
-    }
-  }, [nodeById, positionsMap, cameraMode]);
+    if (pos) setFocusPos(pos.clone());
+  }, [nodeById, positionsMap]);
 
-  const handleGalaxyWarp = useCallback((galaxyId: string) => {
-    const to = new THREE.Vector3(...GALAXY_CENTERS[galaxyId]);
-    const cam = controlsRef.current?.camera;
-    if (!cam) return;
-    setWarp({ from: cam.position.clone(), to, color: GALAXY_COLORS[galaxyId] || "#00f0ff" });
+  const handleGalaxyClick = useCallback((gid: string) => {
+    setGalaxyFilter(gid);
+    setMode("galaxy");
+    const c = GALAXY_CENTERS[gid];
+    if (c) setFocusPos(new THREE.Vector3(c[0], c[1], c[2]));
   }, []);
 
-  const toggleKind = useCallback((id: string) => {
-    setActiveKinds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
-  }, []);
-  const toggleEdgeType = useCallback((id: string) => {
-    setActiveEdgeTypes(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const handleReset = useCallback(() => {
+    setSelected(null);
+    setGalaxyFilter(null);
+    setMode("universe");
+    setFocusPos(null);
   }, []);
 
-  const chromatic: [number, number] = useMemo(() => {
-    const base = 0.0003;
-    const boost = Math.min(camVelocity * 0.0004, 0.004);
-    return [base + boost, base + boost];
-  }, [camVelocity]);
-
-  // Diagnostic — one log so you can see actual counts in the console.
+  // Diagnostic
   useEffect(() => {
-    const total = graphData.edges.length;
-    const noise = graphData.edges.filter((e) => NOISE_EDGE_TYPES.has(e.type)).length;
-    console.log(`[GraphThreeV3] nodes=${graphData.nodes.length}  edges_total=${total}  similarity=${noise}  rendering_edges=${semanticEdges.length}  rendering_nodes=${glyphNodes.length}`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graphData.nodes.length, graphData.edges.length, semanticEdges.length, glyphNodes.length]);
+    console.log(`[GraphThreeV3] nodes=${visibleNodes.length}/${graphData.nodes.length}  edges_visible=${focusEdges.length}/${graphData.edges.length}  mode=${mode}  galaxy=${galaxyFilter ?? "all"}`);
+  }, [visibleNodes.length, focusEdges.length, mode, galaxyFilter, graphData.nodes.length, graphData.edges.length]);
+
+  const selectedRoute = selected?.route;
+  const galaxies = Object.entries(GALAXY_CENTERS);
 
   return (
-    <div className="graph-page">
-      <header className="graph-topbar">
-        <div className="graph-title">
-          <p className="eyebrow">3D Knowledge Universe · WebGL + GLSL</p>
-          <h1>HUGIN</h1>
+    <div style={{ position: "relative", width: "100%", height: "100vh", background: "#000005", color: "#e8f0ff", overflow: "hidden" }}>
+      {/* ─── LEFT RAIL: navigation + filters ─────────────────────────────── */}
+      <aside style={{
+        position: "absolute", top: 0, left: 0, bottom: 0, width: 240,
+        padding: "20px 18px", background: "linear-gradient(180deg, rgba(0,8,20,0.85), rgba(0,4,12,0.65))",
+        borderRight: "1px solid rgba(0,240,255,0.15)", backdropFilter: "blur(8px)",
+        fontFamily: "'Fira Code', ui-monospace, monospace", fontSize: 12, zIndex: 5, overflowY: "auto",
+      }}>
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ fontSize: 10, opacity: 0.6, letterSpacing: "0.14em", textTransform: "uppercase", color: "#00f0ff" }}>3D Knowledge Universe</div>
+          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "0.05em", marginTop: 4 }}>HUGIN</div>
         </div>
-      </header>
 
-      <div className="graph-shell">
-        <aside className="graph-rail">
-          <fieldset>
-            <legend>Camera</legend>
-            <button className="button" type="button"
-              onClick={() => setCameraMode(cameraMode === "orbit" ? "freefly" : "orbit")}>
-              {cameraMode === "orbit" ? "→ Free flight" : "← Orbit"}
-            </button>
-            {cameraMode === "freefly" && (
-              <p style={{ fontSize: 11, opacity: 0.65, marginTop: 8, lineHeight: 1.4 }}>
-                Click canvas · WASD thrust · Space/Shift · Q/E roll · Esc exit
-              </p>
-            )}
-          </fieldset>
-
-          <fieldset>
-            <legend>View</legend>
-            {(["universe", "galaxy", "neighborhood"] as Mode[]).map((val) => (
-              <div className="graph-mode" key={val}>
-                <input id={`mode-${val}`} type="radio" name="graph-mode" value={val}
-                  checked={mode === val} onChange={() => setMode(val)} />
-                <label htmlFor={`mode-${val}`}>{val[0].toUpperCase() + val.slice(1)}</label>
-              </div>
-            ))}
-          </fieldset>
-
-          <fieldset>
-            <legend>Edges</legend>
-            <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
-              <input type="checkbox" checked={showSimilarity}
-                onChange={(e) => setShowSimilarity(e.target.checked)} />
-              Show all similarity edges
-            </label>
-            <p style={{ fontSize: 10, opacity: 0.55, marginTop: 6, lineHeight: 1.4 }}>
-              75K similarity edges are hidden by default. When you click a node,
-              its similarity edges show automatically.
-            </p>
-          </fieldset>
-
-          {mode === "galaxy" && (
-            <fieldset>
-              <legend>Warp to</legend>
-              {Object.keys(GALAXY_CENTERS).map((g) => (
-                <button key={g} className="button" type="button"
-                  onClick={() => handleGalaxyWarp(g)}
-                  style={{ display: "block", width: "100%", marginBottom: 4, textAlign: "left" }}>
-                  <span style={{ color: GALAXY_COLORS[g] }}>●</span> {g}
-                </button>
-              ))}
-            </fieldset>
-          )}
-
-          {mode === "neighborhood" && (
-            <fieldset>
-              <legend>Depth</legend>
-              <select value={depth} onChange={(e) => setDepth(Number(e.target.value))}>
-                <option value={1}>1 hop</option>
-                <option value={2}>2 hops</option>
-                <option value={3}>3 hops</option>
-              </select>
-            </fieldset>
-          )}
-        </aside>
-
-        <div className="graph-canvas-wrap" style={{ position: "relative" }}>
-          <Canvas
-            // Wider FOV + closer start so the whole universe is visible from frame 1
-            camera={{ position: [540, 360, 620], fov: 60, near: 0.1, far: 6000 }}
-            style={{ background: "#000005" }}
-            dpr={[1, 1.6]}
-            gl={{ antialias: true, powerPreference: "high-performance" }}
-          >
-            <color attach="background" args={["#000005"]} />
-            <fogExp2 attach="fog" args={["#000814", 0.0006]} />
-
-            <ambientLight intensity={0.12} color="#3322ff" />
-            <pointLight position={[300, 300, 200]} intensity={1.4} color="#00ffff" distance={1500} />
-            <pointLight position={[-300, -200, -300]} intensity={1.2} color="#ff00aa" distance={1200} />
-
-            <Stars radius={500} depth={100} count={5000} factor={4} saturation={0} fade speed={0.6} />
-            <AmbientDust count={5000} radius={1500} opacity={0.10} />
-            <HolographicGrid y={-400} size={3000} divisions={240} color="#00e5ff" pulseSpeed={0.6} />
-
-            {Object.entries(GALAXY_CENTERS).map(([key, c]) => (
-              <GalaxyCloud key={key} center={c} color={GALAXY_COLORS[key] || "#ffffff"} />
-            ))}
-
-            {glyphNodes.length > 0 && (
-              <GlyphNodes
-                nodes={glyphNodes}
-                hoveredId={hovered}
-                selectedId={selected?.id ?? null}
-                visibleSet={visibleSet}
-                onHover={setHovered}
-                onClick={handleNodeClick}
-              />
-            )}
-
-            {semanticEdges.length > 0 && (
-              <SemanticEdges
-                edges={semanticEdges}
-                positions={positionsMap}
-                selectedId={selected?.id ?? null}
-                visibleSet={visibleSet}
-                hoveredId={hovered}
-              />
-            )}
-
-            {shockwave && (
-              <ClickShockwave
-                active
-                origin={shockwave.origin}
-                originId={shockwave.id}
-                originColor={shockwave.color}
-                adjacency={adjacency}
-                onFadeComplete={() => setShockwave(null)}
-              />
-            )}
-
-            {warp && (
-              <WarpJump
-                from={warp.from} to={warp.to} targetColor={warp.color}
-                active duration={2.4}
-                onComplete={() => setWarp(null)}
-              />
-            )}
-
-            {cameraMode === "freefly"
-              ? <FreeFlyCamera active onExit={() => setCameraMode("orbit")} />
-              : <CameraControls ref={controlsRef} smoothTime={0.35} draggingSmoothTime={0.15}
-                                minDistance={20} maxDistance={2800} makeDefault />}
-
-            <CameraVelocityTracker onVelocity={setCamVelocity} />
-
-            <EffectComposer>
-              <Bloom
-                intensity={0.55}
-                luminanceThreshold={0.7}
-                luminanceSmoothing={0.85}
-                radius={0.5}
-                mipmapBlur
-              />
-              <ChromaticAberration offset={chromatic} radialModulation={false} modulationOffset={0} />
-            </EffectComposer>
-          </Canvas>
-
-          <KindLegend
-            activeKinds={activeKinds} onToggleKind={toggleKind}
-            activeEdgeTypes={activeEdgeTypes} onToggleEdgeType={toggleEdgeType}
-          />
-
-          {hovered && !selected && (
-            <div style={{
-              position: "absolute", bottom: 20, left: 20,
-              background: "rgba(0,8,20,0.9)", backdropFilter: "blur(6px)",
-              border: `1px solid ${GALAXY_COLORS[nodeById.get(hovered)?.galaxyId ?? ""] || "#00f0ff"}`,
-              boxShadow: `0 0 16px ${GALAXY_COLORS[nodeById.get(hovered)?.galaxyId ?? ""] || "#00f0ff"}55`,
-              padding: "8px 14px", fontFamily: "monospace", fontSize: 12,
-              color: "#fff", pointerEvents: "none", maxWidth: 380,
-            }}>
-              <div style={{
-                fontSize: 10, opacity: 0.6, letterSpacing: "0.1em", textTransform: "uppercase",
-                color: GALAXY_COLORS[nodeById.get(hovered)?.galaxyId ?? ""] || "#00f0ff",
-                marginBottom: 4,
-              }}>
-                {nodeById.get(hovered)?.galaxyId} · {nodeById.get(hovered)?.kind.replace(/_/g, " ")}
-              </div>
-              <div style={{ fontWeight: 700 }}>{nodeById.get(hovered)?.label}</div>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 10, opacity: 0.55, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 8 }}>Mode</div>
+          <button onClick={handleReset} style={btnStyle(mode === "universe")}>Universe (all)</button>
+          {galaxyFilter && (
+            <div style={{ marginTop: 6, fontSize: 11, opacity: 0.7 }}>
+              Filtering: <span style={{ color: GALAXY_COLORS[galaxyFilter] }}>● {GALAXY_LABELS[galaxyFilter] ?? galaxyFilter}</span>
             </div>
           )}
         </div>
 
-        <RichInspector
-          node={selected}
-          related={relatedItems}
-          galaxyColors={GALAXY_COLORS}
-          totals={{
-            entities: manifest.counts.coreEntities,
-            edges: manifest.counts.curatedRelations,
-            galaxies: manifest.counts.galaxies,
-          }}
-          onNavigate={handleNodeClick}
-          onEnterNeighborhood={() => setMode("neighborhood")}
-        />
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 10, opacity: 0.55, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 8 }}>Galaxies</div>
+          {galaxies.map(([gid]) => (
+            <button key={gid} onClick={() => handleGalaxyClick(gid)}
+              style={{ ...btnStyle(galaxyFilter === gid), textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: GALAXY_COLORS[gid], fontSize: 14, lineHeight: 1 }}>●</span>
+              <span>{GALAXY_LABELS[gid] ?? gid}</span>
+            </button>
+          ))}
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 10, opacity: 0.55, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 8 }}>Signals</div>
+          <div style={{ fontSize: 10, opacity: 0.55, lineHeight: 1.6, marginBottom: 8 }}>Hover a node to see its links. Click to inspect.</div>
+          {Object.entries(EDGE_COLOR).filter(([t]) => t !== "similar_to" && t !== "reference").slice(0, 8).map(([t, c]) => (
+            <div key={t} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, opacity: 0.75, marginBottom: 3 }}>
+              <span style={{ width: 18, height: 2, background: c, display: "inline-block" }} />
+              <span>{t.replace(/_/g, " ")}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ position: "absolute", bottom: 16, left: 18, right: 18, fontSize: 10, opacity: 0.5, lineHeight: 1.5 }}>
+          {graphData.nodes.filter((n) => !n.isGalaxy).length.toLocaleString()} nodes<br />
+          {graphData.edges.filter((e) => !NOISE_EDGE.has(e.type)).length.toLocaleString()} curated edges<br />
+          {manifest.counts.galaxies} galaxies
+        </div>
+      </aside>
+
+      {/* ─── CANVAS ──────────────────────────────────────────────────────── */}
+      <div style={{ position: "absolute", top: 0, left: 240, right: selected ? 360 : 0, bottom: 0, transition: "right 0.25s ease" }}>
+        <Canvas
+          camera={{ position: [520, 340, 640], fov: 55, near: 0.1, far: 8000 }}
+          dpr={[1, 1.6]}
+          gl={{ antialias: true, powerPreference: "high-performance", alpha: false }}
+        >
+          <color attach="background" args={["#000005"]} />
+          <fogExp2 attach="fog" args={["#02061a", 0.00045]} />
+
+          <ambientLight intensity={0.15} color="#4455ff" />
+          <pointLight position={[400, 400, 300]}  intensity={1.2} color="#00d0ff" distance={2500} />
+          <pointLight position={[-400, -300, -300]} intensity={1.0} color="#ff2288" distance={2000} />
+
+          <Stars radius={800} depth={200} count={5000} factor={5} saturation={0} fade speed={0.3} />
+
+          <GalaxyOrbs onSelect={handleGalaxyClick} />
+
+          <NodeCloud
+            nodes={visibleNodes}
+            hoveredId={hovered?.id ?? null}
+            selectedId={selected?.id ?? null}
+            dimmedSet={dimmedSet}
+            onHover={(id, screen) => setHovered(id ? { id, screen: screen ?? { x: 0, y: 0 } } : null)}
+            onClick={handleNodeClick}
+          />
+
+          {focusEdges.length > 0 && (
+            <EdgeSet
+              edges={focusEdges}
+              positions={positionsMap}
+              opacity={selected ? 0.9 : 0.45}
+              focusColor={selected ? undefined : "#00e5ff"}
+            />
+          )}
+
+          <CameraFocuser target={focusPos} distance={selected ? 160 : 380} />
+
+          <OrbitControls
+            enableDamping dampingFactor={0.08}
+            rotateSpeed={0.7} zoomSpeed={1.2} panSpeed={1.0}
+            minDistance={30} maxDistance={3200}
+            makeDefault
+          />
+
+          <EffectComposer>
+            <Bloom intensity={0.45} luminanceThreshold={0.75} luminanceSmoothing={0.9} radius={0.6} mipmapBlur />
+          </EffectComposer>
+        </Canvas>
+
+        {/* Reset button, top-right of canvas */}
+        <button onClick={handleReset} style={{
+          position: "absolute", top: 16, right: 16, zIndex: 4,
+          background: "rgba(0,8,20,0.75)", border: "1px solid rgba(0,240,255,0.35)",
+          color: "#00f0ff", padding: "6px 14px", fontFamily: "monospace",
+          fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em",
+          cursor: "pointer", backdropFilter: "blur(6px)",
+        }}>Reset view</button>
+
+        {/* Cursor-following hover tooltip */}
+        {hovered && !selected && (() => {
+          const node = nodeById.get(hovered.id);
+          if (!node) return null;
+          const gc = GALAXY_COLORS[node.galaxyId] || "#00f0ff";
+          return (
+            <div style={{
+              position: "fixed", left: hovered.screen.x + 16, top: hovered.screen.y + 16,
+              background: "rgba(0,8,20,0.92)", border: `1px solid ${gc}`,
+              boxShadow: `0 0 24px ${gc}44`,
+              padding: "8px 14px", fontFamily: "monospace", fontSize: 12, color: "#fff",
+              maxWidth: 360, pointerEvents: "none", zIndex: 100,
+              backdropFilter: "blur(6px)",
+            }}>
+              <div style={{ fontSize: 9, opacity: 0.6, letterSpacing: "0.14em", textTransform: "uppercase", color: gc, marginBottom: 3 }}>
+                {GALAXY_LABELS[node.galaxyId] ?? node.galaxyId} · {node.kind.replace(/_/g, " ")}{node.tier ? ` · Tier ${node.tier}` : ""}
+              </div>
+              <div style={{ fontWeight: 700, marginBottom: 3 }}>{node.label}</div>
+              <div style={{ fontSize: 10, opacity: 0.7 }}>{node.degree} connections · click to inspect</div>
+            </div>
+          );
+        })()}
       </div>
+
+      {/* ─── RIGHT INSPECTOR: opens on click, closes with X or Esc ───────── */}
+      {selected && (
+        <aside style={{
+          position: "absolute", top: 0, right: 0, bottom: 0, width: 360,
+          background: "linear-gradient(180deg, rgba(0,10,24,0.95), rgba(0,4,12,0.85))",
+          borderLeft: `1px solid ${GALAXY_COLORS[selected.galaxyId] ?? "#00f0ff"}55`,
+          backdropFilter: "blur(10px)", padding: "18px 20px", overflowY: "auto", zIndex: 6,
+          fontFamily: "system-ui, sans-serif", fontSize: 13, lineHeight: 1.55,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div style={{ fontSize: 10, opacity: 0.6, letterSpacing: "0.14em", textTransform: "uppercase", fontFamily: "monospace", color: GALAXY_COLORS[selected.galaxyId] }}>
+              {GALAXY_LABELS[selected.galaxyId] ?? selected.galaxyId} · {selected.kind.replace(/_/g, " ")}
+              {selected.tier && <span> · Tier {selected.tier}</span>}
+            </div>
+            <button onClick={() => { setSelected(null); }} style={{
+              background: "transparent", border: "none", color: "#88a", fontSize: 18, cursor: "pointer",
+              fontFamily: "monospace", padding: 0, lineHeight: 1,
+            }} aria-label="Close">×</button>
+          </div>
+
+          <h2 style={{ margin: "0 0 12px 0", fontSize: 20, fontWeight: 700, letterSpacing: "-0.01em" }}>{selected.label}</h2>
+
+          <div style={{ fontSize: 12, opacity: 0.82, marginBottom: 16 }}>{selected.summary}</div>
+
+          {selectedRoute && (
+            <a href={`/Hugin${selectedRoute}`} style={{
+              display: "inline-block", padding: "8px 14px", background: GALAXY_COLORS[selected.galaxyId] ?? "#00f0ff",
+              color: "#000", textDecoration: "none", fontFamily: "monospace", fontSize: 11,
+              textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 20,
+            }}>Open full record →</a>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 20 }}>
+            <div><div style={{ fontSize: 9, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.14em" }}>Category</div><div style={{ fontSize: 12, marginTop: 2 }}>{selected.category}</div></div>
+            <div><div style={{ fontSize: 9, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.14em" }}>Connections</div><div style={{ fontSize: 12, marginTop: 2 }}>{selected.degree}</div></div>
+          </div>
+
+          {related.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, opacity: 0.55, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 10 }}>Signal Traffic</div>
+              {related.map(({ type, items }) => (
+                <div key={type} style={{ marginBottom: 12, borderLeft: `2px solid ${EDGE_COLOR[type] ?? "#556"}`, paddingLeft: 10 }}>
+                  <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", opacity: 0.65, marginBottom: 4, color: EDGE_COLOR[type] }}>
+                    {type.replace(/_/g, " ")} ({items.length})
+                  </div>
+                  {items.slice(0, 12).map((it) => (
+                    <button key={it.id + it.direction} onClick={() => handleNodeClick(it.id)} style={{
+                      display: "block", width: "100%", textAlign: "left", background: "transparent",
+                      border: "none", color: "#e8f0ff", padding: "3px 0", fontSize: 12, cursor: "pointer",
+                      opacity: 0.85, fontFamily: "inherit",
+                    }}>
+                      <span style={{ opacity: 0.5 }}>{it.direction === "out" ? "→" : "←"}</span> {it.label}
+                      <span style={{ opacity: 0.4, fontSize: 10, marginLeft: 4 }}>· {it.kind.replace(/_/g, " ")}</span>
+                    </button>
+                  ))}
+                  {items.length > 12 && <div style={{ fontSize: 10, opacity: 0.4, marginTop: 3 }}>+ {items.length - 12} more</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </aside>
+      )}
     </div>
   );
+}
+
+function btnStyle(active: boolean): React.CSSProperties {
+  return {
+    display: "block", width: "100%", padding: "6px 10px", marginBottom: 4,
+    background: active ? "rgba(0,240,255,0.15)" : "transparent",
+    border: `1px solid ${active ? "rgba(0,240,255,0.4)" : "rgba(255,255,255,0.08)"}`,
+    color: active ? "#00f0ff" : "#c8d4e8",
+    fontFamily: "monospace", fontSize: 11, cursor: "pointer", textAlign: "left",
+  };
 }
