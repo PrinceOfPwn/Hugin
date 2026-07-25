@@ -270,16 +270,56 @@ export default function GlyphNodes({ nodes, hoveredId, selectedId, visibleSet, o
     return [geo, mat];
   }, [nodes]);
 
+  // Custom raycast: the visual is a camera-billboarded glyph, but the base
+  // PlaneGeometry(1,1) is fixed in XY world — edge-on to most camera angles.
+  // Instead of relying on the base geometry, treat each instance as a sphere
+  // in world space and hit-test against that.
+  const raycastCallback = useMemo(() => {
+    return function customRaycast(this: THREE.InstancedMesh, raycaster: THREE.Raycaster, intersects: THREE.Intersection[]) {
+      const m = new THREE.Matrix4();
+      const pos = new THREE.Vector3();
+      const sphere = new THREE.Sphere();
+      const hit = new THREE.Vector3();
+      for (let i = 0; i < this.count; i++) {
+        this.getMatrixAt(i, m);
+        pos.setFromMatrixPosition(m);
+        // Scale from matrix is our per-instance hit radius (set below in useLayoutEffect).
+        const sx = Math.hypot(m.elements[0], m.elements[1], m.elements[2]);
+        if (sx <= 0) continue;
+        sphere.set(pos, sx);
+        // Ray.intersectSphere returns the first entry point (or null if miss);
+        // gives us the correct distance for ordering nearest-instance-under-ray.
+        if (!raycaster.ray.intersectSphere(sphere, hit)) continue;
+        intersects.push({
+          distance: raycaster.ray.origin.distanceTo(hit),
+          point: hit.clone(),
+          object: this,
+          instanceId: i,
+        } as THREE.Intersection);
+      }
+    };
+  }, []);
+
   useLayoutEffect(() => {
-    if (!meshRef.current) return;
+    const mesh = meshRef.current;
+    if (!mesh) return;
     const dummy = new THREE.Object3D();
     for (let i = 0; i < nodes.length; i++) {
       dummy.position.copy(nodes[i].position);
+      // Encode hit radius in the matrix scale. The vertex shader ONLY reads
+      // instanceMatrix[3].xyz (translation) so this scale is invisible visually,
+      // but the raycast override above uses it as the hit-sphere radius.
+      const hitR = Math.max(3, nodes[i].size * 0.85);
+      dummy.scale.setScalar(hitR);
       dummy.updateMatrix();
-      meshRef.current.setMatrixAt(i, dummy.matrix);
+      mesh.setMatrixAt(i, dummy.matrix);
     }
-    meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [nodes]);
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    mesh.frustumCulled = false;
+    // Install the custom raycast — must happen after ref exists.
+    (mesh as any).raycast = raycastCallback;
+  }, [nodes, raycastCallback]);
 
   useFrame((state) => {
     if (!meshRef.current) return;
@@ -311,10 +351,13 @@ export default function GlyphNodes({ nodes, hoveredId, selectedId, visibleSet, o
     onClick(nodes[e.instanceId].id);
   };
 
+  if (nodes.length === 0) return null;
+
   return (
     <instancedMesh
       ref={meshRef}
       args={[geometry, material, nodes.length]}
+      frustumCulled={false}
       onPointerMove={handleMove}
       onPointerOut={handleOut}
       onClick={handleClick}
