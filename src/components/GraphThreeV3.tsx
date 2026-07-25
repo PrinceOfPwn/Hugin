@@ -406,7 +406,7 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
             <CameraVelocityTracker onVelocity={setCamVelocity} />
 
             <EffectComposer>
-              <Bloom intensity={2.8} luminanceThreshold={0.15} luminanceSmoothing={0.9} radius={0.85} mipmapBlur />
+              <Bloom intensity={1.0} luminanceThreshold={0.4} luminanceSmoothing={0.9} radius={0.55} mipmapBlur />
               <ChromaticAberration offset={chromatic} radialModulation={false} modulationOffset={0} />
             </EffectComposer>
           </Canvas>
