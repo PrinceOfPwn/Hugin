@@ -1,0 +1,136 @@
+# .github/workflows/enrich.yml
+#
+# Runs Qwen3-4B-Instruct locally on the runner to enrich entities and type
+# similarity edges. Commits results back to main under data/enriched/.
+#
+# Triggers:
+#   - push to main touching source data / scripts
+#   - manual workflow_dispatch (for backfill / full re-run)
+#   - weekly cron (Sunday 03:00 UTC) for background full re-typing
+#
+# The subsequent pages.yml build reads data/enriched/* automatically via
+# the build-data.mjs merge step.
+
+name: Enrich HUGIN entities and relations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/source/**"
+      - "scripts/enrich-entities.mjs"
+      - "scripts/type-relations.mjs"
+      - "scripts/build-data.mjs"
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "incremental | full"
+        type: choice
+        options: [incremental, full]
+        default: incremental
+      tier:
+        description: "Tier filter (comma-separated)"
+        type: string
+        default: "S,A"
+      min_score:
+        description: "Similarity threshold for relation typing"
+        type: string
+        default: "0.80"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: enrich-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  enrich:
+    # Skip runs whose head commit was made by the bot itself (defensive; the
+    # `paths:` filter already prevents this because the bot only writes to
+    # data/enriched/, but this stays correct even if paths get widened).
+    if: github.actor != 'hugin-bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 340   # 5h40m — allow full re-run headroom; incremental exits in minutes
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      # Model weights (Qwen 4B q4, ~2.4 GB) — key on model id only, not on script
+      # hash, so editing the script does NOT invalidate the model download.
+      - uses: actions/cache@v5
+        with:
+          path: .hf-cache
+          key: hf-qwen3-4b-instruct-2507-q4-v1
+          restore-keys: |
+            hf-qwen3-4b-instruct-2507-q4-
+
+      # MiniLM embeddings cache — reused with pages.yml (same key).
+      - uses: actions/cache@v5
+        with:
+          path: .cache
+          key: hugin-minilm-q8-${{ hashFiles('data/source/public-graph.json', 'scripts/build-data.mjs', 'package-lock.json') }}
+          restore-keys: |
+            hugin-minilm-q8-
+
+      - run: npm ci
+
+      # Ensure src/generated/* exists (needed as input for the enrich scripts)
+      - name: Build baseline dataset (no AI merge yet)
+        env:
+          HUGIN_SIMILARITY_ENGINE: transformers
+          HUGIN_MODEL_CACHE: .hf-cache
+        run: npm run data:build
+
+      - name: Determine mode
+        id: mode
+        run: |
+          MODE="${{ inputs.mode || 'incremental' }}"
+          TIER="${{ inputs.tier || 'S,A' }}"
+          MIN="${{ inputs.min_score || '0.80' }}"
+          if [ "$MODE" = "full" ]; then
+            FORCE="--force"
+          else
+            FORCE="--changed-only"
+          fi
+          echo "flags_entities=--tier $TIER $FORCE"    >> $GITHUB_OUTPUT
+          echo "flags_relations=--tier $TIER --min-score $MIN $FORCE" >> $GITHUB_OUTPUT
+
+      - name: Enrich entities
+        env:
+          HUGIN_MODEL_CACHE: .hf-cache
+        run: node scripts/enrich-entities.mjs ${{ steps.mode.outputs.flags_entities }}
+
+      - name: Type similarity relations
+        env:
+          HUGIN_MODEL_CACHE: .hf-cache
+        run: node scripts/type-relations.mjs ${{ steps.mode.outputs.flags_relations }}
+
+      - name: Commit enriched artifacts
+        run: |
+          git config user.name  "hugin-bot"
+          git config user.email "[private-email]"
+          git add data/enriched/
+          if git diff --staged --quiet; then
+            echo "No enrichment changes."
+          else
+            COUNT=$(git diff --staged --numstat | wc -l | tr -d ' ')
+            git commit -m "enrich: auto-generated ($(date -u +%F) · $COUNT files)"
+            git push
+          fi
+
+      - name: Upload enrichment summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enrichment-report-${{ github.run_id }}
+          path: |
+            data/enriched/.state.json
+            data/enriched/relations/typed.jsonl
+          retention-days: 30

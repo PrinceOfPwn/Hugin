@@ -3,10 +3,11 @@ import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { bodyFor, curatedRelations, entityById, evidenceFor } from "../lib/data";
-import type { Entity, Relation } from "../lib/types";
+import type { Entity, Relation, EvidenceRecord } from "../lib/types";
 import { cleanBodyMarkdown, parseAndCleanSummary } from "../lib/summaryParser";
 
 const { entity } = Astro.props as { entity: Entity };
+
 const rawBody = cleanBodyMarkdown(bodyFor(entity));
 const html = rawBody
   ? sanitizeHtml(await marked.parse(rawBody, { gfm: true }), {
@@ -23,181 +24,1399 @@ const html = rawBody
   : "";
 
 const structuredInfo = parseAndCleanSummary(entity.summary, entity.title);
+const { cleanSummary, tier, mitre, tags, files, linesOfInterest } = structuredInfo;
 
-// Deduplicate curated relations by (type + target.id)
-const rawRelations = curatedRelations.filter((edge) => edge.source === entity.id || edge.target === entity.id);
-const seenNeighbors = new Set<string>();
-const neighbors: Array<{ edge: Relation; entity: Entity }> = [];
+const effectiveTier = tier || entity.tier;
+const effectiveTags = tags && tags.length ? tags : entity.tags;
+const effectiveMitre = mitre && mitre.length ? mitre : entity.mitre;
 
+// === Neighbors with direction ===
+const rawRelations = curatedRelations.filter(
+  (e) => e.source === entity.id || e.target === entity.id
+);
+const seen = new Set<string>();
+const neighbors: Array<{
+  edge: Relation;
+  entity: Entity;
+  direction: "incoming" | "outgoing";
+}> = [];
 for (const edge of rawRelations) {
-  const targetId = edge.source === entity.id ? edge.target : edge.source;
-  const target = entityById.get(targetId);
-  if (!target) continue;
-  const key = `${edge.type}:${target.id}`;
-  if (!seenNeighbors.has(key)) {
-    seenNeighbors.add(key);
-    neighbors.push({ edge, entity: target });
-  }
+  const direction = edge.source === entity.id ? "outgoing" : "incoming";
+  const otherId = direction === "outgoing" ? edge.target : edge.source;
+  const other = entityById.get(otherId);
+  if (!other) continue;
+  const k = `${edge.type}:${other.id}`;
+  if (seen.has(k)) continue;
+  seen.add(k);
+  neighbors.push({ edge, entity: other, direction });
 }
 neighbors.sort((a, b) => b.entity.degree - a.entity.degree);
 
-const evidence = evidenceFor(entity.id, 8);
-const jsonLd = {
-  "@context": "https://schema.org",
-  "@type": "TechArticle",
-  headline: entity.title,
-  description: structuredInfo.cleanSummary,
-  keywords: entity.tags,
-  isPartOf: {
-    "@type": "Dataset",
-    name: "HUGIN Knowledge Universe",
-  },
+// === Edge type colors (synced with 3D view) ===
+const EDGE_COLORS: Record<string, string> = {
+  enables: "#00f0ff",
+  counters: "#ff334c",
+  detects: "#38ff6b",
+  chains_to: "#ffb800",
+  requires: "#e13ffb",
+  implements: "#ffffff",
+  derived_from: "#00e5bf",
+  alternative_to: "#9d4edd",
+  related: "#8896b0",
+  concept_link: "#00b3e6",
+  reference: "#6b7280",
+  enhances: "#ffdc4c",
 };
+const edgeColor = (t: string) => EDGE_COLORS[t] ?? "#8896b0";
+
+// === Group by direction + edge type ===
+const groupsMap = new Map<
+  string,
+  { direction: "incoming" | "outgoing"; type: string; items: typeof neighbors }
+>();
+for (const n of neighbors) {
+  const key = `${n.direction}:${n.edge.type}`;
+  if (!groupsMap.has(key)) {
+    groupsMap.set(key, { direction: n.direction, type: n.edge.type, items: [] });
+  }
+  groupsMap.get(key)!.items.push(n);
+}
+const signalGroups = Array.from(groupsMap.values())
+  .map((g) => ({
+    ...g,
+    color: edgeColor(g.type),
+    count: g.items.length,
+    preview: g.items.slice(0, 3).map((i) => i.entity.title),
+  }))
+  .sort((a, b) => {
+    if (a.direction !== b.direction) return a.direction === "outgoing" ? -1 : 1;
+    return b.count - a.count;
+  });
+
+// === Kind flags ===
+const isTechnique = entity.kind === "technique";
+const isConcept = entity.kind === "concept";
+const isChain = entity.kind === "chain";
+const isDetection = entity.kind === "detection";
+const isSource = entity.kind === "source" || entity.kind === "source-extract";
+const isLgtmNote = entity.kind === "lgtm_note";
+const isCentered = ["playbook", "documentation", "reference", "pattern"].includes(
+  entity.kind
+);
+
+const KIND_GLYPH: Record<string, string> = {
+  technique: "★",
+  chain: "⧫",
+  detection: "⬡",
+  concept: "●",
+  lgtm_note: "≈",
+  playbook: "▪",
+  source: "◆",
+  "source-extract": "◆",
+  documentation: "▲",
+  reference: "·",
+  pattern: "·",
+};
+const glyph = KIND_GLYPH[entity.kind] ?? "·";
+
+const GALAXY_COLORS: Record<string, string> = {
+  techniques: "#ff2244",
+  internals: "#00f0ff",
+  defenses: "#39ff14",
+  chains: "#ffb700",
+  evidence: "#00e5ff",
+  sources: "#e040fb",
+  gaps: "#ff5555",
+  architecture: "#9d4edd",
+  tradecraft_qa: "#00e5bf",
+};
+const gColor = GALAXY_COLORS[entity.galaxyId] ?? "#00f0ff";
+
+const tierColor = (t?: string) => {
+  if (!t) return "#8896b0";
+  const u = t.toUpperCase();
+  if (u === "S") return "#ff334c";  // critical / novel
+  if (u === "A") return "#ffb800";  // advanced
+  if (u === "B") return "#00f0ff";  // solid
+  if (u === "C") return "#8896b0";  // basic
+  return "#8896b0";
+};
+const tColor = tierColor(effectiveTier);
+
+// === Evidence for lgtm_note ===
+const evidenceRecs = evidenceFor(entity.id, 1);
+const evidenceRec: EvidenceRecord | undefined = evidenceRecs[0];
+const qScore = evidenceRec?.qualityScore ?? 0;
+const qColor = qScore >= 80 ? "#38ff6b" : qScore >= 60 ? "#ffb800" : "#ff334c";
+
+// === Kind-specific neighbor views ===
+const referencedBy = neighbors
+  .filter((n) => n.direction === "incoming" && n.entity.kind === "technique")
+  .slice(0, 5);
+
+const chainSteps = neighbors
+  .filter((n) => n.direction === "outgoing" && n.edge.type === "chains_to")
+  .sort((a, b) => (a.edge.rank ?? 999) - (b.edge.rank ?? 999));
+
+const catchesList = neighbors
+  .filter((n) => n.direction === "outgoing" && n.edge.type === "detects")
+  .sort((a, b) => b.entity.degree - a.entity.degree);
+
+const locText = (l: any) => (typeof l === "string" ? l : l?.loc ?? "");
+const locNote = (l: any) => (typeof l === "string" ? "" : l?.note ?? "");
 ---
 
-<BaseLayout title={entity.title} description={structuredInfo.cleanSummary} jsonLd={jsonLd}>
-  <header class="entity-head">
-    <div class="wrap entity-head-grid">
-      <div>
-        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
-          <span class="eyebrow-galaxy">{entity.galaxyId}</span>
-          <span class="eyebrow-bright">{entity.kind.replace(/_/g, " ")}</span>
-          {structuredInfo.tier && <span class="tech-badge tier">Tier {structuredInfo.tier}</span>}
-          {entity.tier && !structuredInfo.tier && <span class="tech-badge tier">Tier {entity.tier}</span>}
-        </div>
-        <h1>{entity.title}</h1>
-        <p class="lede" style="color: #e2e8f0; font-size: 1.05rem; line-height: 1.6;">{structuredInfo.cleanSummary}</p>
-        
-        <div class="tech-badges" style="margin-top: 14px;">
-          <span class="tech-badge" style="background: rgba(56, 189, 248, 0.15); border-color: rgba(56, 189, 248, 0.4); color: #38bdf8;">
-            {entity.category}
-          </span>
-          {entity.mitre.map((value: string) => (
-            <span class="tech-badge mitre">MITRE {value}</span>
-          ))}
-          {structuredInfo.mitre?.map((value: string) => (
-            <span class="tech-badge mitre">MITRE {value}</span>
-          ))}
+<BaseLayout title={entity.title} description={cleanSummary || entity.summary}>
+  <article
+    class="ep"
+    style={`--accent:${gColor};--gcolor:${gColor};--tcolor:${tColor};`}
+  >
+    {/* === BREADCRUMB === */}
+    <nav class="crumb">
+      <div class="trail">
+        <a href="/Hugin/" class="back">← Universe</a>
+        <span class="sep">&gt;</span>
+        <span class="subg">{entity.category}</span>
+        <span class="sep">&gt;</span>
+        <span class="subg" style={`color:${gColor}`}>{entity.galaxyId}</span>
+        {entity.subgalaxy && (
+          <>
+            <span class="sep">&gt;</span>
+            <span class="subg">{entity.subgalaxy}</span>
+          </>
+        )}
+      </div>
+      <a
+        class="threedee"
+        href={`/Hugin/graph/?focus=${encodeURIComponent(entity.id)}&mode=neighborhood&edges=curated&depth=1`}
+        title="Open 3D neighborhood"
+      >
+        <span class="ico">◈</span>
+        <span class="lbl">3D neighborhood</span>
+      </a>
+    </nav>
+
+    {/* === HERO === */}
+    <header class="hero">
+      <div class="eyebrow-row">
+        <span class="glyph" data-kind={entity.kind}>{glyph}</span>
+        <div class="eyebrow">
+          <span class="kind">{entity.kind}</span>
+          <span class="dot">·</span>
+          <span class="galaxy">{entity.galaxyId}</span>
+          {effectiveTier && (
+            <>
+              <span class="dot">·</span>
+              <span class="tier">{effectiveTier}</span>
+            </>
+          )}
+          {isTechnique && effectiveMitre && effectiveMitre.length > 0 && (
+            <>
+              <span class="dot">·</span>
+              <span class="mitre">{effectiveMitre.join(" ")}</span>
+            </>
+          )}
         </div>
       </div>
-
-      <dl class="entity-facts">
-        <div><dt>Record</dt><dd>{entity.evidenceId}</dd></div>
-        <div><dt>Galaxy</dt><dd>{entity.galaxyId}</dd></div>
-        <div><dt>Relations</dt><dd>{entity.degree.toLocaleString()}</dd></div>
-        <div><dt>Layer</dt><dd>{entity.publishState === "core" ? "Knowledge" : "Anonymous source"}</dd></div>
-      </dl>
-    </div>
-  </header>
-
-  <div class="wrap entity-layout" data-pagefind-body>
-    <article class="entity-main">
-      {/* ── 1. PRIMARY CONTENT: Technical Note / Body (Uncollapsed) ── */}
-      {html ? (
-        <section class="technical-primary">
-          <p class="eyebrow-bright">Primary Technical Note</p>
-          <h2 style="color: #ffffff; margin-bottom: 16px;">Full Analysis & Implementation Specification</h2>
-          <div class="prose" set:html={html} />
-        </section>
-      ) : (
-        <section>
-          <p class="eyebrow-bright">Overview</p>
-          <h2 style="color: #ffffff;">Technical Summary</h2>
-          <p class="lede" style="color: #e2e8f0; font-size: 1rem; line-height: 1.6;">{structuredInfo.cleanSummary}</p>
-        </section>
-      )}
-
-      {/* Structured File & Function Locations */}
-      {(structuredInfo.files || structuredInfo.linesOfInterest) && (
-        <section class="tech-section" style="margin-top: 28px;">
-          <p class="eyebrow-bright">Codebase Verification</p>
-          <h2 style="color: #ffffff;">Source Implementation Files</h2>
-          {structuredInfo.files?.map((file) => (
-            <div class="tech-file-box">📄 {file}</div>
+      <h1 class={isSource ? "title title-mono" : "title"}>{entity.title}</h1>
+      <p class="summary">{cleanSummary || entity.summary}</p>
+      {effectiveTags && effectiveTags.length > 0 && (
+        <div class="tags">
+          {effectiveTags.map((t) => (
+            <span class="tag">{t}</span>
           ))}
-          {structuredInfo.linesOfInterest?.map((loi) => (
-            <div class="tech-loi-item">⚡ {loi}</div>
+        </div>
+      )}
+      <div class="rec">REC · {entity.id} · DEG {entity.degree}</div>
+    </header>
+
+    {/* === SIGNAL TRAFFIC === */}
+    {signalGroups.length > 0 && (
+      <section class="signal">
+        <div class="heading">
+          <span class="htxt">SIGNAL TRAFFIC</span>
+          <span class="dim">/ {neighbors.length} edges · {signalGroups.length} channels</span>
+        </div>
+        <div class="rows">
+          {signalGroups.map((g) => (
+            <div class="signal-row" style={`--rowcolor:${g.color}`}>
+              <div class="label">
+                <span class="arrow">{g.direction === "outgoing" ? "→" : "←"}</span>
+                <span class="type">{g.type}</span>
+              </div>
+              <div class="count">{String(g.count).padStart(2, "0")}</div>
+              <div class="targets">
+                {g.preview.map((t, i) => (
+                  <>
+                    {i > 0 && <span class="tsep">·</span>}
+                    <span class="tname">{t}</span>
+                  </>
+                ))}
+                {g.count > 3 && <span class="more">+{g.count - 3}</span>}
+              </div>
+            </div>
           ))}
-        </section>
+        </div>
+      </section>
+    )}
+
+    {/* === BODY (kind-adaptive) === */}
+    <section class="body">
+      {isCentered && (
+        <div class="centered">
+          {html ? (
+            <div class="prose" set:html={html} />
+          ) : (
+            <p class="empty">No body content.</p>
+          )}
+        </div>
       )}
 
-      {/* ── 2. CURATED GRAPH: Connected Knowledge (Deduplicated) ── */}
-      {neighbors.length > 0 && (
-        <section style="margin-top: 36px;">
-          <p class="eyebrow-bright">Curated Graph</p>
-          <h2 style="color: #ffffff;">Connected Knowledge Nodes ({neighbors.length})</h2>
-          <ul class="relation-list">
-            {neighbors.map(({ edge, entity: target }) => {
-              const targetSummary = parseAndCleanSummary(target.summary, target.title).cleanSummary;
-              return (
-                <li>
-                  <span class="relation-type" style="color: #38bdf8; font-weight: 600;">{edge.type.replace(/_/g, " ")}</span>
-                  <span>
-                    <a href={`/Hugin${target.route}`} style="color: #ffffff; font-weight: 600; text-decoration: none;">{target.title}</a>
-                    <span style="display:block; color:#cbd5e1; font-size:.84rem; margin-top:4px; line-height: 1.45;">
-                      {targetSummary}
-                    </span>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+      {isTechnique && (
+        <>
+          {files && files.length > 0 && (
+            <div class="body-section">
+              <div class="label">Implementation</div>
+              <div class="files-box">
+                {files.map((f) => (
+                  <div class="file">
+                    <span class="bullet">◆</span>
+                    <span class="path">{f}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {linesOfInterest && linesOfInterest.length > 0 && (
+            <div class="body-section">
+              <div class="label">Key Code Locations</div>
+              <div class="lines-of-interest">
+                {linesOfInterest.map((l) => (
+                  <div class="line">
+                    <span class="loc">{locText(l)}</span>
+                    {locNote(l) && <span class="note"> {locNote(l)}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {html && (
+            <div class="body-section">
+              <div class="label">Full Technical Specification</div>
+              <div class="prose" set:html={html} />
+            </div>
+          )}
+        </>
       )}
 
-      {/* ── 3. ANONYMOUS EVIDENCE ── */}
-      {evidence.length > 0 && (
-        <section style="margin-top: 36px;">
-          <p class="eyebrow-bright">Anonymous Evidence</p>
-          <h2 style="color: #ffffff;">Supporting Observations ({evidence.length})</h2>
-          <p class="lede" style="color: #cbd5e1; font-size: 0.88rem;">
-            Evidence is identified by topic and neutral record ID. Provider, course, filename,
-            and local provenance are excluded from the public dataset.
-          </p>
-          <div class="evidence-list">
-            {evidence.map((item) => (
-              <article class="evidence-item" style="border-left: 3px solid #22d3ee; padding-left: 14px; margin-block: 14px;">
-                <span class="evidence-id" style="color: #22d3ee; font-family: var(--mono); font-size: 0.76rem;">{item.evidenceId}</span>
-                <span>
-                  <strong style="color: #ffffff; display: block; font-size: 0.95rem;">{item.title}</strong>
-                  <p style="color: #cbd5e1; font-size: 0.86rem; margin-top: 4px;">{item.summary}</p>
-                </span>
-              </article>
-            ))}
-          </div>
-        </section>
+      {isConcept && (
+        <>
+          <blockquote class="concept-def">{cleanSummary || entity.summary}</blockquote>
+          {html && <div class="prose" set:html={html} />}
+          {referencedBy.length > 0 && (
+            <div class="referenced-by">
+              <div class="head">
+                <span>Referenced by</span>
+                <span class="cnt">{referencedBy.length}</span>
+              </div>
+              {referencedBy.map((n) => (
+                <a href={`/Hugin${n.entity.route}`}>
+                  <span class="g">★</span>
+                  <span class="t">{n.entity.title}</span>
+                  <span class="k">{n.entity.galaxyId}</span>
+                </a>
+              ))}
+            </div>
+          )}
+        </>
       )}
-    </article>
 
-    <aside class="entity-sidebar">
-      <section class="sidebar-section">
-        <p class="eyebrow-bright">Graph Context</p>
-        <h2 style="color: #ffffff;">Continue Exploring</h2>
-        <p style="color: #cbd5e1; font-size: 0.85rem;">Open this record in 3D Neighborhood mode to trace immediate connections in WebGL.</p>
-        <a
-          class="inspector-action-primary"
-          href={`/Hugin/graph/?focus=${encodeURIComponent(entity.id)}&mode=neighborhood&edges=curated&depth=1`}
-          style="margin-top: 12px; text-decoration: none;"
-        >
-          Open 3D Neighborhood →
-        </a>
-      </section>
+      {isChain && (
+        <>
+          {chainSteps.length > 0 && (
+            <div class="body-section">
+              <div class="label">Sequence · {chainSteps.length} steps</div>
+              <div class="chain-steps">
+                {chainSteps.map((s, i) => (
+                  <a class="chain-step" href={`/Hugin${s.entity.route}`}>
+                    <div class="num">{String(i + 1).padStart(2, "0")}</div>
+                    <div class="info">
+                      <div class="t">{s.entity.title}</div>
+                      <div class="s">
+                        {s.entity.summary || s.entity.subgalaxy || s.entity.galaxyId}
+                      </div>
+                    </div>
+                    <div class="rank">r{String(s.edge.rank ?? i + 1).padStart(2, "0")}</div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+          {html && <div class="prose" set:html={html} />}
+        </>
+      )}
 
-      <section class="sidebar-section">
-        <p class="eyebrow-bright">Classification</p>
-        <ul style="color: #cbd5e1; font-size: 0.85rem;">
-          <li><strong style="color: #ffffff;">Kind:</strong> {entity.kind.replace(/_/g, " ")}</li>
-          <li><strong style="color: #ffffff;">Category:</strong> {entity.category}</li>
-          <li><strong style="color: #ffffff;">Galaxy:</strong> {entity.subgalaxy || entity.galaxyId}</li>
-          {entity.tags.slice(0, 8).map((tag: string) => <li style="color: #38bdf8;">#{tag}</li>)}
-        </ul>
-      </section>
+      {isDetection && (
+        <>
+          {catchesList.length > 0 && (
+            <div class="catches-card">
+              <div class="head">
+                <span class="ico">⬡</span>
+                <span class="htxt">CATCHES</span>
+                <span class="cnt">{catchesList.length}</span>
+              </div>
+              {catchesList.map((n) => (
+                <a class="item" href={`/Hugin${n.entity.route}`}>
+                  <span class="g">★</span>
+                  <span class="t">{n.entity.title}</span>
+                  <span class="k">{n.entity.galaxyId}</span>
+                </a>
+              ))}
+            </div>
+          )}
+          {html && <div class="prose" set:html={html} />}
+        </>
+      )}
 
-      <section class="sidebar-section">
-        <p class="eyebrow-bright">Public Provenance</p>
-        <h2 style="color: #ffffff; font-family: var(--mono); font-size: 1rem;">{entity.evidenceId}</h2>
-        <p style="color: #cbd5e1; font-size: 0.85rem;">Owner-authorized research record. Original source names and private paths are sanitized.</p>
+      {isSource && html && <div class="prose" set:html={html} />}
+
+      {isLgtmNote && (
+        <>
+          {evidenceRec && (
+            <div class="lgtm-badge" style={`--qcolor:${qColor};--qcolor-bg:${qColor}14;`}>
+              <span class="lbl">QUALITY</span>
+              <span class="score">Q {evidenceRec.qualityScore}</span>
+            </div>
+          )}
+          {evidenceRec?.keyCues && evidenceRec.keyCues.length > 0 && (
+            <div class="key-cues">
+              {evidenceRec.keyCues.map((c) => (
+                <span class="cue">{c}</span>
+              ))}
+            </div>
+          )}
+          {html && <div class="prose" set:html={html} />}
+        </>
+      )}
+    </section>
+
+    {/* === CONNECTED KNOWLEDGE === */}
+    {signalGroups.length > 0 && (
+      <section class="ck">
+        <div class="heading">
+          <span class="htxt">CONNECTED KNOWLEDGE</span>
+          <span class="dim">
+            / {signalGroups.length} groups · {neighbors.length} nodes
+          </span>
+        </div>
+        {signalGroups.map((g) => (
+          <details class="ck-group" style={`--groupcolor:${g.color}`}>
+            <summary>
+              <span class="chev">▸</span>
+              <span class="arrow">{g.direction === "outgoing" ? "→" : "←"}</span>
+              <span class="type">{g.type}</span>
+              <span class="count">{String(g.count).padStart(2, "0")}</span>
+              <span class="preview">
+                {g.preview.join(" · ")}
+                {g.count > 3 ? ` +${g.count - 3}` : ""}
+              </span>
+            </summary>
+            <div class="content">
+              {g.items.map((n) => (
+                <a class="ck-node" href={`/Hugin${n.entity.route}`}>
+                  <span class="glyph">{KIND_GLYPH[n.entity.kind] ?? "·"}</span>
+                  <div class="info">
+                    <div class="meta">
+                      <span class="m-kind">{n.entity.kind}</span>
+                      <span class="m-sep">·</span>
+                      <span class="m-galaxy">{n.entity.galaxyId}</span>
+                      {n.entity.tier && (
+                        <>
+                          <span class="m-sep">·</span>
+                          <span class="m-tier">{n.entity.tier}</span>
+                        </>
+                      )}
+                    </div>
+                    <div class="t">{n.entity.title}</div>
+                    <div class="s">{n.entity.summary}</div>
+                  </div>
+                  {n.edge.rationale && (
+                    <div class="rationale">
+                      <span class="rtext">{n.edge.rationale}</span>
+                      {n.edge.rank != null && (
+                        <span class="rank">r{n.edge.rank}</span>
+                      )}
+                    </div>
+                  )}
+                </a>
+              ))}
+            </div>
+          </details>
+        ))}
       </section>
-    </aside>
-  </div>
+    )}
+  </article>
 </BaseLayout>
+
+<style>
+  /* === BASE === */
+  .ep {
+    --bg: #000005;
+    --fg: #e8e8f0;
+    --fg-dim: #8896b0;
+    --fg-faint: #4a5060;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --accent: #00f0ff;
+    --bg-panel: rgba(255, 255, 255, 0.015);
+    --bg-panel-hover: rgba(255, 255, 255, 0.045);
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px 96px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: var(--fg);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    background: var(--bg);
+  }
+  .ep .mono,
+  .ep .rec,
+  .ep .crumb,
+  .ep .eyebrow,
+  .ep .tag,
+  .ep .signal-row,
+  .ep .ck-group summary,
+  .ep .ck-node .meta,
+  .ep .files-box,
+  .ep .lines-of-interest,
+  .ep .lgtm-badge,
+  .ep .key-cues .cue,
+  .ep .referenced-by .head,
+  .ep .catches-card .head,
+  .ep .chain-step .num,
+  .ep .chain-step .rank,
+  .ep .ck-node .glyph,
+  .ep .title-mono,
+  .ep .threedee {
+    font-family: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+  }
+
+  /* === CRUMB === */
+  .crumb {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 0 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--fg-dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .crumb .trail {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .crumb a {
+    color: var(--fg-dim);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .crumb a:hover {
+    color: var(--accent);
+  }
+  .crumb .back {
+    color: var(--fg);
+  }
+  .crumb .sep {
+    color: var(--fg-faint);
+  }
+  .crumb .subg {
+    color: var(--fg-dim);
+  }
+  .threedee {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-decoration: none;
+    padding: 5px 9px;
+    border: 1px solid var(--border-strong);
+    background: linear-gradient(180deg, rgba(0, 240, 255, 0.06), rgba(0, 240, 255, 0));
+    transition: all 0.2s;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .threedee:hover {
+    background: linear-gradient(180deg, rgba(0, 240, 255, 0.18), rgba(0, 240, 255, 0.04));
+    border-color: var(--accent);
+    box-shadow: 0 0 20px -6px var(--accent);
+  }
+  .threedee .ico {
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  /* === HERO === */
+  .hero {
+    padding: 36px 0 32px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .hero .eyebrow-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .hero .glyph {
+    font-size: 22px;
+    line-height: 1;
+    color: var(--accent);
+    text-shadow: 0 0 18px var(--accent), 0 0 36px rgba(0, 240, 255, 0.35);
+    animation: glyph-pulse 3.5s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  @keyframes glyph-pulse {
+    0%, 100% {
+      text-shadow: 0 0 16px var(--accent), 0 0 32px rgba(0, 240, 255, 0.25);
+    }
+    50% {
+      text-shadow: 0 0 28px var(--accent), 0 0 52px rgba(0, 240, 255, 0.55);
+    }
+  }
+  .hero .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+  }
+  .hero .eyebrow .dot {
+    color: var(--fg-faint);
+  }
+  .hero .eyebrow .kind {
+    color: var(--fg);
+  }
+  .hero .eyebrow .galaxy {
+    color: var(--gcolor);
+    text-shadow: 0 0 12px var(--gcolor);
+  }
+  .hero .eyebrow .tier {
+    color: var(--tcolor);
+    text-shadow: 0 0 10px var(--tcolor);
+  }
+  .hero .eyebrow .mitre {
+    color: var(--accent);
+    font-size: 10px;
+    padding: 2px 6px;
+    border: 1px solid var(--border-strong);
+    background: rgba(0, 240, 255, 0.04);
+    letter-spacing: 0.08em;
+  }
+  .hero .title {
+    font-size: 2.4rem;
+    font-weight: 600;
+    line-height: 1.1;
+    margin: 0 0 18px;
+    letter-spacing: -0.02em;
+    color: #fff;
+  }
+  .hero .title-mono {
+    font-size: 1.5rem;
+    font-weight: 500;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    word-break: break-all;
+    background: linear-gradient(180deg, rgba(0, 240, 255, 0.04), transparent);
+    padding: 8px 14px;
+    border-left: 2px solid var(--accent);
+    display: inline-block;
+    max-width: 100%;
+  }
+  .hero .summary {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--fg);
+    max-width: 780px;
+    margin: 0 0 20px;
+  }
+  .hero .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+  .hero .tag {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    padding: 3px 7px;
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    text-transform: lowercase;
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .hero .rec {
+    font-size: 10px;
+    color: var(--fg-faint);
+    letter-spacing: 0.1em;
+  }
+  .hero .rec::before {
+    content: "▸ ";
+    color: var(--accent);
+  }
+
+  /* === SIGNAL TRAFFIC === */
+  .signal {
+    padding: 24px 0;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .signal::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 25%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: traffic-sweep 4.5s linear infinite;
+    opacity: 0;
+  }
+  @keyframes traffic-sweep {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    10% {
+      opacity: 0.7;
+    }
+    90% {
+      opacity: 0.7;
+    }
+    100% {
+      transform: translateX(400%);
+      opacity: 0;
+    }
+  }
+  .signal .heading,
+  .ck .heading,
+  .body-section .label,
+  .referenced-by .head,
+  .catches-card .head {
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .signal .heading::before,
+  .ck .heading::before,
+  .body-section .label::before {
+    content: "▸";
+    color: var(--accent);
+    font-size: 9px;
+  }
+  .ck .heading::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+    margin-left: 6px;
+  }
+  .signal .heading .dim,
+  .ck .heading .dim {
+    color: var(--fg-faint);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+  }
+  .signal .rows {
+    display: flex;
+    flex-direction: column;
+  }
+  .signal-row {
+    display: grid;
+    grid-template-columns: 220px 48px 1fr;
+    align-items: center;
+    gap: 18px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    transition: background 0.15s;
+  }
+  .signal-row:last-child {
+    border-bottom: none;
+  }
+  .signal-row:hover {
+    background: rgba(255, 255, 255, 0.015);
+  }
+  .signal-row .label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .signal-row .arrow {
+    font-size: 16px;
+    color: var(--rowcolor);
+    text-shadow: 0 0 10px var(--rowcolor);
+    line-height: 1;
+  }
+  .signal-row .type {
+    color: var(--rowcolor);
+    font-weight: 500;
+  }
+  .signal-row .count {
+    font-size: 11px;
+    color: var(--fg-dim);
+    text-align: center;
+    padding: 2px 0;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .signal-row .targets {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    font-size: 11px;
+    color: var(--fg-dim);
+    overflow: hidden;
+  }
+  .signal-row .targets .tsep {
+    color: var(--fg-faint);
+  }
+  .signal-row .targets .tname {
+    color: var(--fg);
+  }
+  .signal-row .targets .more {
+    color: var(--fg-faint);
+    font-size: 10px;
+    margin-left: 6px;
+    letter-spacing: 0.08em;
+  }
+
+  /* === BODY === */
+  .body {
+    padding: 32px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .body-section {
+    margin-bottom: 32px;
+  }
+  .body-section:last-child {
+    margin-bottom: 0;
+  }
+  .centered {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .empty {
+    color: var(--fg-faint);
+    font-style: italic;
+  }
+
+  /* files box */
+  .files-box {
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    padding: 14px 16px;
+    font-size: 12px;
+  }
+  .files-box .file {
+    padding: 5px 0;
+    color: var(--fg);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .files-box .file .bullet {
+    color: var(--accent);
+    font-size: 8px;
+    text-shadow: 0 0 8px var(--accent);
+  }
+  .files-box .file .path {
+    color: #fff;
+    word-break: break-all;
+  }
+
+  /* lines of interest */
+  .lines-of-interest {
+    border-left: 2px solid var(--border-strong);
+    padding: 6px 0 6px 16px;
+    font-size: 12px;
+    color: var(--fg-dim);
+  }
+  .lines-of-interest .line {
+    padding: 5px 0;
+    line-height: 1.5;
+  }
+  .lines-of-interest .loc {
+    color: var(--accent);
+    margin-right: 10px;
+  }
+  .lines-of-interest .note {
+    color: var(--fg-dim);
+  }
+
+  /* prose */
+  .prose {
+    font-size: 0.95rem;
+    line-height: 1.7;
+    max-width: 780px;
+    color: var(--fg);
+  }
+  .prose :global(h1),
+  .prose :global(h2),
+  .prose :global(h3),
+  .prose :global(h4) {
+    font-size: 1.15rem;
+    letter-spacing: -0.01em;
+    margin: 24px 0 12px;
+    color: #fff;
+    font-weight: 600;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  .prose :global(h1) {
+    font-size: 1.4rem;
+  }
+  .prose :global(h2) {
+    font-size: 1.25rem;
+  }
+  .prose :global(p) {
+    margin: 0 0 14px;
+  }
+  .prose :global(ul),
+  .prose :global(ol) {
+    margin: 0 0 14px;
+    padding-left: 22px;
+  }
+  .prose :global(li) {
+    margin: 4px 0;
+  }
+  .prose :global(code) {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.85em;
+    padding: 1px 5px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--accent);
+    border: 1px solid rgba(0, 240, 255, 0.15);
+  }
+  .prose :global(pre) {
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border);
+    padding: 14px;
+    overflow-x: auto;
+    margin: 0 0 16px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .prose :global(pre) :global(code) {
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--fg);
+  }
+  .prose :global(a) {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(0, 240, 255, 0.3);
+    transition: border-color 0.15s;
+  }
+  .prose :global(a:hover) {
+    border-color: var(--accent);
+  }
+  .prose :global(blockquote) {
+    border-left: 2px solid var(--accent);
+    padding-left: 16px;
+    margin: 0 0 16px;
+    color: var(--fg-dim);
+    font-style: italic;
+  }
+  .prose :global(table) {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0 0 16px;
+    font-size: 13px;
+  }
+  .prose :global(th),
+  .prose :global(td) {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+  }
+  .prose :global(th) {
+    background: rgba(255, 255, 255, 0.03);
+    color: #fff;
+  }
+
+  /* concept */
+  .concept-def {
+    border-left: 2px solid var(--accent);
+    padding: 6px 0 6px 18px;
+    font-size: 1.1rem;
+    line-height: 1.55;
+    font-style: italic;
+    color: #fff;
+    margin: 0 0 28px;
+    max-width: 780px;
+    font-family: Georgia, "Times New Roman", serif;
+  }
+  .referenced-by {
+    margin-top: 28px;
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    padding: 14px 18px;
+  }
+  .referenced-by .head {
+    margin-bottom: 10px;
+  }
+  .referenced-by .head::before {
+    content: "≈";
+  }
+  .referenced-by .head .cnt {
+    color: var(--accent);
+    font-size: 10px;
+    margin-left: 4px;
+  }
+  .referenced-by a {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 8px 0;
+    text-decoration: none;
+    color: var(--fg);
+    border-bottom: 1px solid var(--border);
+    transition: color 0.15s;
+  }
+  .referenced-by a:last-child {
+    border-bottom: none;
+  }
+  .referenced-by a:hover {
+    color: var(--accent);
+  }
+  .referenced-by a:hover .g {
+    text-shadow: 0 0 12px var(--accent);
+  }
+  .referenced-by a .g {
+    font-size: 14px;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .referenced-by a .t {
+    flex: 1;
+    color: #fff;
+  }
+  .referenced-by a:hover .t {
+    color: var(--accent);
+  }
+  .referenced-by a .k {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+  }
+
+  /* chain steps */
+  .chain-steps {
+    display: flex;
+    flex-direction: column;
+  }
+  .chain-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    text-decoration: none;
+    color: var(--fg);
+    transition: background 0.15s;
+  }
+  .chain-step:last-child {
+    border-bottom: none;
+  }
+  .chain-step:hover {
+    background: var(--bg-panel);
+  }
+  .chain-step .num {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: rgba(0, 240, 255, 0.05);
+    transition: all 0.2s;
+  }
+  .chain-step:hover .num {
+    box-shadow: 0 0 16px -2px var(--accent);
+    background: rgba(0, 240, 255, 0.14);
+  }
+  .chain-step .info {
+    flex: 1;
+    min-width: 0;
+  }
+  .chain-step .info .t {
+    font-size: 1rem;
+    color: #fff;
+    margin-bottom: 4px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  .chain-step:hover .info .t {
+    color: var(--accent);
+  }
+  .chain-step .info .s {
+    font-size: 0.85rem;
+    color: var(--fg-dim);
+    line-height: 1.5;
+  }
+  .chain-step .rank {
+    font-size: 10px;
+    color: var(--fg-faint);
+    letter-spacing: 0.1em;
+    flex-shrink: 0;
+  }
+
+  /* detection catches */
+  .catches-card {
+    border: 1px solid #ff334c;
+    background: linear-gradient(180deg, rgba(255, 51, 76, 0.08), rgba(255, 51, 76, 0.02));
+    padding: 14px 18px;
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .catches-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 25%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #ff334c, transparent);
+    animation: traffic-sweep 3s linear infinite;
+    opacity: 0;
+  }
+  .catches-card .head {
+    color: #ff334c;
+    margin-bottom: 12px;
+    text-shadow: 0 0 12px rgba(255, 51, 76, 0.45);
+  }
+  .catches-card .head::before {
+    content: none;
+  }
+  .catches-card .head .ico {
+    font-size: 14px;
+    color: #ff334c;
+    text-shadow: 0 0 12px #ff334c;
+  }
+  .catches-card .head .cnt {
+    color: #ff334c;
+    font-weight: 600;
+    margin-left: 4px;
+  }
+  .catches-card .item {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 7px 0;
+    text-decoration: none;
+    color: var(--fg);
+    border-bottom: 1px solid rgba(255, 51, 76, 0.12);
+    transition: color 0.15s;
+  }
+  .catches-card .item:last-child {
+    border-bottom: none;
+  }
+  .catches-card .item:hover {
+    color: #ff334c;
+  }
+  .catches-card .item .g {
+    color: #ff334c;
+    font-size: 12px;
+    text-shadow: 0 0 8px #ff334c;
+  }
+  .catches-card .item .t {
+    flex: 1;
+    color: #fff;
+  }
+  .catches-card .item:hover .t {
+    color: #ff334c;
+  }
+  .catches-card .item .k {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+  }
+
+  /* lgtm */
+  .lgtm-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border: 1px solid var(--qcolor, var(--accent));
+    background: linear-gradient(180deg, var(--qcolor-bg, rgba(0, 240, 255, 0.08)), transparent);
+    margin-bottom: 20px;
+  }
+  .lgtm-badge .lbl {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--qcolor);
+    text-transform: uppercase;
+  }
+  .lgtm-badge .score {
+    color: #fff;
+    font-size: 18px;
+    font-weight: 600;
+    text-shadow: 0 0 12px var(--qcolor);
+  }
+  .key-cues {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 20px;
+  }
+  .key-cues .cue {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    background: rgba(0, 240, 255, 0.04);
+    text-transform: lowercase;
+  }
+
+  /* === CONNECTED KNOWLEDGE === */
+  .ck {
+    padding: 32px 0 0;
+  }
+  .ck .heading .dim {
+    color: var(--fg-faint);
+  }
+  .ck-group {
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--groupcolor);
+    margin-bottom: 6px;
+    background: var(--bg-panel);
+    overflow: hidden;
+  }
+  .ck-group[open] {
+    background: rgba(255, 255, 255, 0.025);
+  }
+  .ck-group summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    cursor: pointer;
+    list-style: none;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    user-select: none;
+    transition: background 0.15s;
+  }
+  .ck-group summary::-webkit-details-marker {
+    display: none;
+  }
+  .ck-group summary:hover {
+    background: var(--bg-panel-hover);
+  }
+  .ck-group summary .chev {
+    font-size: 10px;
+    color: var(--groupcolor);
+    text-shadow: 0 0 8px var(--groupcolor);
+    transition: transform 0.2s;
+    display: inline-block;
+  }
+  .ck-group[open] summary .chev {
+    transform: rotate(90deg);
+  }
+  .ck-group summary .arrow {
+    color: var(--groupcolor);
+    font-size: 14px;
+    text-shadow: 0 0 8px var(--groupcolor);
+  }
+  .ck-group summary .type {
+    color: var(--groupcolor);
+    font-weight: 500;
+  }
+  .ck-group summary .count {
+    color: var(--fg);
+    font-size: 11px;
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .ck-group summary .preview {
+    flex: 1;
+    color: var(--fg-dim);
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ck-group .content {
+    padding: 4px 0 12px;
+  }
+  .ck-node {
+    display: flex;
+    gap: 14px;
+    padding: 12px 14px 12px 26px;
+    border-top: 1px solid var(--border);
+    text-decoration: none;
+    color: var(--fg);
+    transition: background 0.15s;
+  }
+  .ck-node:first-child {
+    border-top: none;
+  }
+  .ck-node:hover {
+    background: var(--bg-panel-hover);
+  }
+  .ck-node .glyph {
+    font-size: 18px;
+    color: var(--groupcolor);
+    width: 22px;
+    flex-shrink: 0;
+    text-shadow: 0 0 12px var(--groupcolor);
+    line-height: 1.4;
+    text-align: center;
+  }
+  .ck-node .info {
+    flex: 1;
+    min-width: 0;
+  }
+  .ck-node .info .meta {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .ck-node .info .meta .m-sep {
+    color: var(--fg-faint);
+    margin: 0 4px;
+  }
+  .ck-node .info .t {
+    font-size: 0.95rem;
+    color: #fff;
+    margin-bottom: 4px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  .ck-node:hover .info .t {
+    color: var(--groupcolor);
+  }
+  .ck-node .info .s {
+    font-size: 0.85rem;
+    color: var(--fg-dim);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .ck-node .rationale {
+    flex: 0 0 220px;
+    max-width: 220px;
+    font-size: 11px;
+    color: var(--fg-dim);
+    font-style: italic;
+    padding-left: 14px;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ck-node .rationale .rtext {
+    line-height: 1.4;
+  }
+  .ck-node .rationale .rank {
+    font-size: 9px;
+    color: var(--groupcolor);
+    letter-spacing: 0.1em;
+    font-style: normal;
+    text-shadow: 0 0 6px var(--groupcolor);
+  }
+
+  /* === RESPONSIVE === */
+  @media (max-width: 760px) {
+    .ep {
+      padding: 0 16px 64px;
+    }
+    .crumb {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .hero {
+      padding: 24px 0 24px;
+    }
+    .hero .title {
+      font-size: 1.8rem;
+    }
+    .hero .title-mono {
+      font-size: 1.1rem;
+    }
+    .signal-row {
+      grid-template-columns: 1fr auto;
+      grid-template-areas:
+        "label count"
+        "targets targets";
+      gap: 6px 12px;
+      padding: 12px 0;
+    }
+    .signal-row .label {
+      grid-area: label;
+    }
+    .signal-row .count {
+      grid-area: count;
+    }
+    .signal-row .targets {
+      grid-area: targets;
+    }
+    .ck-node {
+      flex-wrap: wrap;
+      padding-left: 14px;
+    }
+    .ck-node .rationale {
+      flex: 1 1 100%;
+      max-width: none;
+      border-left: none;
+      border-top: 1px solid var(--border);
+      padding-left: 0;
+      padding-top: 8px;
+    }
+  }
+</style>
