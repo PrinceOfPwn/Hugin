@@ -20,7 +20,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const MODEL_ID    = process.env.HUGIN_DETECT_MODEL ?? "onnx-community/gemma-2-2b-it";
+const MODEL_ID    = process.env.HUGIN_DETECT_MODEL ?? "onnx-community/gemma-4-E2B-it-ONNX";
 const MODEL_DTYPE = "q4";
 const MODEL_CACHE = path.resolve(process.env.HUGIN_MODEL_CACHE ?? ".hf-cache");
 const MAX_NEW_TOKENS = 350;
