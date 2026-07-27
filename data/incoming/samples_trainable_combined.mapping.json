@@ -1,0 +1,30 @@
+{
+  "source_name": "exploit_dev",
+  "confidence": 3,
+  "record_shape": "flat",
+  "field_map": {
+    "id": null,
+    "prompt": ".recommended_prompt",
+    "answer": ".answer",
+    "category": null,
+    "tags": [
+      "exploit_dev"
+    ],
+    "kind": null,
+    "source": null
+  },
+  "constants": {
+    "kind": "tradecraft_qa",
+    "category": "exploit_dev"
+  },
+  "id_strategy": "field",
+  "notes": "",
+  "_detected": {
+    "input": "data/incoming/samples_trainable_combined.jsonl",
+    "input_records": 10,
+    "sample_size": 3,
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "detected_at": "2026-07-27T06:15:59.511Z",
+    "elapsed_seconds": 82.5
+  }
+}
