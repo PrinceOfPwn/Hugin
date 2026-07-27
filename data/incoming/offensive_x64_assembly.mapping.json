@@ -1,0 +1,38 @@
+{
+  "source_name": "sample_records_batch_1",
+  "confidence": 4,
+  "record_shape": "code_block",
+  "detected_language": "en",
+  "field_map": {
+    "id": null,
+    "prompt": "N/A",
+    "answer": "N/A",
+    "category": null,
+    "tags": null
+  },
+  "constants": {
+    "kind": "source_code",
+    "category": "execution",
+    "publishState": "core"
+  },
+  "graph_extraction": {
+    "entities": [
+      {
+        "type": "Tool",
+        "extraction_method": "regex",
+        "pattern": "\\bNtAllocateVirtualMemory\\b"
+      }
+    ],
+    "relations": []
+  },
+  "id_strategy": "hash",
+  "notes": "Batch of three unrelated assembly/C++ source code snippets. Focus on extracting low-level system call definitions.",
+  "_detected": {
+    "input": "data/incoming/offensive_x64_assembly.jsonl",
+    "input_records": 13,
+    "sample_size": 3,
+    "model": "onnx-community/gemma-4-E2B-it-ONNX",
+    "detected_at": "2026-07-27T21:05:22.996Z",
+    "elapsed_seconds": 111.9
+  }
+}
