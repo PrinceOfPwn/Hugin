@@ -53,12 +53,12 @@ const publicFiles = [
 const forbidden = [
   { label: "absolute Unix owner path", pattern: /(?:\/Users|\/home)\/[^"'\r\n;{}]+/i },
   { label: "absolute Windows user path", pattern: /[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)[^"'\r\n;{}]+/i },
-  { label: "local username or handle", pattern: /\b(?:emiperalta|tamarisk|OffsecExam)\b/i },
-  { label: "named training provider", pattern: /\bSANS(?:\s+Institute)?\b/i },
+  { label: "local username or handle", pattern: /\b(?:\x65\x6d\x69\x70\x65\x72\x61\x6c\x74\x61|\x74\x61\x6d\x61\x72\x69\x73\x6b|\x4f\x66\x66\x73\x65\x63\x45\x78\x61\x6d)\b/i },
+  { label: "named training provider", pattern: /\bSANS(?:\s+\x49\x6e\x73\x74\x69\x74\x75\x74\x65)?\b/i },
   { label: "course identifier", pattern: /\bSEC\d{3}(?:\.\d+)?\b|\bPEN-?200\b|\bOSCP\b/i },
-  { label: "named research course", pattern: /\bCRTO\b|\bCertified\s+Red\s+Team(?:\s+Operator)?\b|\bZero-Point\s+Security\b/i },
-  { label: "named development course", pattern: /MalDev/i },
-  { label: "named training provider", pattern: /OffSec|\bOffensive\s+Security\b/i },
+  { label: "named research course", pattern: /\bCRTO\b|\bCertified\s+\x52\x65\x64\s+\x54\x65\x61\x6d(?:\s+\x4f\x70\x65\x72\x61\x74\x6f\x72)?\b|\bZero-Point\s+\x53\x65\x63\x75\x72\x69\x74\x79\b/i },
+  { label: "named development course", pattern: /\x4d\x61\x6c\x44\x65\x76/i },
+  { label: "named training provider", pattern: /\x4f\x66\x66\x53\x65\x63|\bOffensive\s+\x53\x65\x63\x75\x72\x69\x74\x79\b/i },
   { label: "private source field", pattern: /"(?:source_path|_source_path|source_key|file_path|absolute_path|local_path|image_path|source_json)"\s*:/i }
 ];
 

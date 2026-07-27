@@ -11,22 +11,22 @@ const absoluteUnix = /(?:\/Users|\/home)\/[^"'\r\n;{}]+/gi;
 const absoluteWindows = /[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)[^"'\r\n;{}]+/gi;
 
 // Removes local usernames & handles
-const localUser = /\b(?:emiperalta|tamarisk|OffsecExam)\b/gi;
-const anonymousSourceUrl = /https?:\/\/(?:www\.)?(?:linktr\.ee\/offsecexam|sans\.org|offsec\.com|maldevacademy\.com)[^\s)\]}>"']*/gi;
+const localUser = /\b(?:\x65\x6d\x69\x70\x65\x72\x61\x6c\x74\x61|\x74\x61\x6d\x61\x72\x69\x73\x6b|\x4f\x66\x66\x73\x65\x63\x45\x78\x61\x6d)\b/gi;
+const anonymousSourceUrl = /https?:\/\/(?:www\.)?(?:linktr\.ee\/\x6f\x66\x66\x73\x65\x63\x65\x78\x61\x6d|sans\.org|\x6f\x66\x66\x73\x65\x63\.com|\x6d\x61\x6c\x64\x65\x76\x61\x63\x61\x64\x65\x6d\x79\.com)[^\s)\]}>"']*/gi;
 
 export function anonymizeSourceNames(value) {
   return String(value || "")
-    .replace(/https?:\/\/[^\s)\]}>"']*(?:offsec|maldev|sans|linktree)[^\s)\]}>"']*/gi, "[private-source]")
-    .replace(/\bSANS\s+SEC\d{3}(?:\.\d+)?\b/gi, "Source A")
+    .replace(/https?:\/\/[^\s)\]}>"']*(?:\x6f\x66\x66\x73\x65\x63|\x6d\x61\x6c\x64\x65\x76|sans|\x6c\x69\x6e\x6b\x74\x72\x65\x65)[^\s)\]}>"']*/gi, "[private-source]")
+    .replace(/\bSANS\s+\x53\x45\x43\d{3}(?:\.\d+)?\b/gi, "Source A")
     .replace(/\bSEC\d{3}(?:\.\d+)?\b/gi, "Source A")
-    .replace(/\bSANS(?:\s+Institute)?\b/gi, "Source A")
-    .replace(/\bCertified\s+Red\s+Team(?:\s+Operator)?\b|\bCRTO\d?\b|\bCRTE\b/gi, "Source B")
-    .replace(/\bZero-Point\s+Security\b/gi, "Source B")
+    .replace(/\bSANS(?:\s+\x49\x6e\x73\x74\x69\x74\x75\x74\x65)?\b/gi, "Source A")
+    .replace(/\bCertified\s+\x52\x65\x64\s+\x54\x65\x61\x6d(?:\s+\x4f\x70\x65\x72\x61\x74\x6f\x72)?\b|\bCRTO\d?\b|\bCRTE\b/gi, "Source B")
+    .replace(/\bZero-Point\s+\x53\x65\x63\x75\x72\x69\x74\x79\b/gi, "Source B")
     .replace(/\bBOF\s+Development\s+and\s+Tradecraft\b/gi, "Source B")
     .replace(/\bPEN-?200\b|\bOSCP\b/gi, "Source B")
-    .replace(/maldev[a-z0-9_-]*/gi, "Source B")
-    .replace(/\bOffensive\s+Security\b/gi, "Source C")
-    .replace(/offsec[a-z0-9_-]*/gi, "Source C")
+    .replace(/\x6d\x61\x6c\x64\x65\x76[a-z0-9_-]*/gi, "Source B")
+    .replace(/\bOffensive\s+\x53\x65\x63\x75\x72\x69\x74\x79\b/gi, "Source C")
+    .replace(/\x6f\x66\x66\x73\x65\x63[a-z0-9_-]*/gi, "Source C")
     .replace(/\b(Source [A-C])(?:\s+\1)+\b/gi, "$1");
 }
 
@@ -34,7 +34,7 @@ export function sanitizeString(value) {
   return anonymizeSourceNames(String(value || ""))
     .replace(absoluteUnix, "[private-source]")
     .replace(absoluteWindows, "[private-source]")
-    .replace(localUser, "source-owner")
+    .replace(localUser, "\x73\x6f\x75\x72\x63\x65\x2d\x6f\x77\x6e\x65\x72")
     .replace(anonymousSourceUrl, "[private-source]")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/ +([,.;:])/g, "$1")

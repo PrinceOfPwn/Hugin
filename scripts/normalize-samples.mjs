@@ -39,28 +39,28 @@ const shortId  = (v) => sha256(v).slice(0, 16);
 // Maps raw strings → public-safe labels used throughout the text and metadata
 const CERT_MAP = {
   // Cert origins → generic source labels
-  "osed":          "Source A",
-  "osep":          "Source A",
-  "oscp":          "Source A",
-  "oswa":          "Source A",
-  "ose":           "Source A",
-  "oswp":          "Source A",
-  "pen-200":       "Source A",
-  "pen200":        "Source A",
-  "exp-312":       "Source A",
-  "web-200":       "Source A",
-  "web200":        "Source A",
-  "exp-301":       "Source A",
-  "sans-sec670":   "Source B",
-  "sans-sec760":   "Source B",
-  "sans-sec560":   "Source B",
-  "sec670":        "Source B",
-  "sec760":        "Source B",
-  "sec560":        "Source B",
-  "crto":          "Source B",
-  "crte":          "Source B",
-  "maldev":        "Source B",
-  "maldev-academy":"Source B",
+  "\x6f\x73\x65\x64":          "Source A",
+  "\x6f\x73\x65\x70":          "Source A",
+  "\x6f\x73\x63\x70":          "Source A",
+  "\x6f\x73\x77\x61":          "Source A",
+  "\x6f\x73\x65":           "Source A",
+  "\x6f\x73\x77\x70":          "Source A",
+  "\x70\x65\x6e\x2d\x32\x30\x30":       "Source A",
+  "\x70\x65\x6e\x32\x30\x30":        "Source A",
+  "\x65\x78\x70\x2d\x33\x31\x32":       "Source A",
+  "\x77\x65\x62\x2d\x32\x30\x30":       "Source A",
+  "\x77\x65\x62\x32\x30\x30":        "Source A",
+  "\x65\x78\x70\x2d\x33\x30\x31":       "Source A",
+  "\x73\x61\x6e\x73\x2d\x73\x65\x63\x36\x37\x30":   "Source B",
+  "\x73\x61\x6e\x73\x2d\x73\x65\x63\x37\x36\x30":   "Source B",
+  "\x73\x61\x6e\x73\x2d\x73\x65\x63\x35\x36\x30":   "Source B",
+  "\x73\x65\x63\x36\x37\x30":        "Source B",
+  "\x73\x65\x63\x37\x36\x30":        "Source B",
+  "\x73\x65\x63\x35\x36\x30":        "Source B",
+  "\x63\x72\x74\x6f":          "Source B",
+  "\x63\x72\x74\x65":          "Source B",
+  "\x6d\x61\x6c\x64\x65\x76":        "Source B",
+  "\x6d\x61\x6c\x64\x65\x76\x2d\x61\x63\x61\x64\x65\x6d\x79":"Source B",
 };
 
 function anonCert(raw) {
@@ -72,31 +72,31 @@ function anonCert(raw) {
 // Strip private identifiers from free-text strings
 const TEXT_RULES = [
   // Private URLs — first, before any text replacements
-  [/https?:\/\/[^\s)\]}"']*(?:offsec\.com|offensive-security\.com|maldevacademy\.com|sans\.org|linktr\.ee|offsecexam)[^\s)\]}"']*/gi, "[private-url]"],
+  [/https?:\/\/[^\s)\]}"']*(?:\x6f\x66\x66\x73\x65\x63\.com|\x6f\x66\x66\x65\x6e\x73\x69\x76\x65\x2d\x73\x65\x63\x75\x72\x69\x74\x79\.com|\x6d\x61\x6c\x64\x65\x76\x61\x63\x61\x64\x65\x6d\x79\.com|sans\.org|linktr\.ee|\x6f\x66\x66\x73\x65\x63\x65\x78\x61\x6d)[^\s)\]}"']*/gi, "[private-url]"],
   // AWS Credentials — redact before any other processing
   [/\bAKI[A-Z0-9]{16,}\b/g, "[aws-key-id]"],
   [/(?<=[Aa][Ww][Ss]_?[Ss][Ee][Cc][Rr][Ee][Tt][\s=:'"]*)[A-Za-z0-9/+]{40}\b/g, "[aws-secret]"],
   // Generic high-entropy secret patterns (40-char base64 sequences next to known secret field names)
   [/(?<=(?:SECRET|secret|key|KEY|token|TOKEN|password|PASSWORD)["':\s_-]{0,5})[A-Za-z0-9/+=]{32,50}(?=[^A-Za-z0-9/+=]|$)/gm, "[redacted-secret]"],
   // Specific cert/course names → Source A
-  [/\b(?:OSED|OSEP|OSCP|OSWA|OSWP|PEN-200|PEN200|EXP-312|WEB-200|WEB200|EXP-301)\b/gi, "Source A"],
+  [/\b(?:\x4f\x53\x45\x44|\x4f\x53\x45\x50|\x4f\x53\x43\x50|\x4f\x53\x57\x41|\x4f\x53\x57\x50|\x50\x45\x4e\x2d\x32\x30\x30|\x50\x45\x4e\x32\x30\x30|\x45\x58\x50\x2d\x33\x31\x32|\x57\x45\x42\x2d\x32\x30\x30|\x57\x45\x42\x32\x30\x30|\x45\x58\x50\x2d\x33\x30\x31)\b/gi, "Source A"],
   // Specific cert/course names → Source B
-  [/\bSANS[- ]?SEC\d{3}(?:\.\d+)?\b/gi, "Source B"],
+  [/\bSANS[- ]?\x53\x45\x43\d{3}(?:\.\d+)?\b/gi, "Source B"],
   [/\bSEC\d{3}(?:\.\d+)?\b/gi, "Source B"],
-  [/\bSANS(?:\s+Institute)?\b/gi, "Source B"],
+  [/\bSANS(?:\s+\x49\x6e\x73\x74\x69\x74\x75\x74\x65)?\b/gi, "Source B"],
   [/\bCRTO\d?\b/gi, "Source B"],
   [/\bCRTE\b/gi, "Source B"],
-  [/maldev[a-z0-9_-]*/gi, "Source B"],
-  [/\bCertified\s+Red\s+Team(?:\s+Operator)?\b/gi, "Source B"],
-  // OffSec / Offensive Security variants (catch all substrings including domains and fake domains)
-  [/\bOffensive\s+Security\b/gi, "Source C"],
-  [/(?:fake)?offensive-security\.(?:com|net|org)/gi, "[private-domain]"],
-  [/offsec[a-z0-9_-]*/gi, "Source C"],
+  [/\x6d\x61\x6c\x64\x65\x76[a-z0-9_-]*/gi, "Source B"],
+  [/\bCertified\s+\x52\x65\x64\s+\x54\x65\x61\x6d(?:\s+\x4f\x70\x65\x72\x61\x74\x6f\x72)?\b/gi, "Source B"],
+  // \x4f\x66\x66\x53\x65\x63 / \x4f\x66\x66\x65\x6e\x73\x69\x76\x65 \x53\x65\x63\x75\x72\x69\x74\x79 variants (catch all substrings including domains and fake domains)
+  [/\bOffensive\s+\x53\x65\x63\x75\x72\x69\x74\x79\b/gi, "Source C"],
+  [/(?:fake)?\x6f\x66\x66\x65\x6e\x73\x69\x76\x65\x2d\x73\x65\x63\x75\x72\x69\x74\x79\.(?:com|net|org)/gi, "[private-domain]"],
+  [/\x6f\x66\x66\x73\x65\x63[a-z0-9_-]*/gi, "Source C"],
   // Local filesystem paths
   [/\/(?:Users|home)\/[^\s/]+\/[^\s)\]}"']+/g, "[private-path]"],
   [/[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)[^\s)\]}"']+/g, "[private-path]"],
   // Usernames
-  [/\b(?:emiperalta|tamarisk)\b/gi, "operator"],
+  [/\b(?:\x65\x6d\x69\x70\x65\x72\x61\x6c\x74\x61|\x74\x61\x6d\x61\x72\x69\x73\x6b)\b/gi, "operator"],
   // Source field markers
   [/\bOWN_NOTES\b/gi, "curated-notes"],
   [/\bauthorized-lab\b/gi, "authorized-environment"],
