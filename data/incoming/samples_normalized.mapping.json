@@ -1,0 +1,18 @@
+{
+  "source_name": "hugin-normalized-dataset",
+  "confidence": 5,
+  "kind": "tradecraft_qa",
+  "id_strategy": "field",
+  "field_map": {
+    "id": "$.id",
+    "prompt": "$.prompt",
+    "answer": "$.answer",
+    "category": "$.category",
+    "source": "$.source",
+    "tags": "$.tags"
+  },
+  "constants": {
+    "kind": "tradecraft_qa",
+    "publishState": "core"
+  }
+}
