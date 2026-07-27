@@ -57,9 +57,9 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: .hf-cache
-          key: hf-qwen25-15b-instruct-v2
+          key: hf-gemma-2-2b-it-v1
           restore-keys: |
-            hf-qwen25-15b-instruct-
+            hf-gemma-2-2b-it-
 
       - run: npm ci
 
