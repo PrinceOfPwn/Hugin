@@ -20,11 +20,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const MODEL_ID    = "onnx-community/Qwen3-4B-Instruct-2507-ONNX";
+const MODEL_ID    = process.env.HUGIN_DETECT_MODEL ?? "onnx-community/Qwen3.5-2B-ONNX-OPT";
 const MODEL_DTYPE = "q4";
 const MODEL_CACHE = path.resolve(process.env.HUGIN_MODEL_CACHE ?? ".hf-cache");
-const MAX_NEW_TOKENS = 900;
-const SAMPLE_SIZE = 8;
+const MAX_NEW_TOKENS = 350;
+const SAMPLE_SIZE = 3;
 
 const args = process.argv.slice(2);
 const input = args.find((a) => !a.startsWith("--"));
