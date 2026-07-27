@@ -105,8 +105,7 @@ jobs:
             git commit -m "ingest: normalized artifacts"
             for i in 1 2 3; do
               if git push; then break; fi
-              echo "Push rejected (attempt $i) — pulling and retrying"
-              git pull --rebase origin main
+              git fetch origin main && git rebase -X ours origin/main
               sleep 5
             done
           fi
