@@ -179,6 +179,7 @@ const entities = entitySourceNodes.map((node) => {
     tier: node.tier,
     confidence: node.confidence,
     mitre,
+    code_artifact: node.code_artifact || null,
     bodyRef,
     bodyShard: Number.parseInt(bodyRef.slice(0, 2), 16) % SHARDS,
     degree: edgeDegree.get(node.id) || 0,
