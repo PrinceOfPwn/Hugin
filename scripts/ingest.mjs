@@ -291,8 +291,10 @@ ${rec.answer}${convSection}${nearMissSection}${mitreSection}
 // ── Node builder ──────────────────────────────────────────────────────────────
 function subgalaxyFor(task) {
   const map = {
+    execution:        "Execution & System Calls",
     exploit_dev:      "Exploit Development",
     evasion:          "Evasion & Defense Bypass",
+    defense_evasion:  "Evasion & Defense Bypass",
     web_exploit:      "Web Exploitation",
     lateral_movement: "Lateral Movement",
     post_exploitation:"Post-Exploitation",
@@ -307,7 +309,10 @@ function buildNode(rec, rawId) {
   const publicId  = `tradecraft_qa:${shortHash(rawId, 20)}`;
   const evidenceId = `QA-${shortHash(rawId, 10).toUpperCase()}`;
   const promptSnip = truncate(rec.prompt, 90);
-  const title = `QA · ${subgalaxyFor(rec.task)} · ${promptSnip}`;
+  const fileName = rec.code_artifact?.file_name || (rec.prompt && rec.prompt.includes(".") ? rec.prompt : null);
+  const title = fileName
+    ? `${fileName} · ${subgalaxyFor(rec.task)}`
+    : `QA · ${subgalaxyFor(rec.task)} · ${promptSnip}`;
   const tags  = [...new Set([rec.task, ...rec.tags])].map(sanitize).slice(0, 16);
 
   return {
@@ -326,6 +331,7 @@ function buildNode(rec, rawId) {
       topic:       rec.task,
       tags,
       mitre:       rec.mitre,
+      code_artifact: rec.code_artifact || null,
       galaxyId:    GALAXY_ID,
       qa_task:     rec.task,
       qa_record_id: sanitize(rawId),
