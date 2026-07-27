@@ -98,6 +98,62 @@ const src = fs.readFileSync(INPUT, "utf8");
 const lines = src.split("\n").filter(Boolean);
 console.log(`Applying mapping to ${lines.length} records from ${path.basename(INPUT)}`);
 
+// ── Mapa de normalización de taxonomía (Español/Inglés -> MITRE) ─────────────
+const TAXONOMY_MAP = {
+  "reconocimiento": "recon", "reconnaissance": "recon",
+  "acceso_inicial": "initial_access", "initial_access": "initial_access",
+  "ejecucion": "execution", "execution": "execution",
+  "persistencia": "persistence", "persistence": "persistence",
+  "escalamiento_privilegios": "privilege_escalation", "privilege_escalation": "privilege_escalation",
+  "evasion_defensa": "defense_evasion", "defense_evasion": "defense_evasion",
+  "acceso_credenciales": "credential_access", "credential_access": "credential_access",
+  "descubrimiento": "discovery", "discovery": "discovery",
+  "movimiento_lateral": "lateral_movement", "lateral_movement": "lateral_movement",
+  "recopilacion": "collection", "collection": "collection",
+  "comando_control": "c2", "command_and_control": "c2", "c2": "c2",
+  "exfiltracion": "exfiltration", "exfiltration": "exfiltration",
+  "impacto": "impact", "impact": "impact"
+};
+
+// ── Función para extraer entidades del grafo ─────────────────────────────────
+function extractGraphEntities(text, graphSpec) {
+  if (!graphSpec || !text) return { entities: [], relations: [] };
+  
+  const entities = new Set();
+  const relations = [];
+  
+  // Extraer Entidades
+  for (const rule of graphSpec.entities || []) {
+    if (rule.extraction_method === "regex" && rule.pattern) {
+      try {
+        const regex = new RegExp(rule.pattern, "gi");
+        const matches = text.match(regex) || [];
+        matches.forEach((m) => entities.add(JSON.stringify({ type: rule.type, value: m.trim() })));
+      } catch (e) { /* regex inválida */ }
+    }
+  }
+  
+  // Extraer Relaciones (regex en texto)
+  for (const rule of graphSpec.relations || []) {
+    if (rule.extraction_method === "regex" && rule.pattern) {
+      try {
+        const regex = new RegExp(rule.pattern, "gi");
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+          if (match[1]) {
+            relations.push({ type: rule.type, target: match[1].trim() });
+          }
+        }
+      } catch (e) { /* regex inválida */ }
+    }
+  }
+  
+  return {
+    entities: Array.from(entities).map((e) => JSON.parse(e)),
+    relations: relations
+  };
+}
+
 const fm    = spec.field_map || {};
 const konst = spec.constants || {};
 
@@ -130,10 +186,10 @@ for (let idx = 0; idx < lines.length; idx++) {
   let answerRaw = val(fm.answer);
 
   if (answerRaw == null || String(answerRaw).trim() === "" || typeof answerRaw === "object") {
-    answerRaw = findTextFallback(rec, ["assessment", "answer", "body", "solution", "response", "content", "summary", "text", "description"]);
+    answerRaw = findTextFallback(rec, ["assessment", "answer", "body", "solution", "response", "content", "code", "summary", "text", "description"]);
   }
   if (promptRaw == null || String(promptRaw).trim() === "" || typeof promptRaw === "object") {
-    promptRaw = findTextFallback(rec, ["prompt", "question", "scenario", "unit_id", "title", "input", "topic", "role"]);
+    promptRaw = findTextFallback(rec, ["prompt", "question", "scenario", "unit_id", "title", "file_name", "input", "topic", "role"]);
   }
 
   const prompt = promptRaw == null ? "" : (typeof promptRaw === "object" ? JSON.stringify(promptRaw) : String(promptRaw)).trim();
@@ -158,21 +214,33 @@ for (let idx = 0; idx < lines.length; idx++) {
   if (seenIds.has(id)) { failures.push({ line: idx + 1, reason: `duplicate id ${id}` }); continue; }
   seenIds.add(id);
 
-  const category = (val(fm.category) ?? konst.category ?? "unknown").toString();
-  const source   = val(fm.source);
-  let tags       = val(fm.tags);
+  // Normalización de Categoría Multilingüe a MITRE ATT&CK
+  let rawCategory = (val(fm.category) ?? konst.category ?? "unknown").toString();
+  let normalizedCategory = TAXONOMY_MAP[rawCategory.toLowerCase().replace(/\s+/g, "_")] || rawCategory.toLowerCase().replace(/\s+/g, "_");
+  
+  if (!TAXONOMY_MAP[normalizedCategory] && !["recon","initial_access","execution","persistence","privilege_escalation","defense_evasion","credential_access","discovery","lateral_movement","collection","c2","exfiltration","impact","tools","internals","evasion","unknown"].includes(normalizedCategory)) {
+    normalizedCategory = "unknown";
+  }
+
+  const source = val(fm.source);
+  let tags = val(fm.tags);
   if (!Array.isArray(tags)) tags = tags == null ? [] : [String(tags)];
   tags = tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 10);
+
+  // Extracción de Grafo usando las reglas generadas por el LLM
+  const graphData = extractGraphEntities(answer + " " + prompt, spec.graph_extraction);
 
   out.push(sanitize({
     id,
     prompt,
     answer,
     kind:         konst.kind ?? "tradecraft_qa",
-    category:     String(category).toLowerCase().replace(/\s+/g, "_"),
+    category:     normalizedCategory,
     publishState: konst.publishState ?? "core",
     tags,
     source:       source ? String(source) : spec.source_name,
+    detected_language: spec.detected_language || "unknown",
+    graph: graphData,
     _ingest: {
       from_file:    path.basename(INPUT),
       mapping_spec: spec.source_name,
