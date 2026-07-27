@@ -39,8 +39,13 @@ const MAPPING = INPUT.replace(/\.jsonl$/i, ".mapping.json");
 
 if (!fs.existsSync(INPUT)) { console.error(`Not found: ${INPUT}`); process.exit(1); }
 if (fs.existsSync(MAPPING) && !force) {
-  console.log(`Mapping already exists (${MAPPING}). Use --force to regenerate.`);
-  process.exit(0);
+  const inputMtime = fs.statSync(INPUT).mtimeMs;
+  const mappingMtime = fs.statSync(MAPPING).mtimeMs;
+  if (inputMtime <= mappingMtime) {
+    console.log(`Mapping already exists and is up to date (${MAPPING}). Use --force to regenerate.`);
+    process.exit(0);
+  }
+  console.log(`Input file is newer than mapping (${MAPPING}). Regenerating mapping with LLM...`);
 }
 
 // ── Sample the input ─────────────────────────────────────────────────────────
