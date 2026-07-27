@@ -90,7 +90,13 @@ jobs:
             echo "════════════════════════════════════════════════════════════════"
             node scripts/detect-format.mjs "$f" $FORCE
             node scripts/apply-mapping.mjs "$f"
+            NAME=$(basename "$f" .jsonl)
+            NORM="data/normalized/${NAME}.jsonl"
+            if [ -f "$NORM" ]; then
+              node scripts/ingest.mjs "$NORM" --no-model
+            fi
           done
+          node scripts/build-data.mjs
 
       - name: Commit mapping + normalized artifacts
         run: |
@@ -99,6 +105,9 @@ jobs:
           git add data/incoming/*.mapping.json 2>/dev/null || true
           git add data/normalized/ 2>/dev/null || true
           git add data/incoming/quarantine/ 2>/dev/null || true
+          git add data/source/public-graph.json 2>/dev/null || true
+          git add src/generated/ 2>/dev/null || true
+          git add public/data/ 2>/dev/null || true
           if git diff --staged --quiet; then
             echo "No ingest artifacts to commit."
           else
