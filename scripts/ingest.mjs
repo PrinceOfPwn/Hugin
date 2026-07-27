@@ -353,6 +353,7 @@ async function main() {
   const newNodes    = [];
   const newContents = {};
   let   skipped     = 0;
+  let   updated     = 0;
   let   enriched    = 0;
 
   console.log(`\nProcessing…`);
@@ -360,8 +361,6 @@ async function main() {
     const record = records[i];
     const rawId  = record.id ?? sha256(`${i}:${JSON.stringify(record)}`).slice(0, 40);
     const publicId = `tradecraft_qa:${shortHash(rawId, 20)}`;
-
-    if (existingIds.has(publicId)) { skipped++; continue; }
 
     // 1. Heuristic extraction (always)
     let extracted = extractHeuristic(record);
@@ -377,6 +376,17 @@ async function main() {
 
     // 3. Build graph node
     const { node, body } = buildNode(extracted, rawId);
+
+    if (existingIds.has(publicId)) {
+      const existingNodeIdx = (graph.nodes ?? []).findIndex((n) => String(n.id) === publicId);
+      if (existingNodeIdx !== -1) {
+        graph.nodes[existingNodeIdx] = { ...graph.nodes[existingNodeIdx], ...node };
+        graph.contents[publicId] = body;
+      }
+      updated++;
+      continue;
+    }
+
     newNodes.push(node);
     newContents[node.id] = body;
     existingIds.add(node.id);
