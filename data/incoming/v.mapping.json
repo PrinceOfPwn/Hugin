@@ -1,0 +1,28 @@
+{
+  "source_name": "sans-hackathon-2024-evasion-experiment",
+  "confidence": 5,
+  "record_shape": "flat",
+  "field_map": {
+    "id": null,
+    "prompt": "$.prompt.blackboard_state.verified_facts.payload_type",
+    "answer": "$.source_span.quote",
+    "category": "evasion",
+    "tags": null,
+    "source": "$.row_family"
+  },
+  "constants": {
+    "kind": "tradecraft_qa",
+    "category": "evasion",
+    "publishState": "core"
+  },
+  "id_strategy": "hash",
+  "notes": "The prompt is derived from blackboard state facts; all entries relate to evasion techniques like payload generation and AV detection.",
+  "_detected": {
+    "input": "data/incoming/v.jsonl",
+    "input_records": 31,
+    "sample_size": 8,
+    "model": "onnx-community/Qwen3-4B-Instruct-2507-ONNX",
+    "detected_at": "2026-07-27T05:05:48.536Z",
+    "elapsed_seconds": 180.4
+  }
+}
