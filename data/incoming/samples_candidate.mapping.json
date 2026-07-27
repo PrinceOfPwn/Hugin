@@ -1,0 +1,28 @@
+{
+  "source_name": "offx_blackboard",
+  "confidence": 5,
+  "record_shape": "flat",
+  "field_map": {
+    "id": "$.unit_id",
+    "prompt": "$.sample.schema",
+    "answer": "$.sample.worker_result.assessment",
+    "category": "$.sample.meta.primary_topic",
+    "tags": "$.sample.evidence.map(e => e.text)",
+    "kind": "technique",
+    "source": "$.sample.source_unit_id"
+  },
+  "constants": {
+    "kind": "technique",
+    "category": "web_exploit"
+  },
+  "id_strategy": "field",
+  "notes": "",
+  "_detected": {
+    "input": "data/incoming/samples_candidate.jsonl",
+    "input_records": 597,
+    "sample_size": 3,
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "detected_at": "2026-07-27T06:14:30.963Z",
+    "elapsed_seconds": 80.1
+  }
+}
