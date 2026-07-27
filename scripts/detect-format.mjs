@@ -65,70 +65,77 @@ if (samples.length === 0) {
 console.log(`Sampled ${samples.length} records from ${allLines.length} total in ${path.basename(INPUT)}`);
 
 // ── Prompt ───────────────────────────────────────────────────────────────────
-const SYSTEM = `You are a data-ingestion classifier for the HUGIN offensive-security knowledge vault.
+const SYSTEM = `You are a universal data-ingestion classifier for the HUGIN offensive-security knowledge vault.
 
-TASK: Read N sample records from a JSONL file. Return a JSON mapping-spec that
-tells our normalizer how to reshape every record into the canonical schema.
+TASK: Read N sample records from a JSONL file. The input file can contain ANY type of offensive security data:
+- Q&A pairs / training material
+- Offensive security techniques / tradecraft (e.g. exploit validation, attack steps, blackboard traces, worker results)
+- Playbooks / detections / chains / technical documentation
+
+Return a JSON mapping-spec that tells our normalizer how to extract and reshape every record into the canonical schema.
 
 CANONICAL TARGET SCHEMA (fields the normalizer expects):
-  id           string — stable unique record id
-  prompt       string — the question / scenario / context text
-  answer       string — the technical answer / body / narrative
+  id           string — stable unique record id (e.g. $.unit_id, $.id, $.uuid)
+  prompt       string — context / title / scenario / role / question / unit_id
+  answer       string — main technical payload / assessment / narrative / execution details / solution / body
   category     string — one of: recon, initial_access, execution, persistence,
                         privilege_escalation, defense_evasion, credential_access,
                         discovery, lateral_movement, collection, c2, exfiltration,
                         impact, tools, internals, evasion, unknown
-  tags         string[] — free-text tags (up to 10)
-  kind         string — one of: tradecraft_qa, technique, chain, detection,
+  tags         string[] — free-text tags or primitives (e.g. $.sample.worker_result.primitives_present[*])
+  kind         string — one of: technique, tradecraft_qa, chain, detection,
                         concept, lgtm_note, playbook, source, documentation
 
 OUTPUT — return EXACTLY this JSON shape, nothing else:
 
 {
-  "source_name":  string,               // descriptive name (e.g. "sans-notebook-2024")
+  "source_name":  string,               // descriptive name (e.g. "offx-blackboard-validation")
   "confidence":   1|2|3|4|5,            // your confidence in the mapping
   "record_shape": "flat" | "nested",
   "field_map": {
-    "id":       string | null,          // JSONPath expression, or null if missing
-    "prompt":   string | null,
-    "answer":   string | null,
-    "category": string | null,          // if the source has a category field
+    "id":       string | null,          // JSONPath expression to unique ID (e.g. "$.unit_id")
+    "prompt":   string | null,          // JSONPath to context/scenario/prompt (e.g. "$.role" or "$.unit_id")
+    "answer":   string | null,          // JSONPath to main text/assessment (e.g. "$.sample.worker_result.assessment")
+    "category": string | null,          // JSONPath to category/topic (e.g. "$.meta.primary_topic")
     "tags":     string | null,          // JSONPath ending in [*] for arrays
-    "source":   string | null           // any source-attribution field
+    "source":   string | null           // JSONPath to source/provider
   },
   "constants": {                        // fields to set unconditionally on every record
-    "kind":         string,             // best-guess kind from the sample
-    "category":     string,             // fallback if field_map.category is null
+    "kind":         string,             // "technique" if offensive security data/sample/blackboard, else "tradecraft_qa"
+    "category":     string,             // fallback category
     "publishState": "core" | "support"
   },
-  "id_strategy":  "field" | "hash",     // "hash" = sha256(prompt+answer) if id is null
-  "notes":        string                // one sentence — anything the normalizer should know
+  "id_strategy":  "field" | "hash",     // "field" if id exists, "hash" if null
+  "notes":        string
 }
 
 RULES:
 - JSONPath dialect: "$" is root, "." for child, "[N]" for index, "[*]" for wildcard.
-  Examples: "$.uuid"  "$.metadata.tags[*]"  "$.answer.body"
-- Every field_map value is either a JSONPath string or null. NEVER invent field names.
-- If ALL samples share the exact same value for a field, put it in "constants" instead.
-- If confidence < 3, the file will be quarantined for human review — set it honestly.
-- Return ONE JSON object. No markdown fences. No prose.
+  Examples for nested structures: "$.unit_id", "$.sample.worker_result.assessment", "$.meta.primary_topic"
+- For nested structures (like blackboard candidates, worker results, evaluation traces), map "answer" to the deepest technical text field (e.g. "$.sample.worker_result.assessment" or "$.sample.blackboard_patch.facts[0].text").
+- Set "kind" in constants to "technique" if the input is a technique/exploit/attack record, or "tradecraft_qa" if Q&A.
+- Return ONE JSON object. No markdown fences. No prose.`;
 
-EXAMPLE:
-INPUT SAMPLES:
-[
-  {"uuid":"abc","q":"how does DLL sideload work?","a":"You place a rogue DLL...","topic":"defense_evasion"},
-  {"uuid":"def","q":"what is COFF loading?","a":"COFF loading executes...","topic":"execution"}
-]
-OUTPUT:
-{"source_name":"unknown-qa-topic","confidence":5,"record_shape":"flat","field_map":{"id":"$.uuid","prompt":"$.q","answer":"$.a","category":"$.topic","tags":null,"source":null},"constants":{"kind":"tradecraft_qa","category":"unknown","publishState":"core"},"id_strategy":"field","notes":"Category is single-word snake_case matching our schema."}`;
-
-// Truncate each sample to keep the prompt short
-function trim(v, max = 400) {
-  const s = JSON.stringify(v);
-  return s.length <= max ? s : s.slice(0, max) + "…";
+function smartTrim(obj, maxStrLen = 120) {
+  if (obj == null) return obj;
+  if (typeof obj === "string") {
+    return obj.length > maxStrLen ? `${obj.slice(0, maxStrLen)}…` : obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.slice(0, 3).map((item) => smartTrim(item, maxStrLen));
+  }
+  if (typeof obj === "object") {
+    const res = {};
+    for (const [k, v] of Object.entries(obj)) {
+      res[k] = smartTrim(v, maxStrLen);
+    }
+    return res;
+  }
+  return obj;
 }
+
 const userMsg = `SAMPLE RECORDS (${samples.length}):\n` +
-  samples.map((r, i) => `[${i + 1}] ${trim(r, 600)}`).join("\n");
+  samples.map((r, i) => `[${i + 1}] ${JSON.stringify(smartTrim(r))}`).join("\n");
 
 console.log(`Loading ${MODEL_ID} (dtype=${MODEL_DTYPE})…`);
 const { env, pipeline } = await import("@huggingface/transformers");
