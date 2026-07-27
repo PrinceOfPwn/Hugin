@@ -15,6 +15,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { sanitize } from "./lib/sanitize.mjs";
 
 const input = process.argv[2];
 if (!input) { console.error("Usage: node scripts/apply-mapping.mjs <input.jsonl>"); process.exit(1); }
@@ -163,7 +164,7 @@ for (let idx = 0; idx < lines.length; idx++) {
   if (!Array.isArray(tags)) tags = tags == null ? [] : [String(tags)];
   tags = tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 10);
 
-  out.push({
+  out.push(sanitize({
     id,
     prompt,
     answer,
@@ -177,7 +178,7 @@ for (let idx = 0; idx < lines.length; idx++) {
       mapping_spec: spec.source_name,
       ingested_at:  new Date().toISOString(),
     },
-  });
+  }));
 }
 
 // ── Fail-safe: too many failures = quarantine ────────────────────────────────
