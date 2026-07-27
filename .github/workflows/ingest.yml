@@ -102,10 +102,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No ingest artifacts to commit."
           else
-            # rebase-before-push: the enrich workflow (long-running) can advance main
-            # while we work, so we pull first and then push.
-            git pull --rebase origin main
-            git commit -m "ingest: normalized $(git diff HEAD~1 --name-only | grep -c '^data/normalized/' || echo 0) file(s)"
+            git commit -m "ingest: normalized artifacts"
             for i in 1 2 3; do
               if git push; then break; fi
               echo "Push rejected (attempt $i) — pulling and retrying"
