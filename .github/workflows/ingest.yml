@@ -57,9 +57,9 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: .hf-cache
-          key: hf-qwen35-2b-onnx-opt-v1
+          key: hf-qwen25-15b-instruct-v1
           restore-keys: |
-            hf-qwen35-2b-onnx-opt-
+            hf-qwen25-15b-instruct-
 
       - run: npm ci
 
