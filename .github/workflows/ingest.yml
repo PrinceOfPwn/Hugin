@@ -57,7 +57,7 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: .hf-cache
-          key: hf-qwen25-15b-instruct-v1
+          key: hf-qwen25-15b-instruct-v2
           restore-keys: |
             hf-qwen25-15b-instruct-
 
