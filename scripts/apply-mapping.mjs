@@ -100,6 +100,20 @@ console.log(`Applying mapping to ${lines.length} records from ${path.basename(IN
 const fm    = spec.field_map || {};
 const konst = spec.constants || {};
 
+function findTextFallback(obj, keys, depth = 0) {
+  if (depth > 6 || obj == null || typeof obj !== "object") return null;
+  for (const k of keys) {
+    if (typeof obj[k] === "string" && obj[k].trim().length > 0) return obj[k];
+  }
+  for (const [, v] of Object.entries(obj)) {
+    if (typeof v === "object" && v !== null) {
+      const res = findTextFallback(v, keys, depth + 1);
+      if (res) return res;
+    }
+  }
+  return null;
+}
+
 const out = [];
 const failures = [];
 const seenIds  = new Set();
@@ -111,10 +125,18 @@ for (let idx = 0; idx < lines.length; idx++) {
 
   const val = (jp) => jp ? jsonpath(rec, jp) : undefined;
 
-  const promptRaw = val(fm.prompt);
-  const answerRaw = val(fm.answer);
-  const prompt = promptRaw == null ? "" : String(promptRaw).trim();
-  const answer = answerRaw == null ? "" : String(answerRaw).trim();
+  let promptRaw = val(fm.prompt);
+  let answerRaw = val(fm.answer);
+
+  if (answerRaw == null || String(answerRaw).trim() === "" || typeof answerRaw === "object") {
+    answerRaw = findTextFallback(rec, ["assessment", "answer", "body", "solution", "response", "content", "summary", "text", "description"]);
+  }
+  if (promptRaw == null || String(promptRaw).trim() === "" || typeof promptRaw === "object") {
+    promptRaw = findTextFallback(rec, ["prompt", "question", "scenario", "unit_id", "title", "input", "topic", "role"]);
+  }
+
+  const prompt = promptRaw == null ? "" : (typeof promptRaw === "object" ? JSON.stringify(promptRaw) : String(promptRaw)).trim();
+  const answer = answerRaw == null ? "" : (typeof answerRaw === "object" ? JSON.stringify(answerRaw) : String(answerRaw)).trim();
 
   // Skip records with no answer content — unusable for the vault
   if (!answer) { failures.push({ line: idx + 1, reason: "empty answer" }); continue; }
