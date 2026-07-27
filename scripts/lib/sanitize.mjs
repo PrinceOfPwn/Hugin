@@ -5,9 +5,13 @@
  * Removes private source names, usernames, local paths, and training provider labels.
  */
 
-const absoluteUnix = /\/(?:Users|home)\/[^\s/]+\/[^\s)\]}>"']+/gi;
-const absoluteWindows = /[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)[^\s)\]}>"']+/gi;
-const localUser = /\b(?:emiperalta|tamarisk)\b/gi;
+// Matches Unix local paths including those with spaces up to quotes, newlines, or object delimiters
+const absoluteUnix = /(?:\/Users|\/home)\/[^"'\r\n;{}]+/gi;
+// Matches Windows local paths including those with spaces up to quotes, newlines, or object delimiters
+const absoluteWindows = /[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)[^"'\r\n;{}]+/gi;
+
+// Removes local usernames & handles
+const localUser = /\b(?:emiperalta|tamarisk|OffsecExam)\b/gi;
 const anonymousSourceUrl = /https?:\/\/(?:www\.)?(?:linktr\.ee\/offsecexam|sans\.org|offsec\.com|maldevacademy\.com)[^\s)\]}>"']*/gi;
 
 export function anonymizeSourceNames(value) {
@@ -16,7 +20,10 @@ export function anonymizeSourceNames(value) {
     .replace(/\bSANS\s+SEC\d{3}(?:\.\d+)?\b/gi, "Source A")
     .replace(/\bSEC\d{3}(?:\.\d+)?\b/gi, "Source A")
     .replace(/\bSANS(?:\s+Institute)?\b/gi, "Source A")
-    .replace(/\bCertified\s+Red\s+Team\s+Operator\b|\bCRTO\d?\b|\bCRTE\b/gi, "Source B")
+    .replace(/\bCertified\s+Red\s+Team(?:\s+Operator)?\b|\bCRTO\d?\b|\bCRTE\b/gi, "Source B")
+    .replace(/\bZero-Point\s+Security\b/gi, "Source B")
+    .replace(/\bBOF\s+Development\s+and\s+Tradecraft\b/gi, "Source B")
+    .replace(/\bPEN-?200\b|\bOSCP\b/gi, "Source B")
     .replace(/maldev[a-z0-9_-]*/gi, "Source B")
     .replace(/\bOffensive\s+Security\b/gi, "Source C")
     .replace(/offsec[a-z0-9_-]*/gi, "Source C")
@@ -34,20 +41,27 @@ export function sanitizeString(value) {
     .trim();
 }
 
+const BLACKLISTED_KEYS = new Set([
+  "source_path",
+  "_source_path",
+  "source_key",
+  "sourceLabel",
+  "file_path",
+  "absolute_path",
+  "local_path",
+  "image_path",
+  "source_json",
+  "source_url",
+  "_source_url"
+]);
+
 export function sanitize(value) {
   if (typeof value === "string") return sanitizeString(value);
   if (Array.isArray(value)) return value.map(sanitize);
   if (value && typeof value === "object" && value !== null) {
     return Object.fromEntries(
       Object.entries(value)
-        .filter(([key]) => ![
-          "source_path",
-          "source_key",
-          "sourceLabel",
-          "file_path",
-          "absolute_path",
-          "local_path"
-        ].includes(key))
+        .filter(([key]) => !BLACKLISTED_KEYS.has(key))
         .map(([key, child]) => [key, sanitize(child)])
     );
   }

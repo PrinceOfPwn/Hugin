@@ -51,15 +51,15 @@ const publicFiles = [
   ...fs.readdirSync(generated).filter((name) => name.endsWith(".json")).map((name) => path.join(generated, name))
 ];
 const forbidden = [
-  { label: "absolute Unix owner path", pattern: /\/(?:Users|home)\/(?:emiperalta|tamarisk|source-owner)(?:\/|\\)/i },
-  { label: "absolute Windows user path", pattern: /[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)/i },
-  { label: "local username", pattern: /\b(?:emiperalta|tamarisk)\b/i },
+  { label: "absolute Unix owner path", pattern: /(?:\/Users|\/home)\/[^"'\r\n;{}]+/i },
+  { label: "absolute Windows user path", pattern: /[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)[^"'\r\n;{}]+/i },
+  { label: "local username or handle", pattern: /\b(?:emiperalta|tamarisk|OffsecExam)\b/i },
   { label: "named training provider", pattern: /\bSANS(?:\s+Institute)?\b/i },
-  { label: "course identifier", pattern: /\bSEC\d{3}(?:\.\d+)?\b/i },
-  { label: "named research course", pattern: /\bCRTO\b|\bCertified\s+Red\s+Team\s+Operator\b/i },
+  { label: "course identifier", pattern: /\bSEC\d{3}(?:\.\d+)?\b|\bPEN-?200\b|\bOSCP\b/i },
+  { label: "named research course", pattern: /\bCRTO\b|\bCertified\s+Red\s+Team(?:\s+Operator)?\b|\bZero-Point\s+Security\b/i },
   { label: "named development course", pattern: /MalDev/i },
   { label: "named training provider", pattern: /OffSec|\bOffensive\s+Security\b/i },
-  { label: "private source field", pattern: /"(?:source_path|source_key|file_path|absolute_path|local_path)"\s*:/i }
+  { label: "private source field", pattern: /"(?:source_path|_source_path|source_key|file_path|absolute_path|local_path|image_path|source_json)"\s*:/i }
 ];
 
 for (const file of publicFiles) {
