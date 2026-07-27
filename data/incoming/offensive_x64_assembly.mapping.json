@@ -32,7 +32,7 @@
     "input_records": 13,
     "sample_size": 3,
     "model": "onnx-community/gemma-4-E2B-it-ONNX",
-    "detected_at": "2026-07-27T21:05:22.996Z",
-    "elapsed_seconds": 111.9
+    "detected_at": "2026-07-27T21:26:55.757Z",
+    "elapsed_seconds": 112
   }
 }
