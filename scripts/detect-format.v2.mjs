@@ -64,7 +64,6 @@ const isDoc = Boolean(
 );
 
 const profile = buildStructuralProfile(parsedRecords);
-const local = new LocalTextModel({ modelId, cacheDir, maxNewTokens: 1000 });
 let output;
 let rawOutput = "";
 
@@ -75,6 +74,7 @@ if (isSourceCode) {
 } else if (isDoc) {
   output = deterministicDocMapping(parsedRecords, path.basename(input, ".jsonl"));
 } else {
+  const local = new LocalTextModel({ modelId, cacheDir, maxNewTokens: 1000 });
   try {
     const first = await local.generateJson({
       system: ROUTER_SYSTEM_PROMPT,
