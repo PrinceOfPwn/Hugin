@@ -31,7 +31,7 @@ permissions:
   models: read
 
 concurrency:
-  group: hugin-universal-ingest-main
+  group: hugin-universal-ingest-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
