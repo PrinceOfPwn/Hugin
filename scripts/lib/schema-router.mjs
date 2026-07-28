@@ -103,7 +103,7 @@ function baseMapping({ sourceName, kind, complexity, confidence, language, first
       id: pathForKey(first, ["id", "unit_id", "uuid", "source_record_id"]),
       title: title ?? null,
       content: content ?? { path: [], join: null },
-      category: pathForKey(first, ["category", "task_type", "topic"]),
+      category: pathForKey(first, ["category", "task_type", "topic", "file_type", "language"]),
       tags: pathForKey(first, ["tags", "labels"]),
       language: pathForKey(first, ["language", "file_type", "lang"]),
       source: pathForKey(first, ["source", "source_name", "origin", "source_model"]),
