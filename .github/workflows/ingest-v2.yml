@@ -58,7 +58,16 @@ jobs:
           restore-keys: |
             hugin-ingest-v3-
 
-      - run: npm ci
+      - name: Install dependencies (retry transient ONNX downloads)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if npm ci; then exit 0; fi
+            if [[ "$attempt" == "3" ]]; then exit 1; fi
+            echo "npm ci failed; retrying transient dependency download ($attempt/3)"
+            sleep $((attempt * 10))
+          done
 
       - name: Test ingestion contracts
         run: node tests/ingest-v2-pipeline.test.mjs
