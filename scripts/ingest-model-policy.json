@@ -1,0 +1,28 @@
+{
+  "general": {
+    "tier": "low",
+    "preferred": [
+      "openai/gpt-4.1-mini",
+      "openai/gpt-4o-mini"
+    ],
+    "max_output_tokens": 2200
+  },
+  "complex": {
+    "tier": "high",
+    "preferred": [
+      "openai/gpt-4.1"
+    ],
+    "max_output_tokens": 3000
+  },
+  "batch": {
+    "max_records": 6,
+    "max_input_chars": 18000
+  },
+  "thresholds": {
+    "claim": 0.62,
+    "technique": 0.72,
+    "entity": 0.60,
+    "relation": 0.72,
+    "mitre": 0.82
+  }
+}
