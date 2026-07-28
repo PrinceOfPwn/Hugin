@@ -1,46 +1,18 @@
 {
   "local": {
-    "model": "local-2b",
-    "max_output_tokens": 900,
-    "use_for": [
-      "structural_profiling",
-      "kind_detection",
-      "field_mapping",
-      "adapter_selection",
-      "complexity_estimation"
-    ]
-  },
-  "general": {
-    "preferred": [
-      "openai/gpt-4.1"
-    ],
-    "fallback": [
-      "openai/gpt-5-mini",
-      "deepseek/deepseek-v3-0324"
-    ],
-    "max_output_tokens": 2600,
+    "model": "onnx-community/Qwen3.5-4B-Instruct-ONNX",
+    "dtype": "q4",
+    "max_output_tokens": 700,
     "use_for": [
       "single_record_summary",
       "title_generation",
       "tag_generation",
-      "document_classification",
-      "entity_extraction",
-      "concept_extraction",
-      "section_extraction",
-      "writeup_structuring",
-      "general_technical_enrichment"
+      "explicit_entity_extraction"
     ]
   },
   "complex": {
-    "preferred": [
-      "openai/gpt-5"
-    ],
-    "fallback": [
-      "openai/o3",
-      "openai/gpt-5-mini",
-      "openai/gpt-4.1"
-    ],
-    "max_output_tokens": 4000,
+    "model": "z-ai/glm-5.2",
+    "max_output_tokens": 6000,
     "use_for": [
       "technical_abstraction",
       "cross_document_synthesis",
@@ -75,7 +47,7 @@
     "on_timeout": "next_model",
     "on_content_filter": "next_model",
     "on_invalid_schema": "repair_once_then_next_model",
-    "on_all_remote_failures": "local_deterministic_enrichment",
+    "on_all_remote_failures": "deterministic_enrichment",
     "manual_review": false
   }
 }

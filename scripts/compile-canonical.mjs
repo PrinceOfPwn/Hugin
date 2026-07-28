@@ -81,6 +81,14 @@ for (const record of canonical) {
     namedNodes.set(normalizeName(technique.name), node.node.id);
     connect(recordNode.node.id, node.node.id, relationForRecord(record.kind), technique.description);
   }
+  // Local graph work: explicit entities become nodes connected by exact source
+  // evidence, without another model request or ungrounded semantic edge.
+  for (const entity of record.enrichment?.entities ?? []) {
+    const node = buildDerivedNode("entity", entity.name, entity.type || "Explicit entity", record, entity.confidence, entity.type);
+    upsertNode(node.node, node.body);
+    namedNodes.set(normalizeName(entity.name), node.node.id);
+    connect(recordNode.node.id, node.node.id, "mentions", entity.evidence?.[0] ?? "Explicitly named in the source record.");
+  }
 
   for (const relation of record.enrichment?.relations ?? []) {
     const sourceId = namedNodes.get(normalizeName(relation.source));
@@ -172,6 +180,7 @@ function buildRecordNode(record) {
     } : null,
     enrichment_status: record.enrichment?.status ?? "degraded",
     enrichment_model: record.enrichment?.model ?? null,
+    knowledge_card: record.enrichment?.card ?? null,
   });
   return { node, body: buildBody(record) };
 }
@@ -202,6 +211,20 @@ function buildDerivedNode(type, name, description, record, confidence, topic = n
 
 function buildBody(record) {
   const lines = [`## ${record.title}`, "", record.enrichment?.abstract || record.enrichment?.summary || "", "", "---", "", record.content];
+  const card = record.enrichment?.card;
+  if (card) {
+    lines.push("", "## Knowledge Card", "", `### Purpose`, "", card.purpose ?? "", "", "### Technical Context", "", card.technical_context ?? "", "", "### Mechanism", "", card.mechanism ?? "");
+    const sections = [
+      ["Components", card.components],
+      ["Key Points", card.key_points],
+      ["Artifacts", card.artifacts],
+      ["Tradecraft Context", card.tradecraft_context],
+      ["Caveats", card.caveats],
+    ];
+    for (const [heading, items] of sections) {
+      if (Array.isArray(items) && items.length) lines.push("", `### ${heading}`, "", ...items.map((item) => `- ${item}`));
+    }
+  }
   const concepts = record.enrichment?.concepts ?? [];
   const techniques = record.enrichment?.techniques ?? [];
   const entities = record.enrichment?.entities ?? [];
@@ -229,6 +252,7 @@ function nodeTypeFor(kind) {
     source_code: "source",
     documentation: "documentation",
     training_qa: "tradecraft_qa",
+    training_preference: "source",
     writeup: "playbook",
     playbook: "playbook",
     note: "concept",
@@ -243,6 +267,7 @@ function galaxyFor(kind) {
     source_code: "sources",
     documentation: "sources",
     training_qa: "tradecraft_qa",
+    training_preference: "sources",
     writeup: "techniques",
     playbook: "techniques",
     note: "evidence",

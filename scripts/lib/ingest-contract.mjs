@@ -10,6 +10,7 @@ export const KINDS = Object.freeze([
   "source_code",
   "documentation",
   "training_qa",
+  "training_preference",
   "writeup",
   "note",
   "playbook",
@@ -424,11 +425,26 @@ export const ENRICHMENT_JSON_SCHEMA = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["id", "summary", "abstract", "tags", "concepts", "techniques", "entities", "relations", "mitre_candidates"],
-          properties: {
-            id: { type: "string" },
-            summary: { type: "string", maxLength: 600 },
-            abstract: { type: "string", maxLength: 1600 },
+            required: ["id", "summary", "abstract", "card", "tags", "concepts", "techniques", "entities", "relations", "mitre_candidates"],
+            properties: {
+              id: { type: "string" },
+              summary: { type: "string", maxLength: 600 },
+              abstract: { type: "string", maxLength: 2400 },
+              card: {
+                type: "object", additionalProperties: false,
+                required: ["title", "purpose", "technical_context", "mechanism", "components", "key_points", "artifacts", "tradecraft_context", "caveats"],
+                properties: {
+                  title: { type: "string", minLength: 2, maxLength: 160 },
+                  purpose: { type: "string", maxLength: 700 },
+                  technical_context: { type: "string", maxLength: 1200 },
+                  mechanism: { type: "string", maxLength: 1600 },
+                  components: { type: "array", maxItems: 10, items: { type: "string", minLength: 2, maxLength: 420 } },
+                  key_points: { type: "array", maxItems: 10, items: { type: "string", minLength: 2, maxLength: 420 } },
+                  artifacts: { type: "array", maxItems: 10, items: { type: "string", minLength: 2, maxLength: 420 } },
+                  tradecraft_context: { type: "array", maxItems: 8, items: { type: "string", minLength: 2, maxLength: 420 } },
+                  caveats: { type: "array", maxItems: 6, items: { type: "string", minLength: 2, maxLength: 420 } },
+                },
+              },
             tags: { type: "array", maxItems: 16, items: { type: "string", minLength: 1, maxLength: 80 } },
             concepts: {
               type: "array", maxItems: 12, items: {

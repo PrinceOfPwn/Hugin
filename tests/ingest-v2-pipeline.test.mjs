@@ -9,6 +9,9 @@ import {
   writeJsonl,
 } from "../scripts/lib/ingest-contract.mjs";
 import { GitHubModelsClient } from "../scripts/lib/github-models.mjs";
+import { parseJsonObject } from "../scripts/lib/local-model.mjs";
+import { REMOTE_ENRICHMENT_FEW_SHOTS } from "../scripts/lib/prompts.mjs";
+import { classifyKnownSchema } from "../scripts/lib/schema-router.mjs";
 
 console.log("Running HUGIN Universal Ingest v2 Pipeline Test Suite…\n");
 
@@ -157,17 +160,52 @@ console.log("Running HUGIN Universal Ingest v2 Pipeline Test Suite…\n");
 {
   console.log("\nTest 6-9: Remote model policy, HTTP 429 rate limit & fallback handling");
   const policy = JSON.parse(fs.readFileSync("scripts/ingest-model-policy.json", "utf8"));
-  assert.deepEqual(policy.complex.preferred, ["openai/gpt-5"]);
-  assert.deepEqual(policy.complex.fallback, ["openai/o3", "openai/gpt-5-mini", "openai/gpt-4.1"]);
-  assert.deepEqual(policy.general.preferred, ["openai/gpt-4.1"]);
-  assert.deepEqual(policy.general.fallback, ["openai/gpt-5-mini", "deepseek/deepseek-v3-0324"]);
+  assert.equal(policy.local.model, "onnx-community/Qwen3.5-4B-Instruct-ONNX");
+  assert.equal(policy.local.dtype, "q4");
+  assert.equal(policy.complex.model, "z-ai/glm-5.2");
 
   const client = new GitHubModelsClient({ token: null, policy });
   assert.equal(client.available, false);
-  const models = await client.selectModels({ preferred: policy.complex.preferred, fallback: policy.complex.fallback });
+  const models = await client.selectModels({ preferred: ["openai/gpt-5"], fallback: ["openai/gpt-4.1"] });
   assert.equal(models[0], "openai/gpt-5");
-  assert.equal(models[1], "openai/o3");
+  assert.equal(models[1], "openai/gpt-4.1");
   console.log("  ✓ Passed");
+}
+
+{
+  console.log("\nTest 10c: Rich card few-shots and tolerant JSON extraction");
+  const cardExample = JSON.parse(REMOTE_ENRICHMENT_FEW_SHOTS[1].content).items[0].card;
+  for (const field of ["title", "purpose", "technical_context", "mechanism", "components", "key_points", "artifacts", "tradecraft_context", "caveats"]) {
+    assert.notEqual(cardExample[field], undefined);
+  }
+  assert.deepEqual(parseJsonObject("Model preface\n```json\n{\"items\":[]}\n```\nTrailing note"), { items: [] });
+  console.log("  âœ“ Passed");
+}
+
+// Preference pairs must never fall through to a heavyweight router. They are
+// retained as provenance records but do not produce invented techniques.
+{
+  console.log("\nTest 10b: Preference pair schema is classified deterministically");
+  const mapping = classifyKnownSchema([{
+    prompt: "Compare two candidate answers", chosen: "Grounded answer", rejected: "Ungrounded answer",
+    source_record_id: "pref-1", source_model: "adapter", tags: ["hard-negative"],
+  }], "preference_fixture");
+  assert.equal(mapping.kind, "training_preference");
+  assert.equal(mapping.semantic_complexity, "simple");
+  assert.deepEqual(mapping.requested_enrichment, []);
+  assert.deepEqual(mapping.field_map.content.path, ["chosen"]);
+  console.log("  âœ“ Passed");
+}
+
+{
+  console.log("\nTest 10d: Source-code category inherits each record file type");
+  const mapping = classifyKnownSchema([{ file_name: "sample.asm", file_type: "asm", content: "ret" }], "mixed_source_fixture");
+  assert.deepEqual(mapping.field_map.category.path, ["file_type"]);
+  for (const language of ["asm", "cpp", "md", "rs", "go", "nim"]) {
+    const record = { file_name: `sample.${language}`, file_type: language, content: "source" };
+    assert.equal(record[mapping.field_map.category.path[0]], language);
+  }
+  console.log("  âœ“ Passed");
 }
 
 // ── Test 10: Evidence hallucination dropping ────────────────────────────────
