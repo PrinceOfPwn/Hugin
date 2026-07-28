@@ -24,6 +24,10 @@ manifest.version = 2;
 manifest.sources ??= {};
 manifest.node_owners ??= {};
 manifest.edge_owners ??= {};
+// Per-entity ingestion timestamps — survive input-file deletion via manifest.
+manifest.node_history ??= {};
+// Single timestamp shared across every node emitted in this run.
+const nowIso = new Date().toISOString();
 const { records } = readJsonl(input);
 const canonical = records.map(({ value }) => value);
 const baseName = path.basename(input, ".jsonl");
@@ -47,6 +51,7 @@ for (const id of previousNodeIds) {
     nodes.delete(id);
     delete graph.contents[id];
     delete manifest.node_owners[id];
+    delete manifest.node_history[id];
   } else {
     manifest.node_owners[id] = [...owners];
   }
@@ -141,6 +146,12 @@ function upsertNode(node, body) {
   nodes.set(node.id, existing ? { ...existing, ...node } : node);
   graph.contents[node.id] = body;
   emittedNodeIds.add(node.id);
+  // Stamp ingestion history — preserve firstSeenAt, bump lastUpdatedAt.
+  if (!manifest.node_history[node.id]) {
+    manifest.node_history[node.id] = { firstSeenAt: nowIso, lastUpdatedAt: nowIso };
+  } else {
+    manifest.node_history[node.id].lastUpdatedAt = nowIso;
+  }
 }
 
 function connect(source, target, type, rationale) {

@@ -10,6 +10,19 @@ export function classifyKnownSchema(records, sourceName) {
   const has = (key) => Object.hasOwn(first, key);
   const content = has("content") || has("code") || has("body") || has("text");
 
+  // Video notes (ingest-video.mjs) — checked first so the video facet is preserved.
+  if (has("video_notes") && has("title") && has("body")) {
+    return videoNotesMapping(first, sourceName);
+  }
+
+  // Project bundles (wrap-inputs.mjs) — checked first so the project facet is preserved.
+  if (has("project_manifest") && (has("file_name") || has("relative_path")) && (has("content") || has("code"))) {
+    return projectSourceMapping(first, sourceName);
+  }
+  if (has("project_manifest") && has("title") && (has("body") || has("content") || has("text"))) {
+    return projectDocumentationMapping(first, sourceName);
+  }
+
   if ((has("file_name") || has("file_type") || has("relative_path")) && content) {
     return codeMapping(first, sourceName);
   }
@@ -49,6 +62,55 @@ function codeMapping(first, sourceName) {
     requested: fullEnrichment(),
     facets: { code: { file_name: pathForKey(first, ["file_name"]), relative_path: pathForKey(first, ["relative_path"]), language: pathForKey(first, ["file_type", "language"]) } },
     notes: "Deterministic source-code mapping.",
+  });
+}
+
+function projectSourceMapping(first, sourceName) {
+  const projectName = first?.project_manifest?.project ?? sourceName;
+  return baseMapping({
+    sourceName, kind: "project_source_code", complexity: "complex", confidence: 1, language: first.file_type ?? "raw_code", first,
+    title: pathForKey(first, ["file_name", "relative_path", "title", "id"]),
+    content: pathForKey(first, ["content", "code", "body", "text"]),
+    requested: fullEnrichment(),
+    facets: {
+      code: { file_name: pathForKey(first, ["file_name"]), relative_path: pathForKey(first, ["relative_path"]), language: pathForKey(first, ["file_type", "language"]) },
+      project: { name: projectName, member_path: pathForKey(first, ["project_manifest"]), role: pathForKey(first, ["project_manifest"]) },
+    },
+    notes: `Deterministic project source-code mapping (bundle=${projectName}).`,
+  });
+}
+
+function videoNotesMapping(first, sourceName) {
+  const videoSource = first?.video_notes?.source_file ?? sourceName;
+  return baseMapping({
+    sourceName, kind: "video_notes", complexity: "complex", confidence: 1, language: first.language ?? "en", first,
+    title: pathForKey(first, ["title"]),
+    content: pathForKey(first, ["body", "content", "text"]),
+    requested: fullEnrichment(),
+    facets: {
+      video: {
+        source_file: pathForKey(first, ["video_notes"]),
+        fingerprint: pathForKey(first, ["video_notes"]),
+        duration_sec: pathForKey(first, ["video_notes"]),
+        model: pathForKey(first, ["video_notes"]),
+        segments: pathForKey(first, ["video_notes"]),
+      },
+    },
+    notes: `Deterministic video-notes mapping (source=${videoSource}).`,
+  });
+}
+
+function projectDocumentationMapping(first, sourceName) {
+  const projectName = first?.project_manifest?.project ?? sourceName;
+  return baseMapping({
+    sourceName, kind: "project_documentation", complexity: "general", confidence: 1, language: first.language ?? "en", first,
+    title: pathForKey(first, ["title", "name", "headline", "file_name"]),
+    content: pathForKey(first, ["body", "content", "text", "details"]),
+    requested: fullEnrichment(),
+    facets: {
+      project: { name: projectName, member_path: pathForKey(first, ["project_manifest"]), role: pathForKey(first, ["project_manifest"]) },
+    },
+    notes: `Deterministic project documentation mapping (bundle=${projectName}).`,
   });
 }
 

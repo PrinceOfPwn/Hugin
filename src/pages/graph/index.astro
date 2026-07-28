@@ -1,10 +1,10 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import GraphThreeV3 from "../../components/GraphThreeV3";
-import { manifest, entities, curatedRelations } from "../../lib/data";
+import GraphPageShell from "../../components/GraphPageShell";
+import { manifest, entities, galaxies, curatedRelations } from "../../lib/data";
 
-// Pass nodes + edges; positions is empty so GraphThreeV3 runs the same
-// spring-physics layout as the original GraphThree.tsx (compute3DLayout).
+// Positions are precomputed at build time (see scripts/build-data.mjs universe
+// physics section). The client just reads them and animates orbits.
 const graphNodes = entities.map((e) => ({
   id: e.id,
   label: e.title,
@@ -15,7 +15,13 @@ const graphNodes = entities.map((e) => ({
   summary: e.summary,
   scope: e.publishState,
   degree: e.degree,
-  size: Math.min(11, 2.1 + Math.log2(e.degree + 1)),
+  size: Math.min(11, 2.0 + ((e.mass ?? 2) * 0.4)),
+  mass: e.mass,
+  orbitOf: e.orbitOf ?? null,
+  orbitDistance: e.orbitDistance ?? null,
+  orbit: e.orbit ?? null,
+  isAttractor: e.isAttractor ?? false,
+  position: e.position,
   color: "#00f0ff",
   tier: e.tier as "S" | "A" | "B" | "C" | undefined,
 }));
@@ -27,13 +33,47 @@ const graphEdges = curatedRelations.map((r) => ({
   type: r.type,
 }));
 
-// Empty positions → GraphThreeV3 runs spring-physics layout client-side
-const graphData = { nodes: graphNodes, edges: graphEdges, positions: {} };
+const positions = Object.fromEntries(
+  entities.filter((e) => e.position).map((e) => [e.id, e.position!])
+);
+// Per-galaxy spin axes — used by the client Kepler solver so satellite motion
+// stays in the same orbital plane the server used when computing t=0.
+const spinAxes = Object.fromEntries(
+  galaxies.filter((g) => g.spinAxis).map((g) => [g.id, g.spinAxis!])
+);
+const graphData = { nodes: graphNodes, edges: graphEdges, positions, spinAxes };
+
+// Slim entity subset for the filter engine — drop heavy fields (provenance, bodyRef).
+const entitiesForFilter = entities.map((e) => ({
+  id: e.id,
+  slug: e.slug,
+  route: e.route,
+  title: e.title,
+  kind: e.kind,
+  category: e.category,
+  galaxyId: e.galaxyId,
+  subgalaxy: e.subgalaxy,
+  summary: e.summary,
+  tags: e.tags,
+  tier: e.tier,
+  mitre: e.mitre,
+  bodyRef: "",
+  bodyShard: 0,
+  degree: e.degree,
+  publishState: e.publishState,
+  evidenceId: "",
+  provenance: [],
+  mass: e.mass,
+  charCount: e.charCount,
+  orbitOf: e.orbitOf ?? null,
+  firstSeenAt: e.firstSeenAt ?? null,
+  lastUpdatedAt: e.lastUpdatedAt ?? null,
+}));
 ---
 
 <BaseLayout
   title="Knowledge Graph"
   description={`Explore ${manifest.counts.coreEntities.toLocaleString()} knowledge nodes across structured galaxies in a live 3D universe.`}
 >
-  <GraphThreeV3 client:only="react" graphData={graphData} manifest={manifest} />
+  <GraphPageShell client:only="react" graphData={graphData} manifest={manifest} entities={entitiesForFilter} />
 </BaseLayout>
