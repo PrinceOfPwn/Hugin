@@ -1,4 +1,4 @@
-name: Ingest incoming knowledge
+name: Ingest HUGIN knowledge (v3)
 
 on:
   push:
@@ -14,9 +14,13 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "Specific JSONL under data/incoming; blank processes all"
+        description: "Specific JSONL under data/incoming"
         type: string
         default: ""
+      all_inputs:
+        description: "Process every incoming JSONL (explicit opt-in)"
+        type: boolean
+        default: false
       force_redetect:
         description: "Regenerate structural mappings"
         type: boolean
@@ -49,14 +53,14 @@ jobs:
         with:
           path: |
             .hf-cache
-            .cache/hugin-models
-          key: hugin-ingest-v2-${{ hashFiles('package-lock.json', 'scripts/ingest-model-policy.json') }}
+            .cache/nvidia-models
+          key: hugin-ingest-v3-${{ hashFiles('package-lock.json', 'scripts/ingest-model-policy.json') }}
           restore-keys: |
-            hugin-ingest-v2-
+            hugin-ingest-v3-
 
       - run: npm ci
 
-      - name: Test universal ingestion
+      - name: Test ingestion contracts
         run: node tests/ingest-v2-pipeline.test.mjs
 
       - name: Discover inputs
@@ -72,13 +76,15 @@ jobs:
               *) echo "target must be a JSONL path under data/incoming" >&2; exit 2 ;;
             esac
             [[ -f "$TARGET" ]] && printf '%s\n' "$TARGET" >> /tmp/hugin-inputs.txt
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ inputs.all_inputs }}" != "true" ]]; then
+              echo "Manual runs require target, or explicit all_inputs=true" >&2
+              exit 2
+            fi
+            find data/incoming -type f -name '*.jsonl' ! -path '*/quarantine/*' -print | sort > /tmp/hugin-inputs.txt
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             git fetch origin main --depth=2 2>/dev/null || true
             git diff --name-only HEAD~1 HEAD 2>/dev/null | grep '^data/incoming/.*\.jsonl$' | sort > /tmp/hugin-inputs.txt || true
-          fi
-
-          if [[ ! -s /tmp/hugin-inputs.txt ]]; then
-            find data/incoming -type f -name '*.jsonl' ! -path '*/quarantine/*' -print | sort > /tmp/hugin-inputs.txt
           fi
           echo "count=$(wc -l < /tmp/hugin-inputs.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
 
@@ -86,9 +92,11 @@ jobs:
         if: steps.discover.outputs.count != '0'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           HUGIN_MODEL_CACHE: .hf-cache
-          HUGIN_REMOTE_CACHE: .cache/hugin-models
-          NODE_OPTIONS: --max-old-space-size=6144
+          HUGIN_NVIDIA_CACHE: .cache/nvidia-models
+          HUGIN_SIMPLE_MODEL: onnx-community/Qwen3.5-4B-Instruct-ONNX
+          HUGIN_SIMPLE_DTYPE: q4
         shell: bash
         run: |
           set -euo pipefail

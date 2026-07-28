@@ -10,6 +10,7 @@ export const KINDS = Object.freeze([
   "source_code",
   "documentation",
   "training_qa",
+  "training_preference",
   "writeup",
   "note",
   "playbook",
