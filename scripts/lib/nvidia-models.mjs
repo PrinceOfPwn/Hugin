@@ -20,7 +20,7 @@ export class NvidiaModelsClient {
 
   get available() { return Boolean(this.apiKey); }
 
-  async completeJson({ messages, validate, repairMessages, maxTokens = 3200, force = false, model = this.model }) {
+  async completeJson({ messages, validate, repairMessages, maxTokens = 131072, force = false, model = this.model }) {
     if (!this.available) return { value: null, model: null, cached: false, errors: ["NVIDIA_API_KEY unavailable"] };
     const cacheFile = path.join(this.cacheDir, `${sha256(JSON.stringify({ provider: "nvidia", model, messages, maxTokens })).slice(0, 48)}.json`);
     if (!force && fs.existsSync(cacheFile)) {
@@ -49,8 +49,6 @@ export class NvidiaModelsClient {
       }
     } else {
       errors.push(`${model}: ${first.error}`);
-      // A model can obey the substantive prompt yet wrap JSON in prose. The
-      // repair pass is also useful in that case; V2 only repaired parsed JSON.
       if (repairMessages && first.raw) {
         const repaired = await this.#call({ model, messages: repairMessages(first.raw, [first.error]), maxTokens });
         if (repaired.ok && validate(repaired.value).length === 0) {
@@ -64,33 +62,69 @@ export class NvidiaModelsClient {
   }
 
   async #call({ model, messages, maxTokens }) {
-    const bodies = [
-      { model, messages, temperature: 0, top_p: 1, max_tokens: maxTokens, seed: 42, response_format: { type: "json_object" } },
-      { model, messages, temperature: 0, top_p: 1, max_tokens: maxTokens, seed: 42 },
+    const modelConfigs = [
+      {
+        model: "z-ai/glm-5.2",
+        temperature: 1,
+        top_p: 1,
+        max_tokens: maxTokens || 131072,
+        seed: 42,
+      },
+      {
+        model: "deepseek-ai/deepseek-v4-pro",
+        temperature: 1,
+        top_p: 0.95,
+        max_tokens: maxTokens || 131072,
+        chat_template_kwargs: { thinking: false },
+      },
     ];
-    for (const body of bodies) {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          const response = await fetch(`${this.baseUrl}/chat/completions`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
-          const text = await response.text();
-          if (response.ok) {
-            const raw = JSON.parse(text)?.choices?.[0]?.message?.content ?? "";
-            const value = parseJsonObject(raw);
-            return value ? { ok: true, value, raw } : { ok: false, error: "model returned non-JSON content", raw };
+
+    if (model && model !== "z-ai/glm-5.2" && model !== "deepseek-ai/deepseek-v4-pro") {
+      modelConfigs.unshift({
+        model,
+        temperature: 1,
+        top_p: 1,
+        max_tokens: maxTokens || 131072,
+      });
+    }
+
+    let lastError = "";
+
+    for (const config of modelConfigs) {
+      const currentModel = config.model;
+      const bodies = [
+        { ...config, messages, response_format: { type: "json_object" } },
+        { ...config, messages },
+      ];
+      for (const body of bodies) {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            const response = await fetch(`${this.baseUrl}/chat/completions`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            const text = await response.text();
+            if (response.ok) {
+              const raw = JSON.parse(text)?.choices?.[0]?.message?.content ?? "";
+              const value = parseJsonObject(raw);
+              return value ? { ok: true, value, raw } : { ok: false, error: `${currentModel}: model returned non-JSON content`, raw };
+            }
+            lastError = `${currentModel}: ${response.status} ${text.slice(0, 300)}`;
+            if (response.status === 400 || response.status === 404 || response.status === 422) break;
+            if (response.status === 429 || response.status >= 500) {
+              await sleep(Math.pow(2, attempt) * 2000);
+              continue;
+            }
+            return { ok: false, error: lastError };
+          } catch (error) {
+            lastError = `${currentModel}: ${String(error?.message ?? error)}`;
+            if (attempt === 4) break;
+            await sleep(Math.pow(2, attempt) * 2000);
           }
-          if (response.status === 400 || response.status === 422) break;
-          if (response.status === 429 || response.status >= 500) { await sleep((attempt + 1) * 2000); continue; }
-          return { ok: false, error: `${response.status} ${text.slice(0, 500)}` };
-        } catch (error) {
-          if (attempt === 2) return { ok: false, error: String(error?.message ?? error) };
-          await sleep((attempt + 1) * 1500);
         }
       }
     }
-    return { ok: false, error: "all NVIDIA response formats failed" };
+    return { ok: false, error: `all NVIDIA response formats failed (${lastError})` };
   }
 }
