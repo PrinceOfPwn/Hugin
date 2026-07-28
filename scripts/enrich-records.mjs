@@ -19,9 +19,11 @@ import {
   remoteRepairPrompt,
 } from "./lib/prompts.mjs";
 
-const inputArg = process.argv[2];
+const argv = process.argv.slice(2);
+const force = argv.includes("--force");
+const inputArg = argv.find((arg) => !arg.startsWith("--"));
 if (!inputArg) {
-  console.error("Usage: node scripts/enrich-records.mjs <canonical.jsonl>");
+  console.error("Usage: node scripts/enrich-records.mjs <canonical.jsonl> [--force]");
   process.exit(1);
 }
 
@@ -49,8 +51,25 @@ const remote = new GitHubModelsClient({
   policy,
 });
 
-const simpleRecords = canonical.filter((record) => record.routing.semantic_complexity === "simple");
-const remoteRecords = canonical.filter((record) => record.routing.semantic_complexity !== "simple");
+const simpleRecords = canonical.filter((record) => record.routing?.semantic_complexity === "simple");
+const remoteRecords = canonical.filter((record) => record.routing?.semantic_complexity !== "simple");
+
+const generalRecords = remoteRecords.filter((record) => record.routing?.semantic_complexity !== "complex");
+const complexRecords = remoteRecords.filter((record) => record.routing?.semantic_complexity === "complex");
+
+const generalBatches = makeBatches(
+  generalRecords,
+  policy.batch?.general?.max_records ?? policy.batch?.max_records ?? 6,
+  policy.batch?.general?.max_input_chars ?? policy.batch?.max_input_chars ?? 20000
+).map((batch) => ({ batch, isComplex: false }));
+
+const complexBatches = makeBatches(
+  complexRecords,
+  policy.batch?.complex?.max_records ?? 2,
+  policy.batch?.complex?.max_input_chars ?? 16000
+).map((batch) => ({ batch, isComplex: true }));
+
+const batches = [...generalBatches, ...complexBatches];
 
 try {
   for (const record of simpleRecords) {
@@ -59,9 +78,7 @@ try {
     report.local++;
   }
 
-  const batches = makeBatches(remoteRecords, policy.batch.max_records, policy.batch.max_input_chars);
-  for (const batch of batches) {
-    const isComplex = batch.some((record) => record.routing.semantic_complexity === "complex");
+  for (const { batch, isComplex } of batches) {
     const route = isComplex ? policy.complex : policy.general;
     const models = remote.available ? await remote.selectModels({ preferred: route.preferred, fallback: route.fallback }) : [];
 
@@ -79,6 +96,7 @@ try {
             { role: "user", content: remoteRepairPrompt(raw, errors, batch) },
           ],
           maxTokens: route.max_output_tokens,
+          force,
         })
       : { value: null, errors: [remote.available ? "No catalog model matched policy" : "GITHUB_TOKEN unavailable"] };
 

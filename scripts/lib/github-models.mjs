@@ -13,6 +13,7 @@ export class GitHubModelsClient {
     this.token = token;
     this.cacheDir = path.resolve(cacheDir);
     this.policy = policy;
+    this.policyHash = sha256(JSON.stringify(policy));
     fs.mkdirSync(this.cacheDir, { recursive: true });
   }
 
@@ -55,15 +56,17 @@ export class GitHubModelsClient {
     return selected.length > 0 ? selected : candidateList;
   }
 
-  async completeStructured({ models, messages, jsonSchema, validate, repairMessages, maxTokens = 2200 }) {
+  async completeStructured({ models, messages, jsonSchema, validate, repairMessages, maxTokens = 2200, force = false }) {
     const errors = [];
     for (const model of models) {
-      const cacheKey = sha256(JSON.stringify({ model, messages, jsonSchema, maxTokens }));
+      const cacheKey = sha256(JSON.stringify({ model, messages, jsonSchema, maxTokens, policyHash: this.policyHash }));
       const cacheFile = path.join(this.cacheDir, `${cacheKey}.json`);
-      if (fs.existsSync(cacheFile)) {
-        const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
-        const cachedErrors = validate(cached);
-        if (cachedErrors.length === 0) return { value: cached, model, cached: true, errors };
+      if (!force && fs.existsSync(cacheFile)) {
+        try {
+          const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+          const cachedErrors = validate(cached);
+          if (cachedErrors.length === 0) return { value: cached, model, cached: true, errors };
+        } catch {}
       }
 
       const first = await this.#callModel({ model, messages, jsonSchema, maxTokens });
