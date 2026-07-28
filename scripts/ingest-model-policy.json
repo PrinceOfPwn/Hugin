@@ -1,28 +1,81 @@
 {
-  "general": {
-    "tier": "low",
-    "preferred": [
-      "openai/gpt-4.1-mini",
-      "openai/gpt-4o-mini"
-    ],
-    "max_output_tokens": 2200
+  "local": {
+    "model": "local-2b",
+    "max_output_tokens": 900,
+    "use_for": [
+      "structural_profiling",
+      "kind_detection",
+      "field_mapping",
+      "adapter_selection",
+      "complexity_estimation"
+    ]
   },
-  "complex": {
-    "tier": "high",
+  "general": {
     "preferred": [
       "openai/gpt-4.1"
     ],
-    "max_output_tokens": 3000
+    "fallback": [
+      "openai/gpt-5-mini",
+      "deepseek/deepseek-v3-0324"
+    ],
+    "max_output_tokens": 2600,
+    "use_for": [
+      "single_record_summary",
+      "title_generation",
+      "tag_generation",
+      "document_classification",
+      "entity_extraction",
+      "concept_extraction",
+      "section_extraction",
+      "writeup_structuring",
+      "general_technical_enrichment"
+    ]
+  },
+  "complex": {
+    "preferred": [
+      "openai/gpt-5"
+    ],
+    "fallback": [
+      "openai/o3",
+      "openai/gpt-5-mini",
+      "openai/gpt-4.1"
+    ],
+    "max_output_tokens": 4000,
+    "use_for": [
+      "technical_abstraction",
+      "cross_document_synthesis",
+      "conceptual_graph_generation",
+      "technique_candidates",
+      "mitre_candidates",
+      "attack_chain_extraction",
+      "multi_file_relationships",
+      "conflicting_claim_resolution",
+      "ambiguous_concept_resolution"
+    ]
   },
   "batch": {
-    "max_records": 6,
-    "max_input_chars": 18000
+    "general": {
+      "max_records": 6,
+      "max_input_chars": 20000
+    },
+    "complex": {
+      "max_records": 2,
+      "max_input_chars": 16000
+    }
   },
   "thresholds": {
-    "claim": 0.62,
-    "technique": 0.72,
-    "entity": 0.60,
-    "relation": 0.72,
-    "mitre": 0.82
+    "claim": 0.68,
+    "technique": 0.76,
+    "entity": 0.64,
+    "relation": 0.76,
+    "mitre": 0.86
+  },
+  "fallback": {
+    "on_rate_limit": "next_model",
+    "on_timeout": "next_model",
+    "on_content_filter": "next_model",
+    "on_invalid_schema": "repair_once_then_next_model",
+    "on_all_remote_failures": "local_deterministic_enrichment",
+    "manual_review": false
   }
 }
