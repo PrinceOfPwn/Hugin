@@ -239,6 +239,58 @@ export function stableCanonicalId({ sourceFile, sourceName, explicitId, title, c
   return `ingest:${sha256(`${sourceFile}:${identity}`).slice(0, 28)}`;
 }
 
+export function canonicalizeRecord(rawRecord, mapping, sourceName, index = 0, sourceFile = "test") {
+  const titleMapped = toText(readPath(rawRecord, mapping.field_map?.title));
+  const contentMapped = toText(readPath(rawRecord, mapping.field_map?.content));
+  const title = titleMapped || rawRecord.file_name || rawRecord.title || rawRecord.prompt || rawRecord.question || rawRecord.scenario || rawRecord.headline || `${mapping.kind} record ${index + 1}`;
+  const content = contentMapped || rawRecord.content || rawRecord.body || rawRecord.answer || rawRecord.details || JSON.stringify(rawRecord);
+  const explicitId = toText(readPath(rawRecord, mapping.field_map?.id));
+  const category = toText(readPath(rawRecord, mapping.field_map?.category)) || mapping.constants?.category || "uncategorized";
+  const language = toText(readPath(rawRecord, mapping.field_map?.language)) || mapping.detected_language || "unknown";
+  const tags = toStringArray(readPath(rawRecord, mapping.field_map?.tags));
+
+  function resolveSpec(spec) {
+    if (!spec) return null;
+    if (typeof spec === "object" && Array.isArray(spec.path)) return readPath(rawRecord, spec);
+    if (typeof spec === "object") {
+      const obj = {};
+      for (const [k, v] of Object.entries(spec)) {
+        const res = resolveSpec(v);
+        if (res != null) obj[k] = res;
+      }
+      return Object.keys(obj).length ? obj : null;
+    }
+    return spec;
+  }
+
+  const facets = resolveSpec(mapping.facets) ?? {};
+
+  return {
+    schema_version: CONTRACT_VERSION,
+    id: stableCanonicalId({ sourceFile, sourceName, explicitId, title, content }),
+    kind: mapping.kind,
+    title,
+    content,
+    category,
+    language,
+    tags,
+    publish_state: mapping.constants?.publish_state ?? "core",
+    facets,
+    source: {
+      name: sourceName,
+      input_file: sourceFile,
+      record_index: index,
+      record_sha256: sha256(JSON.stringify(rawRecord)),
+      mapping_sha256: sha256(JSON.stringify(mapping)),
+    },
+    routing: {
+      semantic_complexity: mapping.semantic_complexity ?? "general",
+      requested_enrichment: mapping.requested_enrichment ?? ["summary"],
+      router_confidence: mapping.confidence ?? 1.0,
+    },
+  };
+}
+
 export function evidenceExists(record, evidence) {
   const needle = String(evidence ?? "").trim();
   if (!needle) return false;
@@ -246,6 +298,40 @@ export function evidenceExists(record, evidence) {
   if (haystacks.some((text) => String(text).includes(needle))) return true;
   const normalizedNeedle = normalizeWhitespace(needle);
   return normalizedNeedle.length >= 8 && haystacks.some((text) => normalizeWhitespace(text).includes(normalizedNeedle));
+}
+
+export function filterGroundedEnrichment(record, item, thresholds, metadata) {
+  const grounded = (items, threshold) => (Array.isArray(items) ? items : []).filter((candidate) => {
+    if (typeof candidate?.confidence !== "number" || candidate.confidence < threshold) return false;
+    if (!Array.isArray(candidate.evidence) || candidate.evidence.length === 0) return false;
+    return candidate.evidence.every((quote) => evidenceExists(record, quote));
+  });
+
+  return {
+    id: record.id,
+    kind: record.kind,
+    title: record.title,
+    content: record.content,
+    category: record.category,
+    language: record.language,
+    tags: record.tags,
+    publish_state: record.publish_state,
+    facets: record.facets,
+    summary: item?.summary ?? "",
+    abstract: item?.abstract ?? "",
+    enrichment: {
+      concepts: grounded(item?.concepts, thresholds.claim ?? 0.68),
+      techniques: grounded(item?.techniques, thresholds.technique ?? 0.76),
+      entities: grounded(item?.entities, thresholds.entity ?? 0.64),
+      relations: grounded(item?.relations, thresholds.relation ?? 0.76),
+      mitre_candidates: grounded(item?.mitre_candidates, thresholds.mitre ?? 0.86),
+      tags: Array.isArray(item?.tags) ? item.tags.slice(0, 12) : [],
+    },
+    provenance: {
+      source: record.source,
+      enrichment: metadata,
+    },
+  };
 }
 
 export const ROUTER_JSON_SCHEMA = {

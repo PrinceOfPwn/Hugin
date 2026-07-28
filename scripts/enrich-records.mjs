@@ -6,6 +6,7 @@ import {
   ENRICHMENT_JSON_SCHEMA,
   ENRICHMENT_VERSION,
   evidenceExists,
+  filterGroundedEnrichment,
   normalizeWhitespace,
   readJsonl,
   writeJsonl,
@@ -213,7 +214,7 @@ function validateBatch(value, batch) {
   return errors;
 }
 
-function filterGroundedEnrichment(record, item, thresholds, metadata) {
+export function filterGroundedEnrichment(record, item, thresholds, metadata) {
   const grounded = (items, threshold) => (Array.isArray(items) ? items : []).filter((candidate) => {
     if (typeof candidate?.confidence !== "number" || candidate.confidence < threshold) return false;
     if (!Array.isArray(candidate.evidence) || candidate.evidence.length === 0) return false;
