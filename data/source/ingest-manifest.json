@@ -3,7 +3,7 @@
   "sources": {
     "data/incoming/offensive_x64_assembly.jsonl": {
       "input": "data/enriched/offensive_x64_assembly.jsonl",
-      "input_sha256": "69baa9bf8a5a095061f08b42ca59720f7c09267947b157a87cb07b4f5cd5e66c",
+      "input_sha256": "1f7b1c716a0c4bad858f002900b0325a25cd316d348ba66aa193344340a15243",
       "node_ids": [
         "source:bb4faa95ea190a9b879b27",
         "source:bef414c9b57c6df7512c22",
@@ -20,7 +20,7 @@
         "source:86add4df83091a2fab4222"
       ],
       "edge_ids": [],
-      "compiled_at": "2026-07-28T01:10:57.761Z"
+      "compiled_at": "2026-07-28T02:03:03.248Z"
     }
   },
   "node_owners": {
