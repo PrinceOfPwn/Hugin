@@ -214,9 +214,17 @@ export function validateRouterMapping(mapping) {
   if (mapping.field_map?.content == null) errors.push("field_map.content is required");
   if (!Array.isArray(mapping.requested_enrichment)) errors.push("requested_enrichment must be an array");
   else if (mapping.requested_enrichment.some((task) => !ENRICHMENT_TASKS.includes(task))) errors.push("requested_enrichment contains an unsupported task");
+  function isValidFacetSpec(spec) {
+    if (spec == null) return true;
+    if (isPathSpec(spec)) return true;
+    if (Array.isArray(spec)) return spec.every(isValidFacetSpec);
+    if (typeof spec === "object") return Object.values(spec).every(isValidFacetSpec);
+    return false;
+  }
+
   if (mapping.facets != null && (typeof mapping.facets !== "object" || Array.isArray(mapping.facets))) errors.push("facets must be an object");
   for (const [name, spec] of Object.entries(mapping.facets ?? {})) {
-    if (!isPathSpec(spec)) errors.push(`facets.${name} must be null or a path spec`);
+    if (!isValidFacetSpec(spec)) errors.push(`facets.${name} is invalid`);
   }
   return errors;
 }

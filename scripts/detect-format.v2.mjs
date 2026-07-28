@@ -146,13 +146,16 @@ function deterministicCodeMapping(records, sourceName) {
       language: pathForKey(first, ["file_type", "language", "lang"]),
       source: pathForKey(first, ["source", "source_name", "origin"])
     },
+    constants: { category: null, publish_state: "core" },
     facets: {
       code: {
         file_name: pathForKey(first, ["file_name"]),
         relative_path: pathForKey(first, ["relative_path"]),
         language: pathForKey(first, ["file_type", "language"])
       }
-    }
+    },
+    requested_enrichment: ["summary", "concepts", "techniques", "entities", "relations", "mitre_candidates", "tags"],
+    notes: "Automatic deterministic code mapping"
   };
 }
 
@@ -175,12 +178,15 @@ function deterministicQaMapping(records, sourceName) {
       language: pathForKey(first, ["language", "lang"]),
       source: pathForKey(first, ["source", "source_name", "origin"])
     },
+    constants: { category: null, publish_state: "core" },
     facets: {
       qa: {
         prompt: pathForKey(first, ["prompt", "question"]),
         answer: pathForKey(first, ["answer", "response"])
       }
-    }
+    },
+    requested_enrichment: ["summary", "concepts", "techniques", "entities", "relations", "mitre_candidates", "tags"],
+    notes: "Automatic deterministic QA mapping"
   };
 }
 
@@ -202,7 +208,10 @@ function deterministicDocMapping(records, sourceName) {
       tags: pathForKey(first, ["tags", "labels"]),
       language: pathForKey(first, ["language", "lang"]),
       source: pathForKey(first, ["source", "source_name", "origin"])
-    }
+    },
+    constants: { category: null, publish_state: "core" },
+    requested_enrichment: ["summary", "concepts", "techniques", "entities", "relations", "mitre_candidates", "tags"],
+    notes: "Automatic deterministic documentation mapping"
   };
 }
 
