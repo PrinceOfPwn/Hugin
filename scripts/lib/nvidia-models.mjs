@@ -97,14 +97,23 @@ export class NvidiaModelsClient {
         { ...config, messages },
       ];
       for (const body of bodies) {
-        for (let attempt = 0; attempt < 5; attempt++) {
+        for (let attempt = 0; attempt < 3; attempt++) {
           try {
-            const response = await fetch(`${this.baseUrl}/chat/completions`, {
-              method: "POST",
-              headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-              body: JSON.stringify(body),
-            });
-            const text = await response.text();
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort("50s timeout floor exceeded"), 50000);
+            let response, text;
+            try {
+              response = await fetch(`${this.baseUrl}/chat/completions`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+              });
+              text = await response.text();
+            } finally {
+              clearTimeout(timeoutId);
+            }
+
             if (response.ok) {
               const raw = JSON.parse(text)?.choices?.[0]?.message?.content ?? "";
               const value = parseJsonObject(raw);
@@ -113,14 +122,15 @@ export class NvidiaModelsClient {
             lastError = `${currentModel}: ${response.status} ${text.slice(0, 300)}`;
             if (response.status === 400 || response.status === 404 || response.status === 422) break;
             if (response.status === 429 || response.status >= 500) {
-              await sleep(Math.pow(2, attempt) * 2000);
+              await sleep((attempt + 1) * 10000);
               continue;
             }
             return { ok: false, error: lastError };
           } catch (error) {
-            lastError = `${currentModel}: ${String(error?.message ?? error)}`;
-            if (attempt === 4) break;
-            await sleep(Math.pow(2, attempt) * 2000);
+            const errMsg = error?.name === "AbortError" ? "50s timeout floor exceeded" : String(error?.message ?? error);
+            lastError = `${currentModel}: ${errMsg}`;
+            if (attempt === 2) break;
+            await sleep((attempt + 1) * 10000);
           }
         }
       }
