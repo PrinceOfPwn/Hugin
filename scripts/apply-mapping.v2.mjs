@@ -46,7 +46,7 @@ for (const { index, value: rawRecord } of records) {
   const language = toText(readPath(rawRecord, mapping.field_map.language)) || mapping.detected_language || "unknown";
   const sourceName = toText(readPath(rawRecord, mapping.field_map.source)) || mapping.source_name;
   const tags = toStringArray(readPath(rawRecord, mapping.field_map.tags));
-  const facets = Object.fromEntries(Object.entries(mapping.facets ?? {}).map(([name, spec]) => [name, sanitize(readPath(rawRecord, spec))]).filter(([, value]) => value != null && toText(value)));
+  const facets = resolveFacet(rawRecord, mapping.facets) ?? {};
 
   const record = sanitize({
     schema_version: CONTRACT_VERSION,
@@ -124,4 +124,27 @@ function findByPreferredKeys(value, keys, depth, maxDepth) {
     }
   }
   return "";
+}
+
+function resolveFacet(rawRecord, spec) {
+  if (spec == null) return null;
+
+  if (typeof spec === "object" && Array.isArray(spec.path)) {
+    const val = readPath(rawRecord, spec);
+    return sanitize(val);
+  }
+
+  if (Array.isArray(spec)) {
+    const list = spec.map((item) => resolveFacet(rawRecord, item)).filter(Boolean);
+    return list.length ? list : null;
+  }
+
+  if (typeof spec === "object") {
+    const entries = Object.entries(spec)
+      .map(([key, value]) => [key, resolveFacet(rawRecord, value)])
+      .filter(([, value]) => value != null && (typeof value === "object" || toText(value)));
+    return entries.length ? Object.fromEntries(entries) : null;
+  }
+
+  return sanitize(spec);
 }

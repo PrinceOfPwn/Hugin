@@ -56,6 +56,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Test universal ingestion
+        run: node tests/ingest-v2-pipeline.test.mjs
+
       - name: Discover inputs
         id: discover
         shell: bash
@@ -69,7 +72,12 @@ jobs:
               *) echo "target must be a JSONL path under data/incoming" >&2; exit 2 ;;
             esac
             [[ -f "$TARGET" ]] && printf '%s\n' "$TARGET" >> /tmp/hugin-inputs.txt
-          else
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            git fetch origin main --depth=2 2>/dev/null || true
+            git diff --name-only HEAD~1 HEAD 2>/dev/null | grep '^data/incoming/.*\.jsonl$' | sort > /tmp/hugin-inputs.txt || true
+          fi
+
+          if [[ ! -s /tmp/hugin-inputs.txt ]]; then
             find data/incoming -type f -name '*.jsonl' ! -path '*/quarantine/*' -print | sort > /tmp/hugin-inputs.txt
           fi
           echo "count=$(wc -l < /tmp/hugin-inputs.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
@@ -89,11 +97,12 @@ jobs:
 
           while IFS= read -r input; do
             [[ -n "$input" ]] || continue
-            name="$(basename "$input" .jsonl)"
+            relative="${input#data/incoming/}"
+            name="$(echo "$relative" | tr '/' '_' | sed 's/\.jsonl$//')"
             echo "::group::Ingest $input"
             node scripts/detect-format.v2.mjs "$input" $FORCE
             node scripts/apply-mapping.v2.mjs "$input"
-            node scripts/enrich-records.mjs "data/normalized/${name}.jsonl"
+            node scripts/enrich-records.mjs "data/normalized/${name}.jsonl" $FORCE
             node scripts/compile-canonical.mjs "data/enriched/${name}.jsonl"
             echo "::endgroup::"
           done < /tmp/hugin-inputs.txt
@@ -109,13 +118,11 @@ jobs:
           git config user.name "hugin-bot"
           git config user.email "[private-email]"
           git add \
-            data/incoming/*.mapping.json \
+            data/incoming \
             data/normalized \
             data/enriched \
             data/source/public-graph.json \
-            data/source/ingest-manifest.json \
-            src/generated \
-            public/data 2>/dev/null || true
+            data/source/ingest-manifest.json 2>/dev/null || true
 
           if git diff --staged --quiet; then
             echo "No generated changes"

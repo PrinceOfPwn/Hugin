@@ -48,39 +48,64 @@ for (const line of raw.split("\n")) {
 }
 if (parsedRecords.length === 0) throw new Error("No parseable JSONL records found");
 
+const firstRecord = parsedRecords[0] ?? {};
+const isSourceCode = Boolean(
+  (firstRecord.file_name && (firstRecord.content || firstRecord.code)) ||
+  (firstRecord.file_type && (firstRecord.content || firstRecord.code)) ||
+  (firstRecord.relative_path && (firstRecord.content || firstRecord.code))
+);
+
+const isQa = Boolean(
+  (firstRecord.prompt || firstRecord.question) && (firstRecord.answer || firstRecord.response || firstRecord.completion)
+);
+
+const isDoc = Boolean(
+  firstRecord.title && (firstRecord.body || firstRecord.content || firstRecord.text)
+);
+
 const profile = buildStructuralProfile(parsedRecords);
 const local = new LocalTextModel({ modelId, cacheDir, maxNewTokens: 1000 });
 let output;
 let rawOutput = "";
 
-try {
-  const first = await local.generateJson({
-    system: ROUTER_SYSTEM_PROMPT,
-    user: routerUserPrompt(profile),
-    maxNewTokens: 1000,
-  });
-  output = first.parsed;
-  rawOutput = first.raw;
-  let errors = validateRouterMapping(output);
-
-  if (errors.length > 0) {
-    const repaired = await local.generateJson({
+if (isSourceCode) {
+  output = deterministicCodeMapping(parsedRecords, path.basename(input, ".jsonl"));
+} else if (isQa) {
+  output = deterministicQaMapping(parsedRecords, path.basename(input, ".jsonl"));
+} else if (isDoc) {
+  output = deterministicDocMapping(parsedRecords, path.basename(input, ".jsonl"));
+} else {
+  try {
+    const first = await local.generateJson({
       system: ROUTER_SYSTEM_PROMPT,
-      user: routerRepairPrompt(rawOutput, errors, profile),
+      user: routerUserPrompt(profile),
       maxNewTokens: 1000,
     });
-    output = repaired.parsed;
-    rawOutput = repaired.raw;
-    errors = validateRouterMapping(output);
-  }
+    output = first.parsed;
+    rawOutput = first.raw;
+    let errors = validateRouterMapping(output);
 
-  if (errors.length > 0) {
-    console.warn(`Local router remained invalid; using deterministic fallback: ${errors.join("; ")}`);
-    output = deterministicFallback(parsedRecords, path.basename(input, ".jsonl"));
+    if (errors.length > 0) {
+      const repaired = await local.generateJson({
+        system: ROUTER_SYSTEM_PROMPT,
+        user: routerRepairPrompt(rawOutput, errors, profile),
+        maxNewTokens: 1000,
+      });
+      output = repaired.parsed;
+      rawOutput = repaired.raw;
+      errors = validateRouterMapping(output);
+    }
+
+    if (errors.length > 0) {
+      console.warn(`Local router remained invalid; using deterministic fallback: ${errors.join("; ")}`);
+      output = deterministicFallback(parsedRecords, path.basename(input, ".jsonl"));
+    }
+  } finally {
+    await local.dispose();
   }
-} finally {
-  await local.dispose();
 }
+
+if (output.kind === "dataset_record") output.kind = "unknown";
 
 output._detected = {
   input: path.relative(process.cwd(), input),
@@ -102,12 +127,91 @@ function pathForKey(record, candidates) {
   return null;
 }
 
+function deterministicCodeMapping(records, sourceName) {
+  const first = records[0] ?? {};
+  return {
+    schema_version: ROUTER_VERSION,
+    source_name: sourceName,
+    kind: "source_code",
+    record_shape: "mixed",
+    detected_language: first.file_type ?? "raw_code",
+    semantic_complexity: "complex",
+    confidence: 1.0,
+    field_map: {
+      id: pathForKey(first, ["id", "unit_id", "uuid"]),
+      title: pathForKey(first, ["file_name", "relative_path", "title", "id"]) ?? { path: ["file_name"], join: null },
+      content: pathForKey(first, ["content", "code", "body", "text"]) ?? { path: ["content"], join: null },
+      category: pathForKey(first, ["category", "task_type", "topic"]),
+      tags: pathForKey(first, ["tags", "labels"]),
+      language: pathForKey(first, ["file_type", "language", "lang"]),
+      source: pathForKey(first, ["source", "source_name", "origin"])
+    },
+    facets: {
+      code: {
+        file_name: pathForKey(first, ["file_name"]),
+        relative_path: pathForKey(first, ["relative_path"]),
+        language: pathForKey(first, ["file_type", "language"])
+      }
+    }
+  };
+}
+
+function deterministicQaMapping(records, sourceName) {
+  const first = records[0] ?? {};
+  return {
+    schema_version: ROUTER_VERSION,
+    source_name: sourceName,
+    kind: "training_qa",
+    record_shape: "mixed",
+    detected_language: "en",
+    semantic_complexity: "general",
+    confidence: 1.0,
+    field_map: {
+      id: pathForKey(first, ["id", "unit_id", "uuid"]),
+      title: pathForKey(first, ["prompt", "question", "scenario", "id"]) ?? { path: ["prompt"], join: null },
+      content: pathForKey(first, ["answer", "response", "completion", "output"]) ?? { path: ["answer"], join: null },
+      category: pathForKey(first, ["category", "task_type", "topic"]),
+      tags: pathForKey(first, ["tags", "labels"]),
+      language: pathForKey(first, ["language", "lang"]),
+      source: pathForKey(first, ["source", "source_name", "origin"])
+    },
+    facets: {
+      qa: {
+        prompt: pathForKey(first, ["prompt", "question"]),
+        answer: pathForKey(first, ["answer", "response"])
+      }
+    }
+  };
+}
+
+function deterministicDocMapping(records, sourceName) {
+  const first = records[0] ?? {};
+  return {
+    schema_version: ROUTER_VERSION,
+    source_name: sourceName,
+    kind: "documentation",
+    record_shape: "mixed",
+    detected_language: "en",
+    semantic_complexity: "general",
+    confidence: 1.0,
+    field_map: {
+      id: pathForKey(first, ["id", "unit_id", "uuid"]),
+      title: pathForKey(first, ["title", "name", "headline"]) ?? { path: ["title"], join: null },
+      content: pathForKey(first, ["body", "content", "text", "details"]) ?? { path: ["body"], join: null },
+      category: pathForKey(first, ["category", "task_type", "topic"]),
+      tags: pathForKey(first, ["tags", "labels"]),
+      language: pathForKey(first, ["language", "lang"]),
+      source: pathForKey(first, ["source", "source_name", "origin"])
+    }
+  };
+}
+
 function deterministicFallback(records, sourceName) {
   const first = records[0] ?? {};
   const title = pathForKey(first, ["file_name", "title", "name", "question", "prompt", "scenario", "unit_id", "id"]);
   const content = pathForKey(first, ["content", "body", "text", "answer", "response", "completion", "output", "assessment", "description", "code"])
     ?? { path: [], join: null };
-  let kind = "dataset_record";
+  let kind = "unknown";
   if (Object.hasOwn(first, "file_name") && Object.hasOwn(first, "content")) kind = "source_code";
   else if ((Object.hasOwn(first, "prompt") || Object.hasOwn(first, "question")) && (Object.hasOwn(first, "answer") || Object.hasOwn(first, "response"))) kind = "training_qa";
   else if (Object.hasOwn(first, "title") && (Object.hasOwn(first, "body") || Object.hasOwn(first, "content"))) kind = "documentation";
@@ -127,14 +231,6 @@ function deterministicFallback(records, sourceName) {
       category: pathForKey(first, ["category", "task_type", "topic"]),
       tags: pathForKey(first, ["tags", "labels"]),
       language: pathForKey(first, ["language", "file_type", "lang"]),
-      source: pathForKey(first, ["source", "source_name", "origin"]),
-    },
-    constants: { category: null, publish_state: "core" },
-    facets: {
-      code_file_name: pathForKey(first, ["file_name"]),
-      code_relative_path: pathForKey(first, ["relative_path"]),
-      qa_prompt: pathForKey(first, ["prompt", "question", "scenario"]),
-      qa_answer: pathForKey(first, ["answer", "response", "completion"]),
     },
     requested_enrichment: ["summary", "concepts", "techniques", "entities", "relations", "mitre_candidates", "tags"],
     notes: "Automatic fallback mapping generated after local router validation failure.",
