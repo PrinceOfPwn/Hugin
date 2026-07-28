@@ -3,14 +3,61 @@
   "sources": {
     "data/incoming/offensive_x64_assembly.jsonl": {
       "input": "data/enriched/offensive_x64_assembly.jsonl",
-      "input_sha256": "1acc472c9b0dd3fe45f5c774d1ba5ed448f8ddb62b907eec8b25f6f8534edb39",
+      "input_sha256": "ea2ed878666bea597342e286c88706c064745ed7ee8869567258e4654819996a",
       "node_ids": [
         "source:8052ecbc3ced8aca4aa8d2",
+        "concept:f0d950101619545e29c9a5",
+        "concept:9d26044afca693c19a6f0e",
+        "concept:5cc49be6b8eb9ba6f067ac",
+        "concept:f7d80fda2caa3a1b997f92",
+        "technique:f0c43c35fc43b76b17e5a2",
+        "technique:dfe88768c62f4f8bd22379",
+        "entity:272449e09f1edfba17e604",
+        "entity:d9a163920d91e7e098502d",
+        "entity:d926eda4be4c1eaf263e4f",
+        "entity:eea3d86f23bc84d76ef857",
         "source:1fd7b4d2535bf286290fe5",
+        "concept:dd5348cc0d5113cfbeb67c",
+        "concept:4ca32256985a2f6cf2958e",
+        "technique:fb0df364f64f2cbcde2f15",
+        "entity:47776fe0424fe68a0747e3",
+        "entity:450d82d2c352110201aceb",
         "source:f1f037c93e9ea0ff83f35f",
+        "concept:7763a8fd93c83a7cf7f3e7",
+        "concept:dfc473135df631f5f23bea",
+        "technique:5c9b6aec60581f2166397b",
+        "entity:f72d5aa3d0033f1baa19b2",
+        "entity:340d600392818df2413382",
+        "entity:a6d83ce565f34afe2951b5",
         "source:e7aca3abb5354472c627cc",
+        "concept:b7e1c078b64839e4bfb80b",
+        "concept:e0dd3fd93ae9abab328804",
+        "technique:43d1763fa6b836a600ebee",
         "source:f110abf171831f42e38dce",
+        "concept:7861357dc405c65c4001e1",
+        "concept:785bc1a9046105825cfa62",
+        "technique:29d0ea0a2c033011cea073",
+        "entity:fa42811064a91e7cee7c7c",
+        "entity:8fee31e5ebeb98d9262ad2",
+        "entity:4be575b3c9f8a8361435f6",
+        "entity:e49e23179422f90f30e4b0",
+        "entity:0d6e4079e36703ebd37c00",
+        "entity:a5796709d60f6cfed20d81",
         "source:71f02969221b7678db67bc",
+        "concept:fa1d0247b2b4f48718d07e",
+        "concept:ae5ebb5e4ade81c88e1ab2",
+        "concept:c01f84af6cd9d3b5cf7510",
+        "technique:d451f42caa846a81f649dc",
+        "technique:b8d867107d2e8e1c9444c3",
+        "entity:16fb6aebb29475695338f2",
+        "entity:c899fbd4038260da1ad072",
+        "entity:5a638a128ca67348f1073b",
+        "entity:1238f68ecc4b016b14c7fd",
+        "entity:1d5989da4e496dd6408b64",
+        "entity:db32d97742a53c16e63b22",
+        "entity:6e1eeac11bad4edfd9df04",
+        "entity:cc4fa4b5d04a1b18447c3d",
+        "entity:91e860623a117af58125ed",
         "source:5fad7a3b4f88cdcaee3ef5",
         "source:d9b5c0f8c60024a3b0f412",
         "source:7598ad3a69ba25dcbac1a9",
@@ -19,27 +66,257 @@
         "source:32088c384bfe3238e5186f",
         "source:3031e287b8dbb10054b22d"
       ],
-      "edge_ids": [],
-      "compiled_at": "2026-07-28T03:08:01.467Z"
+      "edge_ids": [
+        "ingest-edge:97693716a45db3ba7ce1d7",
+        "ingest-edge:1094c06a9ffd8e6a035b1e",
+        "ingest-edge:6f0265208c07a7c7940c1b",
+        "ingest-edge:aa837774dba59fea51e623",
+        "ingest-edge:5e86231de7711b86da00ed",
+        "ingest-edge:563af7ed68b4298fe2df3a",
+        "ingest-edge:f85e32d24c246b454d1482",
+        "ingest-edge:2d9df0d8695cff2393b023",
+        "ingest-edge:c3579eee785cc32c104549",
+        "ingest-edge:112b5d5ec637326c01a79a",
+        "ingest-edge:2dd25cd3d0e34c706a6fbb",
+        "ingest-edge:6ee37e29758afcfe86aa9b",
+        "ingest-edge:2a3c4f1d8d97a1719cb5ee",
+        "ingest-edge:a88fefce82f3feecf9760c",
+        "ingest-edge:d55c73c13d3f33c660adf0",
+        "ingest-edge:a8ac424f38e5da4d6ca1f0",
+        "ingest-edge:1cd43bd69b4cb466b158e4",
+        "ingest-edge:32fc4c72bf241a73e28f3a",
+        "ingest-edge:db53b8027756bb6090a69b",
+        "ingest-edge:9441625fdc4a1229f9aec9",
+        "ingest-edge:426b4046594694d2132ef1",
+        "ingest-edge:780b57a49448aa5e91cc2e",
+        "ingest-edge:69a7d488590984773bb31b",
+        "ingest-edge:2f0676a7d7c26d361f0e08",
+        "ingest-edge:9f62ac1b6d3c0948311d96",
+        "ingest-edge:fd6eae514a5000197075e2",
+        "ingest-edge:d9418d3c912536808ea312",
+        "ingest-edge:9a6132f6b70aee1d544121",
+        "ingest-edge:e6fc41097ffcd69d7b43f2",
+        "ingest-edge:88cc1fbb6b166be4af857b",
+        "ingest-edge:49082f05ba0bf99dfa733b",
+        "ingest-edge:ab2463f56f645d04768495",
+        "ingest-edge:3b57c8e6df76e51d76d25c",
+        "ingest-edge:5ba1ada498c0156b6dfd7e",
+        "ingest-edge:f4ee9947f68db6ff766b61",
+        "ingest-edge:ce6fae26ae9e28350dfe09",
+        "ingest-edge:d2f39f4699dcc96d3b6c12",
+        "ingest-edge:5a07a124b568f1c987b19a",
+        "ingest-edge:8a5491355fbb4d70cf19b4",
+        "ingest-edge:7adc9e5f03e43ab576fe58",
+        "ingest-edge:c89a03499a7f29e49ee40f",
+        "ingest-edge:0eaf430d951deb83c471ee",
+        "ingest-edge:e9b4826d7a7ce420d12d46",
+        "ingest-edge:cfc0f5b9a8cc87c2d47936",
+        "ingest-edge:eede69ec9c330cab8f8bcc",
+        "ingest-edge:c8847e14c9b6513fb469ee",
+        "ingest-edge:cd08a6bb13a04d4af62ad8",
+        "ingest-edge:d5f3f109cdbc1f68cb9dc0",
+        "ingest-edge:63dfee47444c47c2205770",
+        "ingest-edge:dd16edc57bbfbea18d7b2b",
+        "ingest-edge:466d1ef8db64877f4ea323",
+        "ingest-edge:32893fa7292e476bd93770",
+        "ingest-edge:0dc24cc3a8678cc9be8a29",
+        "ingest-edge:0851e904de460e2deae052",
+        "ingest-edge:d3b22bb08261d286d9f977",
+        "ingest-edge:87b261fc2468aade71d318",
+        "ingest-edge:dcae4d1e47bf358b8addd6",
+        "ingest-edge:3d454f804413559a3959f3",
+        "ingest-edge:6e3d812e582d6b02ad5617",
+        "ingest-edge:9994020bfed7059302c055",
+        "ingest-edge:befd7367a59beb30c9608c",
+        "ingest-edge:42c2c772c47d8da77484d1",
+        "ingest-edge:090c0310bf8ca26193d8b5",
+        "ingest-edge:18a8aae88ae1aa308343ed",
+        "ingest-edge:b76ea04f822cdae1fcbe83",
+        "ingest-edge:3acbfb7fd2b39c6082129f",
+        "ingest-edge:46f959bb8a30088a37e13c",
+        "ingest-edge:b83fae313dffd6ed498168",
+        "ingest-edge:6b14b3ca4ccb4b44e062ee",
+        "ingest-edge:f1d48a7ab789c56a974cf0",
+        "ingest-edge:ea777789b797f99fc498c2",
+        "ingest-edge:e5e2346504ace0122f8036",
+        "ingest-edge:f2daa128716b04e14024cc",
+        "ingest-edge:29de5f2deb482bb487ce97",
+        "ingest-edge:4d9c8459248a1c05cbcb91",
+        "ingest-edge:3564a43f424b1b48e1f31c",
+        "ingest-edge:663343259f1230608bdd65",
+        "ingest-edge:07d072d21b18a2285635ab",
+        "ingest-edge:ba0cc9ae893cabbaeaad9f",
+        "ingest-edge:aa65f51ef8c23874b67954",
+        "ingest-edge:5adff1a96defbd7bd9c5eb",
+        "ingest-edge:d7325ce70ebd5ff52fa8e6",
+        "ingest-edge:ebddac7b9e14407dbb2500",
+        "ingest-edge:fe7517f794d799ca6ebeb4",
+        "ingest-edge:4a52d19e07a1b8382a9dc9",
+        "ingest-edge:d8e926d74cb8a6c2f0ee8d",
+        "ingest-edge:db88314deee78373addd01",
+        "ingest-edge:398f5f4aacc3101bca3622"
+      ],
+      "compiled_at": "2026-07-28T05:36:26.909Z"
     }
   },
   "node_owners": {
     "source:8052ecbc3ced8aca4aa8d2": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
+    "concept:f0d950101619545e29c9a5": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:9d26044afca693c19a6f0e": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:5cc49be6b8eb9ba6f067ac": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:f7d80fda2caa3a1b997f92": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "technique:f0c43c35fc43b76b17e5a2": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "technique:dfe88768c62f4f8bd22379": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:272449e09f1edfba17e604": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:d9a163920d91e7e098502d": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:d926eda4be4c1eaf263e4f": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:eea3d86f23bc84d76ef857": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
     "source:1fd7b4d2535bf286290fe5": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:dd5348cc0d5113cfbeb67c": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:4ca32256985a2f6cf2958e": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "technique:fb0df364f64f2cbcde2f15": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:47776fe0424fe68a0747e3": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:450d82d2c352110201aceb": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
     "source:f1f037c93e9ea0ff83f35f": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
+    "concept:7763a8fd93c83a7cf7f3e7": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:dfc473135df631f5f23bea": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "technique:5c9b6aec60581f2166397b": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:f72d5aa3d0033f1baa19b2": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:340d600392818df2413382": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:a6d83ce565f34afe2951b5": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
     "source:e7aca3abb5354472c627cc": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:b7e1c078b64839e4bfb80b": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:e0dd3fd93ae9abab328804": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "technique:43d1763fa6b836a600ebee": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
     "source:f110abf171831f42e38dce": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
+    "concept:7861357dc405c65c4001e1": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:785bc1a9046105825cfa62": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "technique:29d0ea0a2c033011cea073": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:fa42811064a91e7cee7c7c": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:8fee31e5ebeb98d9262ad2": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:4be575b3c9f8a8361435f6": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:e49e23179422f90f30e4b0": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:0d6e4079e36703ebd37c00": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:a5796709d60f6cfed20d81": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
     "source:71f02969221b7678db67bc": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:fa1d0247b2b4f48718d07e": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:ae5ebb5e4ade81c88e1ab2": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "concept:c01f84af6cd9d3b5cf7510": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "technique:d451f42caa846a81f649dc": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "technique:b8d867107d2e8e1c9444c3": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:16fb6aebb29475695338f2": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:c899fbd4038260da1ad072": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:5a638a128ca67348f1073b": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:1238f68ecc4b016b14c7fd": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:1d5989da4e496dd6408b64": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:db32d97742a53c16e63b22": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:6e1eeac11bad4edfd9df04": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:cc4fa4b5d04a1b18447c3d": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "entity:91e860623a117af58125ed": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
     "source:5fad7a3b4f88cdcaee3ef5": [
@@ -64,5 +341,270 @@
       "data/incoming/offensive_x64_assembly.jsonl"
     ]
   },
-  "edge_owners": {}
+  "edge_owners": {
+    "ingest-edge:97693716a45db3ba7ce1d7": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:1094c06a9ffd8e6a035b1e": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:6f0265208c07a7c7940c1b": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:aa837774dba59fea51e623": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:5e86231de7711b86da00ed": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:563af7ed68b4298fe2df3a": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:f85e32d24c246b454d1482": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:2d9df0d8695cff2393b023": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:c3579eee785cc32c104549": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:112b5d5ec637326c01a79a": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:2dd25cd3d0e34c706a6fbb": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:6ee37e29758afcfe86aa9b": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:2a3c4f1d8d97a1719cb5ee": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:a88fefce82f3feecf9760c": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:d55c73c13d3f33c660adf0": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:a8ac424f38e5da4d6ca1f0": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:1cd43bd69b4cb466b158e4": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:32fc4c72bf241a73e28f3a": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:db53b8027756bb6090a69b": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:9441625fdc4a1229f9aec9": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:426b4046594694d2132ef1": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:780b57a49448aa5e91cc2e": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:69a7d488590984773bb31b": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:2f0676a7d7c26d361f0e08": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:9f62ac1b6d3c0948311d96": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:fd6eae514a5000197075e2": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:d9418d3c912536808ea312": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:9a6132f6b70aee1d544121": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:e6fc41097ffcd69d7b43f2": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:88cc1fbb6b166be4af857b": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:49082f05ba0bf99dfa733b": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:ab2463f56f645d04768495": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:3b57c8e6df76e51d76d25c": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:5ba1ada498c0156b6dfd7e": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:f4ee9947f68db6ff766b61": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:ce6fae26ae9e28350dfe09": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:d2f39f4699dcc96d3b6c12": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:5a07a124b568f1c987b19a": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:8a5491355fbb4d70cf19b4": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:7adc9e5f03e43ab576fe58": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:c89a03499a7f29e49ee40f": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:0eaf430d951deb83c471ee": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:e9b4826d7a7ce420d12d46": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:cfc0f5b9a8cc87c2d47936": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:eede69ec9c330cab8f8bcc": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:c8847e14c9b6513fb469ee": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:cd08a6bb13a04d4af62ad8": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:d5f3f109cdbc1f68cb9dc0": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:63dfee47444c47c2205770": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:dd16edc57bbfbea18d7b2b": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:466d1ef8db64877f4ea323": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:32893fa7292e476bd93770": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:0dc24cc3a8678cc9be8a29": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:0851e904de460e2deae052": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:d3b22bb08261d286d9f977": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:87b261fc2468aade71d318": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:dcae4d1e47bf358b8addd6": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:3d454f804413559a3959f3": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:6e3d812e582d6b02ad5617": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:9994020bfed7059302c055": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:befd7367a59beb30c9608c": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:42c2c772c47d8da77484d1": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:090c0310bf8ca26193d8b5": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:18a8aae88ae1aa308343ed": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:b76ea04f822cdae1fcbe83": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:3acbfb7fd2b39c6082129f": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:46f959bb8a30088a37e13c": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:b83fae313dffd6ed498168": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:6b14b3ca4ccb4b44e062ee": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:f1d48a7ab789c56a974cf0": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:ea777789b797f99fc498c2": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:e5e2346504ace0122f8036": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:f2daa128716b04e14024cc": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:29de5f2deb482bb487ce97": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:4d9c8459248a1c05cbcb91": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:3564a43f424b1b48e1f31c": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:663343259f1230608bdd65": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:07d072d21b18a2285635ab": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:ba0cc9ae893cabbaeaad9f": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:aa65f51ef8c23874b67954": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:5adff1a96defbd7bd9c5eb": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:d7325ce70ebd5ff52fa8e6": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:ebddac7b9e14407dbb2500": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:fe7517f794d799ca6ebeb4": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:4a52d19e07a1b8382a9dc9": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:d8e926d74cb8a6c2f0ee8d": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:db88314deee78373addd01": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ],
+    "ingest-edge:398f5f4aacc3101bca3622": [
+      "data/incoming/offensive_x64_assembly.jsonl"
+    ]
+  }
 }
