@@ -1,78 +1,77 @@
 {
   "schema_version": "hugin.router.v2",
-  "source_name": "Offensive-x64-Assembly-main",
-  "kind": "dataset_record",
-  "record_shape": "nested",
-  "detected_language": "mixed",
+  "source_name": "offensive_x64_assembly",
+  "kind": "source_code",
+  "record_shape": "mixed",
+  "detected_language": "asm",
   "semantic_complexity": "complex",
-  "confidence": 0.95,
+  "confidence": 1,
   "field_map": {
-    "id": {
-      "path": [
-        "file_name"
-      ],
-      "join": "indirect.asm"
-    },
+    "id": null,
     "title": {
       "path": [
         "file_name"
       ],
-      "join": "indirect.asm"
+      "join": null
     },
     "content": {
       "path": [
         "content"
       ],
-      "join": "indirect.asm"
+      "join": null
     },
-    "category": {
-      "path": [
-        "file_type"
-      ],
-      "join": "asm"
-    },
-    "tags": {
-      "path": [
-        "file_type"
-      ],
-      "join": "asm"
-    },
+    "category": null,
+    "tags": null,
     "language": {
       "path": [
         "file_type"
       ],
-      "join": "asm"
+      "join": null
     },
-    "source": {
-      "path": [
-        "relative_path"
-      ],
-      "join": "Offensive-x64-Assembly-main\\MasmIndirectSyscalls\\MasmIndirectSyscalls"
-    }
+    "source": null
   },
   "constants": {
-    "category": "assembly",
+    "category": null,
     "publish_state": "core"
   },
   "facets": {
-    "file_type": {
-      "path": [
-        "file_type"
-      ],
-      "join": "asm"
+    "code": {
+      "file_name": {
+        "path": [
+          "file_name"
+        ],
+        "join": null
+      },
+      "relative_path": {
+        "path": [
+          "relative_path"
+        ],
+        "join": null
+      },
+      "language": {
+        "path": [
+          "file_type"
+        ],
+        "join": null
+      }
     }
   },
   "requested_enrichment": [
+    "summary",
+    "concepts",
+    "techniques",
     "entities",
-    "techniques"
+    "relations",
+    "mitre_candidates",
+    "tags"
   ],
-  "notes": "This dataset contains a collection of assembly code (.asm), C++ code (.cpp), and README documentation (.md) related to offensive techniques, specifically involving Windows APIs and system calls (NtAPI). The files seem to be part of a project named 'Offensive-x64-Assembly-main'. The content includes examples of memory allocation and writing operations using low-level system calls.",
+  "notes": "Automatic deterministic code mapping",
   "_detected": {
     "input": "data/incoming/offensive_x64_assembly.jsonl",
     "input_records": 13,
     "input_sha256": "785b5a2b3c2b861c564458b2e41b4dce126b4cb7ed42ddc23f51d57dff89f687",
     "router_version": "hugin.router.v2",
     "model": "onnx-community/gemma-4-E2B-it-ONNX",
-    "detected_at": "2026-07-28T01:37:14.161Z"
+    "detected_at": "2026-07-28T03:03:22.801Z"
   }
 }
