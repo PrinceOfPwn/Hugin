@@ -55,7 +55,7 @@ import { sanitize, sanitizeString } from "./lib/sanitize.mjs";
 function publicIdFor(node) {
   const rawId = String(node.id);
   if (node.type === "atlas_reference") return `evidence:${shortHash(rawId, 20)}`;
-  if (/\b(?:SANS|SEC\d{3}|CRTO|MalDev|OffSec)\b/i.test(rawId) || /(?:[private-path]{
+  if (/\b(?:SANS|SEC\d{3}|CRTO|MalDev|OffSec)\b/i.test(rawId) || new RegExp("(?:/Users/|[A-Za-z]:\\\\Users\\\\)", "i").test(rawId)) {
     return `${node.type || "entity"}:${shortHash(rawId, 20)}`;
   }
   return sanitizeString(rawId);
