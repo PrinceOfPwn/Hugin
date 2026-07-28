@@ -568,7 +568,7 @@ export default function GraphThreeV3({
             <Bloom intensity={0.45} luminanceThreshold={0.75} luminanceSmoothing={0.9} radius={0.6} mipmapBlur />
             {universe.cinematic ? (
               <DepthOfField target={dofTarget} focalLength={0.05} bokehScale={3} height={480} />
-            ) : null}
+            ) : <></>}
           </EffectComposer>
         </Canvas>
 
