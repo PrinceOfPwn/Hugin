@@ -1,0 +1,158 @@
+name: Ingest incoming knowledge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/incoming/**/*.jsonl"
+      - "scripts/detect-format.v2.mjs"
+      - "scripts/apply-mapping.v2.mjs"
+      - "scripts/enrich-records.mjs"
+      - "scripts/compile-canonical.mjs"
+      - "scripts/lib/**"
+      - "scripts/ingest-model-policy.json"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Specific JSONL under data/incoming; blank processes all"
+        type: string
+        default: ""
+      force_redetect:
+        description: "Regenerate structural mappings"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  models: read
+
+concurrency:
+  group: hugin-universal-ingest-main
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    if: github.actor != 'hugin-bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            .hf-cache
+            .cache/hugin-models
+          key: hugin-ingest-v2-${{ hashFiles('package-lock.json', 'scripts/ingest-model-policy.json') }}
+          restore-keys: |
+            hugin-ingest-v2-
+
+      - run: npm ci
+
+      - name: Discover inputs
+        id: discover
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > /tmp/hugin-inputs.txt
+          TARGET='${{ inputs.target }}'
+          if [[ -n "$TARGET" ]]; then
+            case "$TARGET" in
+              data/incoming/*.jsonl|data/incoming/**/*.jsonl) ;;
+              *) echo "target must be a JSONL path under data/incoming" >&2; exit 2 ;;
+            esac
+            [[ -f "$TARGET" ]] && printf '%s\n' "$TARGET" >> /tmp/hugin-inputs.txt
+          else
+            find data/incoming -type f -name '*.jsonl' ! -path '*/quarantine/*' -print | sort > /tmp/hugin-inputs.txt
+          fi
+          echo "count=$(wc -l < /tmp/hugin-inputs.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Universal ingestion
+        if: steps.discover.outputs.count != '0'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HUGIN_MODEL_CACHE: .hf-cache
+          HUGIN_REMOTE_CACHE: .cache/hugin-models
+        shell: bash
+        run: |
+          set -euo pipefail
+          FORCE=""
+          if [[ '${{ inputs.force_redetect }}' == 'true' ]]; then FORCE="--force"; fi
+
+          while IFS= read -r input; do
+            [[ -n "$input" ]] || continue
+            name="$(basename "$input" .jsonl)"
+            echo "::group::Ingest $input"
+            node scripts/detect-format.v2.mjs "$input" $FORCE
+            node scripts/apply-mapping.v2.mjs "$input"
+            node scripts/enrich-records.mjs "data/normalized/${name}.jsonl"
+            node scripts/compile-canonical.mjs "data/enriched/${name}.jsonl"
+            echo "::endgroup::"
+          done < /tmp/hugin-inputs.txt
+
+          node scripts/build-data.mjs
+          node scripts/validate-data.mjs
+
+      - name: Commit generated knowledge
+        if: steps.discover.outputs.count != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "hugin-bot"
+          git config user.email "hugin-bot@users.noreply.github.com"
+          git add \
+            data/incoming/*.mapping.json \
+            data/normalized \
+            data/enriched \
+            data/source/public-graph.json \
+            data/source/ingest-manifest.json \
+            src/generated \
+            public/data 2>/dev/null || true
+
+          if git diff --staged --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+
+          git commit -m "ingest: compile universal knowledge"
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 3))
+          done
+          echo "Unable to push generated knowledge after retries" >&2
+          exit 1
+
+      - name: Run summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## HUGIN universal ingest" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Inputs: ${{ steps.discover.outputs.count }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          for report in data/enriched/*.report.json; do
+            [[ -f "$report" ]] || continue
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hugin-ingest-${{ github.run_id }}
+          path: |
+            data/incoming/*.mapping.json
+            data/normalized/*.report.json
+            data/enriched/*.report.json
+          retention-days: 14
