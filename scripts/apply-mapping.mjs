@@ -230,16 +230,26 @@ for (let idx = 0; idx < lines.length; idx++) {
   // Extracción de Grafo usando las reglas generadas por el LLM
   const graphData = extractGraphEntities(answer + " " + prompt, spec.graph_extraction);
 
+  // Preserve Code Artifact metadata if kind is source_code or code_block
+  const isCode = konst.kind === "source_code" || spec.record_shape === "code_block";
+  const fileName = val(fm.file_name) ?? rec.file_name ?? (prompt.includes(".") ? prompt : null);
+  const fileExt = fileName ? path.extname(String(fileName)).replace(".", "") : (rec.file_type ?? null);
+
   out.push(sanitize({
     id,
     prompt,
     answer,
-    kind:         konst.kind ?? "tradecraft_qa",
+    kind:         konst.kind ?? (isCode ? "source_code" : "tradecraft_qa"),
     category:     normalizedCategory,
     publishState: konst.publishState ?? "core",
     tags,
     source:       source ? String(source) : spec.source_name,
     detected_language: spec.detected_language || "unknown",
+    code_artifact: isCode ? {
+      file_name: fileName,
+      language: fileExt || spec.detected_language || "text",
+      raw_code: answer
+    } : null,
     graph: graphData,
     _ingest: {
       from_file:    path.basename(INPUT),
