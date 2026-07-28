@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { emailAddressPattern, privateIdentifierPattern } from "./lib/private-identifiers.mjs";
 
 const root = path.resolve("dist");
 const errors = [];
@@ -13,8 +14,9 @@ const forbidden = [
   { label: "named research course", pattern: /\bCRTO\b|\bCertified\s+Red\s+Team\s+Operator\b/i },
   { label: "named development course", pattern: /MalDev/i },
   { label: "named training provider", pattern: /OffSec|\bOffensive\s+Security\b/i },
-  { label: "local username", pattern: /\b(?:source-owner|source-owner)\b/i },
-  { label: "absolute owner path", pattern: /\/(?:Users|home)\/(?:source-owner|source-owner|source-owner)(?:\/|\\)/i },
+  { label: "local username", pattern: privateIdentifierPattern },
+  { label: "email address", pattern: emailAddressPattern },
+  { label: "absolute owner path", pattern: /\/(?:Users|home)\/[^/\\]+(?:\/|\\)/i },
   { label: "absolute Windows user path", pattern: /[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)/i }
 ];
 
