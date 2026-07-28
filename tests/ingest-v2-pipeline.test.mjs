@@ -195,8 +195,8 @@ console.log("Running HUGIN Universal Ingest v2 Pipeline Test Suite…\n");
   const thresholds = { claim: 0.68, technique: 0.76, entity: 0.64, relation: 0.76, mitre: 0.86 };
   const filtered = filterGroundedEnrichment(canonicalRecord, rawModelEnrichment, thresholds, { provider: "test" });
 
-  assert.equal(filtered.entities.length, 1);
-  assert.equal(filtered.entities[0].name, "NtAllocateVirtualMemory");
+  assert.equal(filtered.enrichment.entities.length, 1);
+  assert.equal(filtered.enrichment.entities[0].name, "NtAllocateVirtualMemory");
   console.log("  ✓ Passed (hallucinated entity 'FakeApiThatDoesNotExist' was dropped)");
 }
 
