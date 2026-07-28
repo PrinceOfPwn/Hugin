@@ -4,15 +4,14 @@
  * Shared data sanitization utilities for HUGIN.
  * Removes private source names, usernames, local paths, and training provider labels.
  */
+import { redactEmailAddresses, redactPrivateIdentifiers, redactPrivateRoutes } from "./private-identifiers.mjs";
 
 // Matches Unix local paths including those with spaces up to quotes, newlines, or object delimiters
 const absoluteUnix = /(?:\/Users|\/home)\/[^"'\r\n;{}]+/gi;
 // Matches Windows local paths including those with spaces up to quotes, newlines, or object delimiters
 const absoluteWindows = /[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)[^"'\r\n;{}]+/gi;
 
-// Removes local usernames & handles
-const localUser = /\b(?:emiperalta|tamarisk|OffsecExam)\b/gi;
-const anonymousSourceUrl = /https?:\/\/(?:www\.)?(?:linktr\.ee\/offsecexam|sans\.org|offsec\.com|maldevacademy\.com)[^\s)\]}>"']*/gi;
+const anonymousSourceUrl = /https?:\/\/(?:www\.)?(?:linktr\.ee\/[^\s)\]}>"']+|sans\.org|offsec\.com|maldevacademy\.com)[^\s)\]}>"']*/gi;
 
 export function anonymizeSourceNames(value) {
   return String(value || "")
@@ -31,10 +30,9 @@ export function anonymizeSourceNames(value) {
 }
 
 export function sanitizeString(value) {
-  return anonymizeSourceNames(String(value || ""))
+  return redactPrivateIdentifiers(redactEmailAddresses(anonymizeSourceNames(redactPrivateRoutes(String(value || "")))))
     .replace(absoluteUnix, "[private-source]")
     .replace(absoluteWindows, "[private-source]")
-    .replace(localUser, "source-owner")
     .replace(anonymousSourceUrl, "[private-source]")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/ +([,.;:])/g, "$1")

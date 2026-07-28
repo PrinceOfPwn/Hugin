@@ -20,6 +20,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { redactEmailAddresses, redactPrivateIdentifiers, redactPrivateRoutes } from "./lib/private-identifiers.mjs";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const SAMPLES_ROOT = path.resolve("hugin/samples_export");
@@ -72,7 +73,7 @@ function anonCert(raw) {
 // Strip private identifiers from free-text strings
 const TEXT_RULES = [
   // Private URLs — first, before any text replacements
-  [/https?:\/\/[^\s)\]}"']*(?:offsec\.com|offensive-security\.com|maldevacademy\.com|sans\.org|linktr\.ee|offsecexam)[^\s)\]}"']*/gi, "[private-url]"],
+  [/https?:\/\/[^\s)\]}"']*(?:offsec\.com|offensive-security\.com|maldevacademy\.com|sans\.org|linktr\.ee)[^\s)\]}"']*/gi, "[private-url]"],
   // AWS Credentials — redact before any other processing
   [/\bAKI[A-Z0-9]{16,}\b/g, "[aws-key-id]"],
   [/(?<=[Aa][Ww][Ss]_?[Ss][Ee][Cc][Rr][Ee][Tt][\s=:'"]*)[A-Za-z0-9/+]{40}\b/g, "[aws-secret]"],
@@ -95,8 +96,6 @@ const TEXT_RULES = [
   // Local filesystem paths
   [/\/(?:Users|home)\/[^\s/]+\/[^\s)\]}"']+/g, "[private-path]"],
   [/[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)[^\s)\]}"']+/g, "[private-path]"],
-  // Usernames
-  [/\b(?:emiperalta|tamarisk)\b/gi, "operator"],
   // Source field markers
   [/\bOWN_NOTES\b/gi, "curated-notes"],
   [/\bauthorized-lab\b/gi, "authorized-environment"],
@@ -105,7 +104,7 @@ const TEXT_RULES = [
 
 function sanitizeText(value) {
   if (typeof value !== "string") return value;
-  let s = value;
+  let s = redactPrivateIdentifiers(redactEmailAddresses(redactPrivateRoutes(value)), "operator");
   for (const [pattern, replacement] of TEXT_RULES) {
     s = s.replace(pattern, replacement);
   }
