@@ -2,13 +2,8 @@
   "input": "data/normalized/offensive_x64_assembly.jsonl",
   "output": "data/enriched/offensive_x64_assembly.jsonl",
   "local": 0,
-  "remote": 0,
+  "remote": 13,
   "remote_cache": 0,
-  "degraded": 13,
-  "remote_errors": [
-    "openai/gpt-5: 413 {\"error\":{\"code\":\"tokens_limit_reached\",\"message\":\"Request body too large for gpt-5 model. Max size: 4000 tokens.\",\"details\":\"Request body too large for gpt-5 model. Max size: 4000 tokens.\"}}",
-    "openai/o3: 403 ",
-    "openai/gpt-5-mini: 413 {\"error\":{\"code\":\"tokens_limit_reached\",\"message\":\"Request body too large for gpt-5-mini model. Max size: 4000 tokens.\",\"details\":\"Request body too large for gpt-5-mini model. Max size: 4000 tokens.\"}}",
-    "openai/gpt-4.1: 413 {\"error\":{\"code\":\"tokens_limit_reached\",\"message\":\"Request body too large for gpt-4.1 model. Max size: 8000 tokens.\",\"details\":\"Request body too large for gpt-4.1 model. Max size: 8000 tokens.\"}}"
-  ]
+  "degraded": 0,
+  "remote_errors": []
 }
