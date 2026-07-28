@@ -3,86 +3,28 @@
   "sources": {
     "data/incoming/offensive_x64_assembly.jsonl": {
       "input": "data/enriched/offensive_x64_assembly.jsonl",
-      "input_sha256": "9273e964c8b4cbd7508949290a61022b5ae88b06b6bc0e676901583c0ce2b1ff",
+      "input_sha256": "69baa9bf8a5a095061f08b42ca59720f7c09267947b157a87cb07b4f5cd5e66c",
       "node_ids": [
         "source:bb4faa95ea190a9b879b27",
-        "concept:ed32971712c531a7969f4b",
-        "technique:b89a5a432e8926483eb88c",
         "source:bef414c9b57c6df7512c22",
         "source:3def7075e3e7d6af5673bf",
         "source:f6915c769e71eee7b97604",
         "source:4951842f8a341cc4156168",
-        "concept:7861357dc405c65c4001e1",
-        "technique:f3af89f8d41b9499995f78",
         "source:c168bd90f593bdb86a0d5a",
         "source:578f0653567fea44abd73d",
-        "concept:2e36a0544dd37262a43501",
-        "concept:44d6d188153458c5805fc2",
-        "concept:c31158beb7d51159d0a637",
-        "technique:b4050f6a5254e804df5bc9",
         "source:da84ab5dc563d46e3edfb7",
-        "concept:496018fecb3d63107c5965",
-        "technique:496018fecb3d63107c5965",
         "source:2b4e9844e8b33987159cfe",
-        "concept:272449e09f1edfba17e604",
-        "concept:d926eda4be4c1eaf263e4f",
-        "concept:d9a163920d91e7e098502d",
-        "technique:f6bb6a6d43b07f4783380c",
         "source:fc45cf0d02ec691729957a",
-        "technique:1b570c45d3906a8b3c55ba",
         "source:85c72a8be5174c476cb803",
-        "concept:23b325dc2837ba82363c30",
-        "technique:23b325dc2837ba82363c30",
         "source:39cbdb4b4a246e712ac6fe",
-        "source:86add4df83091a2fab4222",
-        "concept:b8057e07146fcfa598448c",
-        "concept:66e410ddc02aa1db7160f6",
-        "technique:0ef452b667ebe0ff2732be",
-        "technique:c08748fd1f833da2f24ba1",
-        "technique:db6982f933bff779e1a13e"
+        "source:86add4df83091a2fab4222"
       ],
-      "edge_ids": [
-        "ingest-edge:35ebf95a313d37f88cff50",
-        "ingest-edge:5b3a01a640d7dbbf39a12f",
-        "ingest-edge:8250cfc36e59dcbc3c6f84",
-        "ingest-edge:c7a3a00764fd930453bc9b",
-        "ingest-edge:4996892f6f88651a7e160f",
-        "ingest-edge:4dfdbe4ae19531d3b15763",
-        "ingest-edge:bc4b8caae27ddb4135308a",
-        "ingest-edge:60569c0346fbf79d22a01d",
-        "ingest-edge:bd84c54f1ed2a685432e00",
-        "ingest-edge:9f31fb31cce087a633b4f6",
-        "ingest-edge:d6803fd2e9d0f4855139be",
-        "ingest-edge:b6ec2e2a9360051ba6941e",
-        "ingest-edge:c50c1cd69297a19513478a",
-        "ingest-edge:c2a2dfc31dc9cb4e2dce67",
-        "ingest-edge:080d7566c0b9eb5f4cded7",
-        "ingest-edge:a43f5b0c52963be6bab852",
-        "ingest-edge:7772089d2b7fd37728a1fe",
-        "ingest-edge:b3aecfa00b8dcd85c3648e",
-        "ingest-edge:fa382b129e268850476ee1",
-        "ingest-edge:14c6357a64db9d4c30a006",
-        "ingest-edge:537b1c8709ed67126d7d71",
-        "ingest-edge:06b495827a0cb3ecf7145f",
-        "ingest-edge:5503ac63498ce403bc3bf6",
-        "ingest-edge:8a1033019d9543ca5816e3",
-        "ingest-edge:9e1b613607eafb92083214",
-        "ingest-edge:9289650a5e6a1486360613",
-        "ingest-edge:498d101651fb9abd350187",
-        "ingest-edge:2ec34fbec714f618c237a1",
-        "ingest-edge:4695820b3e509520317f61"
-      ],
-      "compiled_at": "2026-07-28T00:24:05.435Z"
+      "edge_ids": [],
+      "compiled_at": "2026-07-28T01:10:57.761Z"
     }
   },
   "node_owners": {
     "source:bb4faa95ea190a9b879b27": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "concept:ed32971712c531a7969f4b": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "technique:b89a5a432e8926483eb88c": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
     "source:bef414c9b57c6df7512c22": [
@@ -97,67 +39,22 @@
     "source:4951842f8a341cc4156168": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
-    "concept:7861357dc405c65c4001e1": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "technique:f3af89f8d41b9499995f78": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
     "source:c168bd90f593bdb86a0d5a": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
     "source:578f0653567fea44abd73d": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
-    "concept:2e36a0544dd37262a43501": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "concept:44d6d188153458c5805fc2": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "concept:c31158beb7d51159d0a637": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "technique:b4050f6a5254e804df5bc9": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
     "source:da84ab5dc563d46e3edfb7": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "concept:496018fecb3d63107c5965": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "technique:496018fecb3d63107c5965": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
     "source:2b4e9844e8b33987159cfe": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
-    "concept:272449e09f1edfba17e604": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "concept:d926eda4be4c1eaf263e4f": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "concept:d9a163920d91e7e098502d": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "technique:f6bb6a6d43b07f4783380c": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
     "source:fc45cf0d02ec691729957a": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
-    "technique:1b570c45d3906a8b3c55ba": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
     "source:85c72a8be5174c476cb803": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "concept:23b325dc2837ba82363c30": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "technique:23b325dc2837ba82363c30": [
       "data/incoming/offensive_x64_assembly.jsonl"
     ],
     "source:39cbdb4b4a246e712ac6fe": [
@@ -165,110 +62,7 @@
     ],
     "source:86add4df83091a2fab4222": [
       "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "concept:b8057e07146fcfa598448c": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "concept:66e410ddc02aa1db7160f6": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "technique:0ef452b667ebe0ff2732be": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "technique:c08748fd1f833da2f24ba1": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "technique:db6982f933bff779e1a13e": [
-      "data/incoming/offensive_x64_assembly.jsonl"
     ]
   },
-  "edge_owners": {
-    "ingest-edge:35ebf95a313d37f88cff50": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:5b3a01a640d7dbbf39a12f": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:8250cfc36e59dcbc3c6f84": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:c7a3a00764fd930453bc9b": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:4996892f6f88651a7e160f": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:4dfdbe4ae19531d3b15763": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:bc4b8caae27ddb4135308a": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:60569c0346fbf79d22a01d": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:bd84c54f1ed2a685432e00": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:9f31fb31cce087a633b4f6": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:d6803fd2e9d0f4855139be": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:b6ec2e2a9360051ba6941e": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:c50c1cd69297a19513478a": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:c2a2dfc31dc9cb4e2dce67": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:080d7566c0b9eb5f4cded7": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:a43f5b0c52963be6bab852": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:7772089d2b7fd37728a1fe": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:b3aecfa00b8dcd85c3648e": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:fa382b129e268850476ee1": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:14c6357a64db9d4c30a006": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:537b1c8709ed67126d7d71": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:06b495827a0cb3ecf7145f": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:5503ac63498ce403bc3bf6": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:8a1033019d9543ca5816e3": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:9e1b613607eafb92083214": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:9289650a5e6a1486360613": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:498d101651fb9abd350187": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:2ec34fbec714f618c237a1": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ],
-    "ingest-edge:4695820b3e509520317f61": [
-      "data/incoming/offensive_x64_assembly.jsonl"
-    ]
-  }
+  "edge_owners": {}
 }
