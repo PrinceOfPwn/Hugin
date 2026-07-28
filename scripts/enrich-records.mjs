@@ -213,24 +213,3 @@ function validateBatch(value, batch) {
   for (const id of expected) if (!seen.has(id)) errors.push(`missing id ${id}`);
   return errors;
 }
-
-export function filterGroundedEnrichment(record, item, thresholds, metadata) {
-  const grounded = (items, threshold) => (Array.isArray(items) ? items : []).filter((candidate) => {
-    if (typeof candidate?.confidence !== "number" || candidate.confidence < threshold) return false;
-    if (!Array.isArray(candidate.evidence) || candidate.evidence.length === 0) return false;
-    return candidate.evidence.every((quote) => evidenceExists(record, quote));
-  });
-
-  return sanitize({
-    schema_version: ENRICHMENT_VERSION,
-    ...metadata,
-    summary: item.summary,
-    abstract: item.abstract,
-    tags: [...new Set((item.tags ?? []).map((tag) => normalizeWhitespace(tag)).filter(Boolean))].slice(0, 16),
-    concepts: grounded(item.concepts, thresholds.claim),
-    techniques: grounded(item.techniques, thresholds.technique),
-    entities: grounded(item.entities, thresholds.entity),
-    relations: grounded(item.relations, thresholds.relation),
-    mitre_candidates: grounded(item.mitre_candidates, thresholds.mitre),
-  });
-}
