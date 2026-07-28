@@ -34,6 +34,7 @@ jobs:
           HUGIN_SIMILARITY_ENGINE: transformers
           HUGIN_MODEL_CACHE: .hf-cache
         run: npm run data:build
+      - run: npm run data:mitre
       - run: npm run data:validate
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
