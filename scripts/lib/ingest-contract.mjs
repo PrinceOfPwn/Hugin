@@ -14,7 +14,6 @@ export const KINDS = Object.freeze([
   "note",
   "playbook",
   "conversation",
-  "dataset_record",
   "unknown",
 ]);
 

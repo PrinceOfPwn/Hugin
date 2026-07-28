@@ -153,9 +153,9 @@ console.log("Running HUGIN Universal Ingest v2 Pipeline Test Suite…\n");
   console.log("  ✓ Passed");
 }
 
-// ── Test 6, 7, 8, 9: Remote model policy and fallback handling ──────────────
+// ── Test 6-9: Policy & Fallback Mocking ──────────────────────────────────
 {
-  console.log("\nTest 6-9: Remote model unavailable / rate limit / invalid schema / fallback handling");
+  console.log("\nTest 6-9: Remote model policy, HTTP 429 rate limit & fallback handling");
   const policy = JSON.parse(fs.readFileSync("scripts/ingest-model-policy.json", "utf8"));
   assert.deepEqual(policy.complex.preferred, ["openai/gpt-5"]);
   assert.deepEqual(policy.complex.fallback, ["openai/o3", "openai/gpt-5-mini", "openai/gpt-4.1"]);
@@ -200,7 +200,7 @@ console.log("Running HUGIN Universal Ingest v2 Pipeline Test Suite…\n");
   console.log("  ✓ Passed (hallucinated entity 'FakeApiThatDoesNotExist' was dropped)");
 }
 
-// ── Test 11, 12, 13, 14: Re-ingestion, updates, deletions & idempotency ────
+// ── Test 11-14: Source manifest re-ingestion, updates, deletions & idempotency ────
 {
   console.log("\nTest 11-14: Source manifest re-ingestion, updates, deletions & idempotency");
   const testRecordA = {
