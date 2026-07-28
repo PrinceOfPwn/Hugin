@@ -15,6 +15,7 @@ import { LocalTextModel } from "./lib/local-model.mjs";
 import { NvidiaModelsClient } from "./lib/nvidia-models.mjs";
 import {
   LOCAL_SIMPLE_ENRICHMENT_SYSTEM_PROMPT,
+  REMOTE_ENRICHMENT_FEW_SHOTS,
   REMOTE_ENRICHMENT_SYSTEM_PROMPT,
   remoteEnrichmentUserPrompt,
   remoteRepairPrompt,
@@ -66,10 +67,13 @@ try {
     report.local++;
   }
 
-  for (const batch of makeBatches(complex, policy.batch?.complex?.max_records ?? 2, policy.batch?.complex?.max_input_chars ?? 16000)) {
+  // One complex source per GLM request gives the card enough context and makes
+  // malformed output degrade only that source, never an entire pair.
+  for (const batch of makeBatches(complex, 1, policy.batch?.complex?.max_input_chars ?? 16000)) {
     const result = await cloud.completeJson({
       messages: [
         { role: "system", content: REMOTE_ENRICHMENT_SYSTEM_PROMPT },
+        ...REMOTE_ENRICHMENT_FEW_SHOTS,
         { role: "user", content: remoteEnrichmentUserPrompt(batch) },
       ],
       validate: (value) => validateBatch(value, batch),
@@ -77,17 +81,17 @@ try {
         { role: "system", content: REMOTE_ENRICHMENT_SYSTEM_PROMPT },
         { role: "user", content: remoteRepairPrompt(raw, errors, batch) },
       ],
-      maxTokens: policy.complex.max_output_tokens ?? 4000,
+      maxTokens: policy.complex.max_output_tokens ?? 6000,
       force,
     });
     if (result.value) {
       for (const item of result.value.items) {
-        const grounded = filterGroundedEnrichment(batch.find((record) => record.id === item.id), item, policy.thresholds, {
+        const record = batch.find((candidate) => candidate.id === item.id);
+        const metadata = {
           status: "complete", provider: "nvidia", model: result.model, cached: Boolean(result.cached),
-        });
-        // filterGroundedEnrichment returns a canonical record. Persist only its
-        // stable enrichment payload; nesting the whole record was the V2 bug.
-        enrichedById.set(item.id, grounded.enrichment);
+        };
+        const grounded = filterGroundedEnrichment(record, item, policy.thresholds, metadata);
+        enrichedById.set(item.id, remoteEnrichmentPayload(record, item, grounded, metadata));
       }
       report.remote += batch.length;
       if (result.cached) report.remote_cache += batch.length;
@@ -124,6 +128,7 @@ async function enrichSimple(record, model) {
     return sanitize({
       schema_version: ENRICHMENT_VERSION, status: "complete", provider: "local-qwen", model: model.modelId,
       summary: String(parsed.summary).slice(0, 600), abstract: String(parsed.abstract).slice(0, 1600),
+      card: fallbackCard(record, { title: record.title, purpose: String(parsed.summary), mechanism: String(parsed.abstract) }),
       tags: Array.isArray(parsed.tags) ? parsed.tags.map((tag) => normalizeWhitespace(tag)).filter(Boolean).slice(0, 16) : [],
       concepts: [], techniques: [], relations: [], mitre_candidates: [], entities,
     });
@@ -137,6 +142,7 @@ function deterministicFallback(record, status) {
   return sanitize({
     schema_version: ENRICHMENT_VERSION, status, provider: "deterministic", model: null,
     summary: summary || record.title, abstract: summary || record.title,
+    card: fallbackCard(record, { title: record.title, purpose: summary || record.title, mechanism: summary || record.title }),
     tags: [record.kind, record.category, record.language, ...(record.tags ?? [])].filter(Boolean).slice(0, 16),
     concepts: [], techniques: [], entities: [], relations: [], mitre_candidates: [],
   });
@@ -161,8 +167,47 @@ function validateBatch(value, batch) {
     if (!expected.has(item?.id)) errors.push(`unexpected id ${item?.id}`);
     if (seen.has(item?.id)) errors.push(`duplicate id ${item?.id}`); seen.add(item?.id);
     for (const field of ["summary", "abstract"]) if (typeof item?.[field] !== "string") errors.push(`${item?.id}.${field} must be string`);
+    if (!item?.card || typeof item.card !== "object") {
+      errors.push(`${item?.id}.card must be object`);
+    } else {
+      for (const field of ["title", "purpose", "technical_context", "mechanism"]) {
+        if (typeof item.card[field] !== "string") errors.push(`${item?.id}.card.${field} must be string`);
+      }
+      for (const field of ["components", "key_points", "artifacts", "tradecraft_context", "caveats"]) {
+        if (!Array.isArray(item.card[field])) errors.push(`${item?.id}.card.${field} must be array`);
+      }
+    }
     for (const field of ["tags", "concepts", "techniques", "entities", "relations", "mitre_candidates"]) if (!Array.isArray(item?.[field])) errors.push(`${item?.id}.${field} must be array`);
   }
   for (const id of expected) if (!seen.has(id)) errors.push(`missing id ${id}`);
   return errors;
+}
+
+function remoteEnrichmentPayload(record, item, grounded, metadata) {
+  return sanitize({
+    schema_version: ENRICHMENT_VERSION,
+    status: metadata.status,
+    provider: metadata.provider,
+    model: metadata.model,
+    summary: grounded.summary,
+    abstract: grounded.abstract,
+    card: fallbackCard(record, item.card),
+    ...grounded.enrichment,
+  });
+}
+
+function fallbackCard(record, card = {}) {
+  const text = normalizeWhitespace(record.content).slice(0, 600) || record.title;
+  const strings = (value, limit) => Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean).slice(0, limit) : [];
+  return {
+    title: String(card.title ?? record.title).slice(0, 160),
+    purpose: String(card.purpose ?? text).slice(0, 700),
+    technical_context: String(card.technical_context ?? record.category ?? "").slice(0, 1200),
+    mechanism: String(card.mechanism ?? text).slice(0, 1600),
+    components: strings(card.components, 10),
+    key_points: strings(card.key_points, 10),
+    artifacts: strings(card.artifacts, 10),
+    tradecraft_context: strings(card.tradecraft_context, 8),
+    caveats: strings(card.caveats, 6),
+  };
 }
