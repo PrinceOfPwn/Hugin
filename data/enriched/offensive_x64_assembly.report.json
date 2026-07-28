@@ -1,0 +1,9 @@
+{
+  "input": "data/normalized/offensive_x64_assembly.jsonl",
+  "output": "data/enriched/offensive_x64_assembly.jsonl",
+  "local": 0,
+  "remote": 13,
+  "remote_cache": 0,
+  "degraded": 0,
+  "remote_errors": []
+}
