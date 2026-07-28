@@ -119,7 +119,7 @@ jobs:
           node scripts/validate-data.mjs
 
       - name: Commit generated knowledge
-        if: steps.discover.outputs.count != '0'
+        if: steps.discover.outputs.count != '0' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
