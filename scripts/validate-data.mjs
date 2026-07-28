@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { emailAddressPattern, privateIdentifierPattern } from "./lib/private-identifiers.mjs";
 
 const generated = path.resolve("src/generated");
 const sourceFile = path.resolve("data/source/public-graph.json");
@@ -53,7 +54,8 @@ const publicFiles = [
 const forbidden = [
   { label: "absolute Unix owner path", pattern: /(?:\/Users|\/home)\/[^"'\r\n;{}]+/i },
   { label: "absolute Windows user path", pattern: /[A-Za-z]:(?:\\+|\/+)(?:Users|home)(?:\\+|\/+)[^"'\r\n;{}]+/i },
-  { label: "local username or handle", pattern: /\b(?:source-owner|source-owner|private-source)\b/i },
+  { label: "local username or handle", pattern: privateIdentifierPattern },
+  { label: "email address", pattern: emailAddressPattern },
   { label: "named training provider", pattern: /\bSANS(?:\s+Institute)?\b/i },
   { label: "course identifier", pattern: /\bSEC\d{3}(?:\.\d+)?\b|\bPEN-?200\b|\bOSCP\b/i },
   { label: "named research course", pattern: /\bCRTO\b|\bCertified\s+Red\s+Team(?:\s+Operator)?\b|\bZero-Point\s+Security\b/i },
