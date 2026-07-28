@@ -1,38 +1,78 @@
 {
-  "source_name": "sample_records_batch_1",
-  "confidence": 4,
-  "record_shape": "code_block",
-  "detected_language": "en",
+  "schema_version": "hugin.router.v2",
+  "source_name": "Offensive-x64-Assembly-main",
+  "kind": "dataset_record",
+  "record_shape": "nested",
+  "detected_language": "mixed",
+  "semantic_complexity": "complex",
+  "confidence": 0.95,
   "field_map": {
-    "id": null,
-    "prompt": "N/A",
-    "answer": "N/A",
-    "category": null,
-    "tags": null
+    "id": {
+      "path": [
+        "file_name"
+      ],
+      "join": "indirect.asm"
+    },
+    "title": {
+      "path": [
+        "file_name"
+      ],
+      "join": "indirect.asm"
+    },
+    "content": {
+      "path": [
+        "content"
+      ],
+      "join": "indirect.asm"
+    },
+    "category": {
+      "path": [
+        "file_type"
+      ],
+      "join": "asm"
+    },
+    "tags": {
+      "path": [
+        "file_type"
+      ],
+      "join": "asm"
+    },
+    "language": {
+      "path": [
+        "file_type"
+      ],
+      "join": "asm"
+    },
+    "source": {
+      "path": [
+        "relative_path"
+      ],
+      "join": "Offensive-x64-Assembly-main\\MasmIndirectSyscalls\\MasmIndirectSyscalls"
+    }
   },
   "constants": {
-    "kind": "source_code",
-    "category": "execution",
-    "publishState": "core"
+    "category": "assembly",
+    "publish_state": "core"
   },
-  "graph_extraction": {
-    "entities": [
-      {
-        "type": "Tool",
-        "extraction_method": "regex",
-        "pattern": "\\bNtAllocateVirtualMemory\\b"
-      }
-    ],
-    "relations": []
+  "facets": {
+    "file_type": {
+      "path": [
+        "file_type"
+      ],
+      "join": "asm"
+    }
   },
-  "id_strategy": "hash",
-  "notes": "Batch of three unrelated assembly/C++ source code snippets. Focus on extracting low-level system call definitions.",
+  "requested_enrichment": [
+    "entities",
+    "techniques"
+  ],
+  "notes": "This dataset contains a collection of assembly code (.asm), C++ code (.cpp), and README documentation (.md) related to offensive techniques, specifically involving Windows APIs and system calls (NtAPI). The files seem to be part of a project named 'Offensive-x64-Assembly-main'. The content includes examples of memory allocation and writing operations using low-level system calls.",
   "_detected": {
     "input": "data/incoming/offensive_x64_assembly.jsonl",
     "input_records": 13,
-    "sample_size": 3,
+    "input_sha256": "785b5a2b3c2b861c564458b2e41b4dce126b4cb7ed42ddc23f51d57dff89f687",
+    "router_version": "hugin.router.v2",
     "model": "onnx-community/gemma-4-E2B-it-ONNX",
-    "detected_at": "2026-07-27T22:42:09.591Z",
-    "elapsed_seconds": 112.6
+    "detected_at": "2026-07-28T00:22:35.462Z"
   }
 }
