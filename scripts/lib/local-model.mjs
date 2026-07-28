@@ -46,10 +46,29 @@ export class LocalTextModel {
 export function parseJsonObject(text) {
   const cleaned = String(text ?? "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   try { return JSON.parse(cleaned); } catch {}
-  const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    try { return JSON.parse(cleaned.slice(start, end + 1)); } catch {}
+  // Models occasionally add a short preface, a Markdown fence, or a second
+  // JSON-looking fragment. Try every balanced object rather than slicing from
+  // the first brace to the last, which corrupts otherwise valid output.
+  for (let start = 0; start < cleaned.length; start++) {
+    if (cleaned[start] !== "{") continue;
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let end = start; end < cleaned.length; end++) {
+      const char = cleaned[end];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') quoted = false;
+        continue;
+      }
+      if (char === '"') { quoted = true; continue; }
+      if (char === "{") depth++;
+      if (char === "}") depth--;
+      if (depth === 0) {
+        try { return JSON.parse(cleaned.slice(start, end + 1)); } catch { break; }
+      }
+    }
   }
   return null;
 }

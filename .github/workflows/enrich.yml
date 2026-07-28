@@ -1,30 +1,17 @@
 # .github/workflows/enrich.yml
 #
-# Runs Qwen3-4B-Instruct locally on the runner to enrich entities and type
-# similarity edges. Commits results back to main under data/enriched/.
-#
-# Triggers:
-#   - push to main touching source data / scripts
-#   - manual workflow_dispatch (for backfill / full re-run)
-#   - weekly cron (Sunday 03:00 UTC) for background full re-typing
-#
-# The subsequent pages.yml build reads data/enriched/* automatically via
-# the build-data.mjs merge step.
+# Retired V1 path kept only for intentional recovery. V3 owns automatic
+# ingestion and enrichment so this workflow cannot compete for data/enriched/.
 
-name: Enrich HUGIN entities and relations
+name: Legacy enrichment (manual recovery only)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "data/source/**"
-      - "scripts/enrich-entities.mjs"
-      - "scripts/type-relations.mjs"
-      - "scripts/build-data.mjs"
-  schedule:
-    - cron: "0 3 * * 0"
   workflow_dispatch:
     inputs:
+      confirm_legacy:
+        description: "Type RUN_LEGACY to execute this retired pipeline"
+        type: string
+        required: true
       mode:
         description: "incremental | full"
         type: choice
@@ -51,7 +38,7 @@ jobs:
     # Skip runs whose head commit was made by the bot itself (defensive; the
     # `paths:` filter already prevents this because the bot only writes to
     # data/enriched/, but this stays correct even if paths get widened).
-    if: github.actor != 'hugin-bot'
+    if: github.actor != 'hugin-bot' && inputs.confirm_legacy == 'RUN_LEGACY'
     runs-on: ubuntu-latest
     timeout-minutes: 340   # 5h40m — allow full re-run headroom; incremental exits in minutes
     steps:
