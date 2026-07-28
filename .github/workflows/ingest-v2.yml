@@ -80,6 +80,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HUGIN_MODEL_CACHE: .hf-cache
           HUGIN_REMOTE_CACHE: .cache/hugin-models
+          NODE_OPTIONS: --max-old-space-size=6144
         shell: bash
         run: |
           set -euo pipefail
