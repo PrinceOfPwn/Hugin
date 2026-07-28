@@ -3,6 +3,11 @@ name: Deploy HUGIN 2.1 to Pages
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "data/incoming/**/*.jsonl"
+  workflow_run:
+    workflows: ["Ingest incoming knowledge"]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -11,6 +16,9 @@ concurrency:
 
 jobs:
   data:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -28,16 +36,6 @@ jobs:
             .cache
           key: hugin-minilm-q8-${{ hashFiles('data/source/public-graph.json', 'scripts/build-data.mjs', 'package-lock.json') }}
       - run: npm ci
-      - name: Ingest all normalized datasets into graph
-        run: |
-          for f in data/normalized/*.jsonl; do
-            [ -f "$f" ] || continue
-            echo "Ingesting $f"
-            node scripts/ingest.mjs "$f" --no-model
-          done
-          if [ -f "hugin/samples_normalized.jsonl" ]; then
-            node scripts/ingest.mjs hugin/samples_normalized.jsonl --no-model
-          fi
       - env:
           HUGIN_SIMILARITY_ENGINE: transformers
           HUGIN_MODEL_CACHE: .hf-cache
