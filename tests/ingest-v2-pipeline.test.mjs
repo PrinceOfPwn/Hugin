@@ -197,6 +197,17 @@ console.log("Running HUGIN Universal Ingest v2 Pipeline Test Suite…\n");
   console.log("  âœ“ Passed");
 }
 
+{
+  console.log("\nTest 10d: Source-code category inherits each record file type");
+  const mapping = classifyKnownSchema([{ file_name: "sample.asm", file_type: "asm", content: "ret" }], "mixed_source_fixture");
+  assert.deepEqual(mapping.field_map.category.path, ["file_type"]);
+  for (const language of ["asm", "cpp", "md", "rs", "go", "nim"]) {
+    const record = { file_name: `sample.${language}`, file_type: language, content: "source" };
+    assert.equal(record[mapping.field_map.category.path[0]], language);
+  }
+  console.log("  âœ“ Passed");
+}
+
 // ── Test 10: Evidence hallucination dropping ────────────────────────────────
 {
   console.log("\nTest 10: Evidence hallucination dropping");
