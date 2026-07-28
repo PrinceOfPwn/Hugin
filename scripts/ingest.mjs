@@ -26,6 +26,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { sanitize } from "./lib/sanitize.mjs";
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -59,27 +60,6 @@ function truncate(value, len = 300) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (text.length <= len) return text;
   return `${text.slice(0, len).replace(/\s+\S*$/, "")}…`;
-}
-
-// ── Sanitization (inline, no dep on sanitize.mjs for portability) ─────────────
-const SANITIZE_RULES = [
-  [/https?:\/\/\S*(?:offsec\.com|offensive-security\.com|maldevacademy\.com|sans\.org)\S*/gi, "[private-url]"],
-  [/\bAKI[A-Z0-9]{16,}\b/g, "[aws-key-id]"],
-  [/\b(?:OSED|OSEP|OSCP|OSWA|OSWP|PEN-200|PEN200|EXP-312|WEB-200|WEB200)\b/gi, "Source A"],
-  [/\bSANS[- ]?SEC\d{3}\b/gi, "Source B"],
-  [/\bCRTO\d?\b|\bCRTE\b/gi, "Source B"],
-  [/maldev[a-z0-9_-]*/gi, "Source B"],
-  [/\bOffensive\s+Security\b/gi, "Source C"],
-  [/(?:fake)?offensive-security\.(?:com|net|org)/gi, "[private-domain]"],
-  [/offsec[a-z0-9_-]*/gi, "Source C"],
-  [/\b(?:source-owner|source-owner)\b/gi, "operator"],
-  [/\bOWN_NOTES\b/gi, "curated-notes"],
-];
-function sanitize(value) {
-  if (typeof value !== "string") return value;
-  let s = value;
-  for (const [p, r] of SANITIZE_RULES) s = s.replace(p, r);
-  return s.replace(/[ \t]{2,}/g, " ").trim();
 }
 
 // ── MITRE heuristic extractor (always runs, model augments it) ────────────────
@@ -425,9 +405,9 @@ async function main() {
     return;
   }
 
-  // Merge into graph
-  graph.nodes    = [...(graph.nodes ?? []), ...newNodes];
-  graph.contents = { ...(graph.contents ?? {}), ...newContents };
+  // Merge into graph and sanitize
+  graph.nodes    = sanitize([...(graph.nodes ?? []), ...newNodes]);
+  graph.contents = sanitize({ ...(graph.contents ?? {}), ...newContents });
 
   const coreCount        = graph.nodes.filter((n) => n.publishState === "core").length;
   const supportCount     = graph.nodes.filter((n) => n.publishState === "support").length;
@@ -449,7 +429,7 @@ async function main() {
     relations: (graph.edges ?? []).length,
   };
 
-  fs.writeFileSync(GRAPH_PATH, `${JSON.stringify(graph)}\n`);
+  fs.writeFileSync(GRAPH_PATH, `${JSON.stringify(graph, null, 2)}\n`);
   console.log(`✅ ${newNodes.length} nodes written to ${GRAPH_PATH}`);
   console.log(`   Total nodes: ${graph.nodes.length}`);
 }
