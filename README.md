@@ -1,6 +1,18 @@
-# HUGIN Knowledge Universe
+# 🦅 HUGIN Knowledge Universe
 
-HUGIN is a fully static technical knowledge graph built for GitHub Pages. It publishes a curated knowledge layer, anonymous supporting evidence, permanent HTML records, and eight WebGL galaxies without a backend, browser token, paid service, or runtime AI dependency.
+HUGIN is a state-of-the-art, fully static technical knowledge graph built for GitHub Pages. It publishes a curated knowledge layer, anonymous supporting evidence, permanent HTML records, and eight stunning WebGL galaxies without requiring a backend, browser tokens, paid services, or runtime AI dependencies. 
+
+It is fast, secure, and purely static — the ultimate way to navigate complex technical relationships.
+
+## 🔗 The Hugin & Munin Ecosystem
+
+In Norse mythology, Odin's two ravens, **Hugin** (Thought) and **Munin** (Memory), fly all over the world to bring back information. 
+
+In our architecture:
+- **Munin** acts as the memory and intelligence gatherer. It explores, collects, and structures raw intelligence and artifacts.
+- **Hugin** (this repository) acts as the thought and presentation layer. It ingests the raw data collected by Munin, processes it into a sanitized, interconnected knowledge graph, and projects it into a beautiful, interactive WebGL universe for exploration.
+
+Together, they form a complete, autonomous pipeline for gathering and visualizing technical intelligence.
 
 ## Explore
 
