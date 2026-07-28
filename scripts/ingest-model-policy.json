@@ -12,7 +12,7 @@
   },
   "complex": {
     "model": "z-ai/glm-5.2",
-    "max_output_tokens": 4000,
+    "max_output_tokens": 6000,
     "use_for": [
       "technical_abstraction",
       "cross_document_synthesis",

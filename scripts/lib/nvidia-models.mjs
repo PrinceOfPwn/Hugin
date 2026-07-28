@@ -49,6 +49,16 @@ export class NvidiaModelsClient {
       }
     } else {
       errors.push(`${model}: ${first.error}`);
+      // A model can obey the substantive prompt yet wrap JSON in prose. The
+      // repair pass is also useful in that case; V2 only repaired parsed JSON.
+      if (repairMessages && first.raw) {
+        const repaired = await this.#call({ model, messages: repairMessages(first.raw, [first.error]), maxTokens });
+        if (repaired.ok && validate(repaired.value).length === 0) {
+          fs.writeFileSync(cacheFile, JSON.stringify(repaired.value, null, 2));
+          return { value: repaired.value, model, cached: false, repaired: true, errors };
+        }
+        errors.push(repaired.ok ? `${model}: repair remained invalid` : `${model}: repair ${repaired.error}`);
+      }
     }
     return { value: null, model: null, cached: false, errors };
   }
