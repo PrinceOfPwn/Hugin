@@ -1,62 +1,74 @@
-# 🦅 HUGIN Knowledge Universe
+# 🐦‍⬛ HUGIN Knowledge Universe
 
-HUGIN is a state-of-the-art, fully static technical knowledge graph built for GitHub Pages. It publishes a curated knowledge layer, anonymous supporting evidence, permanent HTML records, and eight stunning WebGL galaxies without requiring a backend, browser tokens, paid services, or runtime AI dependencies. 
+**HUGIN** is a state-of-the-art, fully static technical knowledge graph meticulously engineered for GitHub Pages. It projects a massive curated knowledge layer, anonymized supporting evidence, immutable HTML records, and eight stunning WebGL galaxies—all without requiring a backend, browser tokens, paid services, or runtime AI dependencies. 
 
-It is fast, secure, and purely static — the ultimate way to navigate complex technical relationships.
+It is blazing fast, perfectly secure, and purely static: the ultimate platform for visualizing and navigating complex technical intelligence.
+
+---
 
 ## 🔗 The Hugin & Munin Ecosystem
 
-In Norse mythology, Odin's two ravens, **Hugin** (Thought) and **Munin** (Memory), fly all over the world to bring back information. 
+In Norse mythology, Odin relied on his two ravens, **Hugin** (Thought) and **Munin** (Memory), who flew across the world to bring back hidden knowledge. Our architecture embodies this legend:
 
-In our architecture:
-- **Munin** acts as the memory and intelligence gatherer. It explores, collects, and structures raw intelligence and artifacts.
-- **Hugin** (this repository) acts as the thought and presentation layer. It ingests the raw data collected by Munin, processes it into a sanitized, interconnected knowledge graph, and projects it into a beautiful, interactive WebGL universe for exploration.
+- 🧠 **Munin (The Memory):** Acts as the intelligence gatherer. Munin autonomously explores, collects, standardizes, and structures raw artifacts and technical intelligence from diverse, unstructured sources.
+- 🌌 **Hugin (The Thought - This Repository):** Takes that memory and transforms it into actionable insight. Hugin ingests Munin's raw intelligence, rigorously sanitizes it, processes it through advanced embeddings, and projects it into a breathtaking, interactive WebGL universe for exploration.
 
-Together, they form a complete, autonomous pipeline for gathering and visualizing technical intelligence.
+Together, they form a flawless, end-to-end pipeline for gathering, securing, and visualizing global technical intelligence.
 
-## Explore
+---
 
-- Dashboard: <https://princeofpwn.github.io/Hugin/>
-- Catalog: <https://princeofpwn.github.io/Hugin/explore/>
-- Knowledge graph: <https://princeofpwn.github.io/Hugin/graph/>
-- Dataset contract: <https://princeofpwn.github.io/Hugin/dataset/>
-- Quality report: <https://princeofpwn.github.io/Hugin/quality/>
+## 🧭 Explore the Universe
 
-## Public projection
+Dive into the cosmos of knowledge:
+- **Dashboard:** [Launch Dashboard](https://princeofpwn.github.io/Hugin/)
+- **Catalog:** [Explore Entities](https://princeofpwn.github.io/Hugin/explore/)
+- **Knowledge Graph:** [WebGL Galaxies](https://princeofpwn.github.io/Hugin/graph/)
+- **Dataset Contract:** [View Data Structures](https://princeofpwn.github.io/Hugin/dataset/)
+- **Quality Report:** [Review Telemetry](https://princeofpwn.github.io/Hugin/quality/)
 
-- 1,845 core knowledge entities.
-- 317 optional source and documentation records.
-- 3,256 anonymous evidence records, loaded only in context.
-- 190 administrative or low-value fragments quarantined.
-- 2,806 curated graph relations.
-- Eight generated semantic neighbors for every core entity.
+---
 
-Raw extraction fragments are not standalone pages or graph nodes. Provider names, course identifiers, local paths, filenames, and private usernames are excluded from every public artifact.
+## 📊 Scale & Projection
 
-## Architecture
+Hugin operates at a massive scale while remaining entirely static:
+- **1,845** core knowledge entities meticulously curated.
+- **3,256** anonymous evidence records dynamically loaded only in context.
+- **2,806** curated graph relations binding the universe together.
+- **Eight** generated semantic neighbors for *every single* core entity.
+- Absolute privacy: Provider names, local paths, and private usernames are rigorously stripped from every public artifact.
 
-- Astro generates real static HTML under the `/Hugin/` base path.
-- React is limited to search, catalog filters, and the Sigma.js WebGL graph.
-- GitHub Actions performs validation, pinned q8 MiniLM embeddings, neighbor generation, layout, Pagefind indexing, Playwright, Axe, Lighthouse, and bundle checks.
-- GitHub Pages only serves the verified artifact.
-- The owner import remains ignored. The tracked public projection is sanitized and anonymous.
+---
 
-## Relationship semantics
+## 🏗️ Cutting-Edge Architecture
 
-- `curated`: owner-authorized knowledge relation.
-- `membership`: structural galaxy placement, not a technical claim.
-- `similarity`: build-generated exploratory relation with score, rank, corpus hash, model, and pinned revision.
+- **Astro** powers the core engine, generating ultra-fast static HTML under the `/Hugin/` base path.
+- **React** is deployed surgically—handling only search, catalog filters, and rendering the high-performance **Sigma.js WebGL graph**.
+- **GitHub Actions** orchestrates the heavy lifting:
+  - **Local AI (Qwen3.5-4B-Instruct-ONNX):** Fast, local inference for simple entity extraction and metadata generation.
+  - **Complex AI (GLM-5.2):** High-tier reasoning for technical abstraction, cross-document synthesis, and conceptual graph generation.
+  - **Embeddings (q8 MiniLM):** Pinned embeddings for vector similarity and semantic neighbor mapping.
+  - **Build & Test:** Layout computing, `Pagefind` indexing, `Playwright` E2E testing, and `Lighthouse` audits.
+- **GitHub Pages** securely serves the final, verified artifact.
 
-## Reproduce
+---
 
-The supported runtime is Node.js 24 LTS.
+## 🧬 Relationship Semantics
+
+- **`curated`**: Owner-authorized, verified knowledge relation.
+- **`membership`**: Structural galaxy placement (taxonomic grouping).
+- **`similarity`**: Build-generated exploratory relation backed by scoring, ranks, corpus hashing, and pinned models.
+
+---
+
+## 🛠️ Reproduce Locally
+
+The supported runtime is **Node.js 24 LTS**.
 
 ```bash
 npm ci
-npm run data:import   # only when the owner-supplied local import is present
+npm run data:import   # Requires owner-supplied local import
 npm run build
 npm run check
 npm run test:e2e
 ```
-
-The expensive model and browser work runs in GitHub Actions.
+*Note: All expensive model inference and browser work is offloaded seamlessly to GitHub Actions.*
