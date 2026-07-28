@@ -61,9 +61,9 @@ try {
 
   const batches = makeBatches(remoteRecords, policy.batch.max_records, policy.batch.max_input_chars);
   for (const batch of batches) {
-    const tier = batch.some((record) => record.routing.semantic_complexity === "complex") ? "high" : "low";
-    const route = tier === "high" ? policy.complex : policy.general;
-    const models = remote.available ? await remote.selectModels({ tier: route.tier, preferred: route.preferred }) : [];
+    const isComplex = batch.some((record) => record.routing.semantic_complexity === "complex");
+    const route = isComplex ? policy.complex : policy.general;
+    const models = remote.available ? await remote.selectModels({ preferred: route.preferred, fallback: route.fallback }) : [];
 
     const result = models.length
       ? await remote.completeStructured({

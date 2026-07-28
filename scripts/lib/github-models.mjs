@@ -41,19 +41,18 @@ export class GitHubModelsClient {
     return models;
   }
 
-  async selectModels({ tier, preferred = [] }) {
-    const catalog = await this.catalog();
+  async selectModels({ preferred = [], fallback = [] } = {}) {
+    let catalog = [];
+    try { catalog = await this.catalog(); } catch {}
     const byId = new Map(catalog.map((model) => [model.id, model]));
+    const candidateList = [...preferred, ...fallback];
     const selected = [];
-    for (const id of preferred) if (byId.has(id)) selected.push(id);
-    for (const model of catalog) {
-      if (selected.includes(model.id)) continue;
-      if (model.rate_limit_tier !== tier) continue;
-      if (!model.supported_input_modalities?.includes("text")) continue;
-      if (!model.supported_output_modalities?.includes("text")) continue;
-      selected.push(model.id);
+    for (const id of candidateList) {
+      if (!selected.includes(id) && (byId.size === 0 || byId.has(id))) {
+        selected.push(id);
+      }
     }
-    return selected.slice(0, 6);
+    return selected.length > 0 ? selected : candidateList;
   }
 
   async completeStructured({ models, messages, jsonSchema, validate, repairMessages, maxTokens = 2200 }) {
