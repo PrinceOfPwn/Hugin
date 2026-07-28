@@ -180,6 +180,7 @@ function buildRecordNode(record) {
     } : null,
     enrichment_status: record.enrichment?.status ?? "degraded",
     enrichment_model: record.enrichment?.model ?? null,
+    knowledge_card: record.enrichment?.card ?? null,
   });
   return { node, body: buildBody(record) };
 }
@@ -210,6 +211,20 @@ function buildDerivedNode(type, name, description, record, confidence, topic = n
 
 function buildBody(record) {
   const lines = [`## ${record.title}`, "", record.enrichment?.abstract || record.enrichment?.summary || "", "", "---", "", record.content];
+  const card = record.enrichment?.card;
+  if (card) {
+    lines.push("", "## Knowledge Card", "", `### Purpose`, "", card.purpose ?? "", "", "### Technical Context", "", card.technical_context ?? "", "", "### Mechanism", "", card.mechanism ?? "");
+    const sections = [
+      ["Components", card.components],
+      ["Key Points", card.key_points],
+      ["Artifacts", card.artifacts],
+      ["Tradecraft Context", card.tradecraft_context],
+      ["Caveats", card.caveats],
+    ];
+    for (const [heading, items] of sections) {
+      if (Array.isArray(items) && items.length) lines.push("", `### ${heading}`, "", ...items.map((item) => `- ${item}`));
+    }
+  }
   const concepts = record.enrichment?.concepts ?? [];
   const techniques = record.enrichment?.techniques ?? [];
   const entities = record.enrichment?.entities ?? [];

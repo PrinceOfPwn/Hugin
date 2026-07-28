@@ -9,6 +9,8 @@ import {
   writeJsonl,
 } from "../scripts/lib/ingest-contract.mjs";
 import { GitHubModelsClient } from "../scripts/lib/github-models.mjs";
+import { parseJsonObject } from "../scripts/lib/local-model.mjs";
+import { REMOTE_ENRICHMENT_FEW_SHOTS } from "../scripts/lib/prompts.mjs";
 import { classifyKnownSchema } from "../scripts/lib/schema-router.mjs";
 
 console.log("Running HUGIN Universal Ingest v2 Pipeline Test Suite…\n");
@@ -168,6 +170,16 @@ console.log("Running HUGIN Universal Ingest v2 Pipeline Test Suite…\n");
   assert.equal(models[0], "openai/gpt-5");
   assert.equal(models[1], "openai/gpt-4.1");
   console.log("  ✓ Passed");
+}
+
+{
+  console.log("\nTest 10c: Rich card few-shots and tolerant JSON extraction");
+  const cardExample = JSON.parse(REMOTE_ENRICHMENT_FEW_SHOTS[1].content).items[0].card;
+  for (const field of ["title", "purpose", "technical_context", "mechanism", "components", "key_points", "artifacts", "tradecraft_context", "caveats"]) {
+    assert.notEqual(cardExample[field], undefined);
+  }
+  assert.deepEqual(parseJsonObject("Model preface\n```json\n{\"items\":[]}\n```\nTrailing note"), { items: [] });
+  console.log("  âœ“ Passed");
 }
 
 // Preference pairs must never fall through to a heavyweight router. They are
