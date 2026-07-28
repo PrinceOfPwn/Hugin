@@ -1,0 +1,9 @@
+{
+  "job_id": "T002-hells-gate",
+  "model": "glm-5.2",
+  "status": "error",
+  "http_status": 503,
+  "error": "Invalid JSON response: upstream connect error or disconnect/reset before headers. reset reason: connection termination",
+  "elapsed_s": 52.5,
+  "response": null
+}

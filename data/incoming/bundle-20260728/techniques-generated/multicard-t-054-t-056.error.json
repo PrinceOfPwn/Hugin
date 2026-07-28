@@ -1,0 +1,10 @@
+{
+  "job_id": "multicard-t-054-t-056",
+  "model": "kimi-k3",
+  "status": "error",
+  "http_status": 504,
+  "error": "Gateway Timeout",
+  "elapsed_s": 601.2,
+  "response": null,
+  "adaptive_rounds": 1
+}

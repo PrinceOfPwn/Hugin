@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-07-23T23:40:25.348801+00:00",
+  "model": "glm-5.2",
+  "total_jobs": 2,
+  "successful": 2,
+  "failed": 0,
+  "adaptive_file_requests": 0,
+  "results": [
+    {
+      "job_id": "multicard-t-075-t-078",
+      "status": "success",
+      "elapsed_s": 359.8,
+      "adaptive_rounds": 1,
+      "files": [
+        "cluster-specs/T-075-memory-forensics-tooling-awareness.md",
+        "cluster-specs/T-076-av-cloud-sample-submission-opsec.md",
+        "cluster-specs/T-077-native-application-nt-main-entry.md",
+        "cluster-specs/T-078-cng-cryptography-migration.md",
+        "src/client_rust/src/protocol.rs",
+        "src/dark_crystal/crates/core/src/experimental/evasion/veh/def.rs"
+      ],
+      "output_file": "multicard-t-075-t-078.md"
+    },
+    {
+      "job_id": "multicard-t-079-t-082",
+      "status": "success",
+      "elapsed_s": 373.4,
+      "adaptive_rounds": 1,
+      "files": [
+        "cluster-specs/T-079-domain-recon-standard-user-context.md",
+        "cluster-specs/T-080-host-recon-surface-catalog.md",
+        "cluster-specs/T-081-kuser-shared-data-direct-read.md",
+        "cluster-specs/T-082-native-process-enumeration-ntquerysysteminformation.md",
+        "src/client_rust/src/protocol.rs",
+        "src/dark_crystal/crates/core/src/experimental/evasion/veh/def.rs"
+      ],
+      "output_file": "multicard-t-079-t-082.md"
+    }
+  ]
+}

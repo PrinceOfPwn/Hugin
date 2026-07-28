@@ -1,0 +1,506 @@
+---
+id: T-022
+name: Network and Protocol Suite
+category: networking
+tier: S
+mitre:
+  - T1071.001
+  - T1090
+  - T1571
+  - T1572
+  - T1573.002
+  - T1105.001
+  - T1568.002
+  - T1132.001
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires:
+  - T-004
+  - T-001
+  - T-021
+enables:
+  - T-017
+  - T-023
+  - T-019
+vault_references:
+  - src/client_rust/src/discovery.rs
+  - src/client_rust/src/eth_rpc.rs
+  - src/dark_crystal/crowd/src/winhttp_dl.rs
+  - src/client_rust/src/vnc_server.rs
+implements:
+  - file: src/client_rust/src/discovery.rs
+    key_functions:
+      - fetch_rentry_url
+      - fetch_testnet_ws_url
+      - discover_server_url
+      - xor_decode
+      - rot13
+      - strip_html
+      - html_unescape
+      - load_env
+      - persist_url_to_env
+    key_structs: []
+    key_constants:
+      - "0xafb4ccb78f1474d274fbc1448b20a17655e2da57d1dd99bb0aa2e5adcb4e80df (Message event topic)"
+    lines_of_interest:
+      - "L60-L120: rentry.co fetch + article extraction + XOR/ROT13 decode cascade"
+      - "L124-L210: Sepolia eth_getLogs scan for TUNNEL|<url> messages"
+      - "L260-L290: discover_server_url fallback chain"
+  - file: src/client_rust/src/eth_rpc.rs
+    key_functions:
+      - rpc_call
+      - get_nonce
+      - get_gas_price
+      - send_raw_transaction
+      - get_logs
+      - get_block_number
+      - get_balance
+      - sign_and_send
+    key_structs: []
+    key_constants:
+      - SEPOLIA_RPCS (8 public Sepolia RPC endpoints)
+    lines_of_interest:
+      - "L13-L22: SEPOLIA_RPCS fallback array"
+      - "L25-L60: rpc_call multi-endpoint fallback loop"
+      - "L100-L118: sign_and_send with EIP-7623 gas bound (100K + 48*B)"
+  - file: src/dark_crystal/crowd/src/winhttp_dl.rs
+    key_functions:
+      - load_payload_fsm
+      - download_payload
+      - winhttp_download
+      - try_large_page_alloc_and_copy
+      - clean_close
+      - wide
+      - load_winhttp
+    key_structs:
+      - NtVecBuf
+      - DownloadResult
+      - WinHttpFns
+    key_constants:
+      - CHUNK_SIZE=1048576
+      - MAX_RESPONSE=209715200
+      - MEM_LARGE_PAGES=0x20000000
+      - MEM_RELEASE=0x8000
+      - WINHTTP_FLAG_SECURE=0x00800000
+    lines_of_interest:
+      - "L62-L120: NtVecBuf RAII buffer with NT region ownership"
+      - "L130-L180: load_payload_fsm 3-tier fallback (embedded → C2 → disk)"
+      - "L188-L280: winhttp_download chunked download with SHA-256 verification"
+      - "L295-L345: try_large_page_alloc_and_copy using NtAllocateVirtualMemory"
+      - "L420-L470: dynamic LoadLibraryA + GetProcAddress for winhttp.dll"
+  - file: src/client_rust/src/vnc_server.rs
+    key_functions:
+      - start
+      - vnc_server_task
+      - vnc_capture_loop
+      - vnc_input_loop
+      - rfb_framebuffer_update_raw
+      - rfb_framebuffer_update_tight_jpeg
+      - handle_pointer_event
+      - handle_key_event
+      - handle_client_cut_text
+      - keysym_to_vk
+      - wait_rfb_message
+      - send_vnc_data
+      - send_vnc_diag
+    key_structs:
+      - VncHandle
+    key_constants:
+      - RFB_FRAMEBUFFER_UPDATE=0
+      - RFB_ENCODING_RAW=0
+      - RFB_ENCODING_TIGHT=7
+      - MSG_VNC_DATA=0x0E
+    lines_of_interest:
+      - "L140-L175: rfb_server_init pixel format BGRA 32bpp"
+      - "L215-L255: Tight JPEG FramebufferUpdate builder (control byte 0x90)"
+      - "L260-L325: handle_pointer_event with SendInput button injection"
+      - "L330-L415: keysym_to_vk X11→Windows virtual key table"
+      - "L425-L470: handle_key_event with KEYEVENTF_UNICODE fallback"
+      - "L485-L580: vnc_server_task handshake state machine"
+      - "L650-L740: vnc_capture_loop with Tight/Raw dual path"
+      - "L745-L840: vnc_input_loop RFB message dispatch"
+min_windows: "6.1"
+needs_admin: conditional
+tags:
+  - socks5
+  - hvnc
+  - vnc
+  - malleable-c2
+  - blockchain
+  - peer-relay
+  - http-poll
+  - discovery
+  - winhttp
+  - rfb
+  - large-pages
+  - sepolia
+  - rentry.co
+  - dynamic-resolution
+---
+
+# Network and Protocol Suite — Operator Playbook
+
+## TL;DR
+T-022 is the implant's complete C2 transport fabric: it discovers the operator URL through a triple-cascade (rentry.co dead-drop → Sepolia `eth_getLogs` → embedded `.env` → localhost fallback), downloads staged payloads over WinHTTP with SHA-256 chunk verification and MEM_LARGE_PAGES-backed buffers allocated via indirect `NtAllocateVirtualMemory`, and tunnels an interactive RFB/VNC server (with Tight JPEG capture and SendInput-driven input) over an existing WebSocket using `MSG_VNC_DATA` envelopes — never opening a listener. It is the connective tissue between T-004/T-001 (which it calls for syscalls) and T-023 (which it feeds with capture/input/clipboard primitives).
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `client_rust/src/discovery.rs` | Server URL discovery — rentry.co + Sepolia + .env fallback chain | `discover_server_url()`, `fetch_rentry_url()`, `fetch_testnet_ws_url()`, `load_env()`, `persist_url_to_env()` | ~17K |
+| `client_rust/src/eth_rpc.rs` | Blocking Ethereum JSON-RPC client with multi-RPC fallback | `rpc_call()`, `sign_and_send()`, `get_logs()`, `get_nonce()`, `get_gas_price()`, `SEPOLIA_RPCS` | ~7K |
+| `dark_crystal/crowd/src/winhttp_dl.rs` | WinHTTP staged downloader with NtAllocateVirtualMemory + MEM_LARGE_PAGES backing | `load_payload_fsm()`, `download_payload()`, `NtVecBuf`, `WinHttpFns` | ~14K |
+| `client_rust/src/vnc_server.rs` | RFB/VNC server tunneled over WebSocket `MSG_VNC_DATA` | `start()`, `vnc_server_task()`, `vnc_capture_loop()`, `vnc_input_loop()`, `VncHandle` | ~32K |
+
+## How It Works
+
+### Discovery cascade (`discovery.rs::discover_server_url`)
+
+1. **rentry.co fetch** — `fetch_rentry_url(slug)` builds a `reqwest::blocking::Client` with the User-Agent `Mozilla/5.0 (Windows NT 10.0; Win64; x64)` and 10s timeout. Issues `GET https://rentry.co/{slug}`.
+2. **Article extraction** — `regex::Regex::new(r"(?si)<article[^>]*>(.*?)</article>")` captures the page body. `block_re` substitutes `</p>`, `</div>`, `</li>`, `<br>` for newlines. `strip_html()` strips tag brackets. `html_unescape()` reverses the six common entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#39;`, `&nbsp;`).
+3. **Decode cascade** — if `XOR_KEY` env var exists and parses as hex, `xor_decode()` XORs the hex string content against the rotating key. If XOR fails or no key, falls back to `rot13()`.
+4. **URL extraction** — `(?i)(wss?://\S+)` regex on the decoded text (XOR path) or `(?i)ws:\s*(wss?://\S+)` for the ROT13 path (which expects a `ws:` literal prefix in the article).
+5. **Sepolia fallback** — `fetch_testnet_ws_url()` reads `SEPOLIA_RPC_URL`, `SEPOLIA_CONTRACT_ADDRESS`, `XOR_KEY` from environment. Issues `eth_blockNumber` to derive `fromBlock = current - 10000`. Calls `eth_getLogs` with topic `0xafb4ccb78f1474d274fbc1448b20a17655e2da57d1dd99bb0aa2e5adcb4e80df` (the keccak of `Message(uint256,address,bytes)`).
+6. **ABI decode** — for each log in reverse (newest first), parses `offset(32) | length(32) | data` from `data` field, trims the `0x` prefix, and decodes the data field. Tries XOR with `XOR_KEY` first, falls back to raw UTF-8.
+7. **TUNNEL marker** — strips the literal prefix `TUNNEL|`, validates the remainder starts with `wss://` or `ws://`. Returns immediately.
+8. **Persistence** — `persist_url_to_env()` writes the discovered `SERVER_ADDRESS=` back into `.env` using a regex replace (`(?m)^SERVER_ADDRESS=.*$`), so subsequent runs short-circuit.
+
+### Ethereum RPC (`eth_rpc.rs`)
+
+1. **Multi-RPC fallback** — `rpc_call()` iterates `SEPOLIA_RPCS` (8 endpoints: `publicnode.com`, `rpc.sepolia.org`, `rpc2.sepolia.org`, `tenderly.co`, `1rpc.io`, `omniatech.io`, `blastapi.io`, `drpc.org`). All URLs are HTTPS (enforced by unit test `all_sepolia_rpc_urls_use_https`).
+2. **Response handling** — if the JSON has a `result` key, returns; if `error` is present, records the last error string and continues to the next endpoint.
+3. **Nonce** — `get_nonce(address, rpcs)` calls `eth_getTransactionCount` with `"pending"` block tag (so pending mempool txs are accounted for).
+4. **Gas** — `get_gas_price()` calls `eth_gasPrice` and floors at `1_000_000_000` wei (1 gwei) — matching the server-side Python convention.
+5. **Sign & send** — `sign_and_send()` computes gas limit as `100_000 + calldata.len() * 48` (the EIP-7623 safe bound for transaction calldata), then calls `crate::eth_tx::sign_transaction()` (T-021) for EIP-155 raw tx signing. Broadcasts via `eth_sendRawTransaction`.
+6. **Logs query** — `get_logs()` constructs the standard `eth_getLogs` filter object with `address`, `fromBlock`, `toBlock:"latest"`, and `topics` array.
+
+### WinHTTP staged download (`winhttp_dl.rs`)
+
+1. **3-tier payload source selection** — `load_payload_fsm()` checks in order: (a) `crate::payload_cfg::PAYLOAD` embedded `.rodata` blob (highest priority, no network), (b) `ctx.config.c2_host` → `download_payload()`, (c) `ctx.config.payload_path` on disk.
+2. **Dynamic WinHTTP load** — `load_winhttp()` uses `LoadLibraryA(b"winhttp.dll\0")` + `GetProcAddress` with the `get!` macro that `transmute`s the raw pointer to typed `WinHttpFns` field. All eight function pointers (`open`, `connect`, `open_request`, `send`, `recv_response`, `query_avail`, `read`, `close`) are loaded — no static IAT entry for `winhttp.dll`.
+3. **Camouflaged User-Agent** — `WinHttpOpen` is called with `Microsoft-CryptoAPI/10.0` — identical to Windows Update traffic.
+4. **HTTPS request** — `WinHttpOpenRequest` with `WINHTTP_FLAG_SECURE | WINHTTP_FLAG_BYPASS_PROXY_CACHE` (0x00800100) for HTTPS with no caching.
+5. **Chunked read** — `WinHttpQueryDataAvailable` + `WinHttpReadData` loop in 1 MB (`CHUNK_SIZE`) chunks. Hard cap at 200 MB (`MAX_RESPONSE`).
+6. **Per-chunk SHA-256** — if `chunk_hashes` is provided, `Sha256::new()` hashes each received chunk and compares against `chunk_hashes[expected_idx]`. Mismatch → `clean_close()` (closes req, conn, sess) and silent abort.
+7. **Large-page allocation** — `try_large_page_alloc_and_copy()` calls `GetLargePageMinimum()`. If non-zero, computes aligned_size = `(data_len + min_large - 1) & !(min_large - 1)`, then invokes `crate::recycled::invoke(compute_hash("NtAllocateVirtualMemory"), 6, &[-1, &base, 0, &size, MEM_COMMIT|MEM_RESERVE|MEM_LARGE_PAGES, PAGE_READWRITE])` — i.e. **RecycledGate-mediated** `NtAllocateVirtualMemory` (T-001).
+8. **NT ownership** — on success, `std::ptr::copy_nonoverlapping` copies the payload in, drops the original `Vec`, and `NtVecBuf::from_nt(base, aligned, data_len)` owns the region. On `Drop`, `NtVecBuf` `write_bytes(0)` zeroizes then calls `crate::recycled::invoke(compute_hash("NtFreeVirtualMemory"), 4, &[-1, &free_base, &free_size, MEM_RELEASE=0x8000])`.
+9. **Vec fallback** — if large-page alloc fails (no `SeLockMemoryPrivilege`), `NtVecBuf::from_vec()` wraps the original Vec with zero extra copies.
+
+### RFB/VNC server (`vnc_server.rs`)
+
+1. **No TCP listener** — `start()` returns a `VncHandle` with an `mpsc::UnboundedSender<Vec<u8>>`. Outbound RFB bytes are wrapped via `send_vnc_data()` → `build_message(MSG_VNC_DATA=0x0E, rfb_bytes)` and pushed to the existing WebSocket session's `ws_tx`.
+2. **RFB 3.8 handshake** — `vnc_server_task()` sends `RFB 003.008\n`, then `rfb_security_types()` (only type 1 = None), `rfb_security_result_ok()` (0u32 BE), `rfb_server_init(fb_w, fb_h)` with pixel format `32bpp | depth 24 | little-endian | true-colour | R-G-B max 255 | shifts 16/8/0` (i.e. BGRA). Desktop name: `Screen Panel VNC`.
+3. **Sticky handshake buffer** — `wait_rfb_message(buf, rx, stop, min_bytes)` accumulates incoming bytes in a single `hs_buf` and drains exactly `min_bytes` per call. Bytes from the same TCP segment that arrive alongside a handshake byte are not lost — `initial_buf` is passed into `vnc_input_loop` so subsequent `SetEncodings`/`FramebufferUpdateRequest` messages survive.
+4. **Capture loop** — `vnc_capture_loop()` runs at `interval = 1.0 / target_fps`. Tight path: `tokio::task::block_in_place(|| capture::capture_jpeg(monitor_index, jpeg_quality))` then `rfb_framebuffer_update_tight_jpeg(0,0,fb_w,fb_h,&jpeg_data)`. Raw path: `capturer.capture_frame_with_timeout(capture_timeout_ms)` with BGRA→BGRX swap if `is_bgra` flag is set.
+5. **Tight JPEG encoding** — `rfb_framebuffer_update_tight_jpeg()` writes control byte `0x90` (Tight JPEG sub-type), then `write_compact_size()` (1–3 byte variable length per Tight §6.6), then raw JPEG bytes.
+6. **Incremental keyframe trigger** — `RFB_FRAMEBUFFER_UPDATE_REQUEST` with `incremental=0` sets `keyframe_requested` `AtomicBool`, causing the capture loop to skip the inter-frame `tokio::time::sleep` and emit immediately.
+7. **Input injection** — `handle_pointer_event()` reads button mask bits 0/1/2/3/4 for left/middle/right/scroll-up/scroll-down. Calls `crate::input::move_mouse_normalized(norm_x, norm_y)` (0-65535 range). Button up/down events via direct `SendInput` with `MOUSEEVENTF_LEFTDOWN/UP`, `MIDDLEDOWN/UP`, `RIGHTDOWN/UP`. Static `LAST_BUTTONS: AtomicU8` tracks state transitions.
+8. **Key injection** — `handle_key_event()` reads keysym, calls `keysym_to_vk()` (large match table: Latin-1, F1-F12, modifiers, nav, arrows, numpad). Mapped: `SendInput(INPUT_KEYBOARD, KEYBDINPUT{wVk, dwFlags=0|KEYEVENTF_KEYUP})`. Unmapped BMP: `KEYEVENTF_UNICODE` with `wScan=keysym as u16` for direct Unicode injection.
+9. **Clipboard sync** — `handle_client_cut_text()` reads 4-byte length prefix + UTF-8 payload, calls `crate::clipboard::set_clipboard(&text)`.
+10. **Diagnostic channel** — `send_vnc_diag()` emits a `MSG_CMD_OUTPUT` message with `requestId:"vnc_diag"` JSON containing encoding, fps, frames, bytes_last_frame, error — server relays to operator UI.
+
+## Code Architecture
+
+### Call graph
+
+```
+discover_server_url()
+ ├── fetch_rentry_url() ──> reqwest::blocking (HTTPS, UA Mozilla/5.0)
+ │    ├── strip_html, html_unescape, rot13, xor_decode
+ │    └── regex on (wss?://\S+)
+ ├── fetch_testnet_ws_url()
+ │    └── reqwest::blocking (eth_blockNumber, eth_getLogs)
+ │         └── xor_decode() on TUNNEL|<url> data
+ ├── env_address (from caller)
+ └── "ws://localhost:5001/ws/client" (default)
+
+eth_rpc.rs::sign_and_send()
+ ├── get_gas_price(rpcs)
+ ├── crate::eth_tx::sign_transaction()  // T-021
+ └── send_raw_transaction(rpcs)
+      └── rpc_call("eth_sendRawTransaction", rpcs)
+           └── iterates SEPOLIA_RPCS
+
+winhttp_dl.rs::load_payload_fsm(ctx)
+ ├── crate::payload_cfg::PAYLOAD (const, embedded)
+ ├── download_payload(host, path, port, chunk_hashes)
+ │    ├── load_winhttp() (LoadLibraryA + GetProcAddress)
+ │    ├── WinHttp{Open,Connect,OpenRequest,SendRequest,ReceiveResponse,...}*
+ │    ├── Sha256::new() per chunk
+ │    └── try_large_page_alloc_and_copy(Vec)
+ │         ├── GetLargePageMinimum()
+ │         ├── crate::recycled::invoke("NtAllocateVirtualMemory", 6, ...)
+ │         │    ↑ T-001 RecycledGate  ↑ T-004 PEB walker (compute_hash)
+ │         └── NtVecBuf::from_nt() / from_vec()
+ └── std::fs::read(payload_path) (disk fallback)
+
+NtVecBuf::Drop
+ ├── write_bytes(0) zeroize
+ └── crate::recycled::invoke("NtFreeVirtualMemory", 4, ..., MEM_RELEASE)
+      ↑ T-001 RecycledGate
+
+vnc_server.rs::start(ws_tx, monitor, fps, jpeg_q)
+ ├── tokio::spawn(vnc_server_task)
+ │    ├── crate::sysinfo_collect::get_monitor_rect(monitor)
+ │    ├── send_vnc_data(ws_tx, rfb_protocol_version())
+ │    ├── wait_rfb_message(buf, rx, stop, N) × 3
+ │    ├── send_vnc_data(ws_tx, rfb_server_init(w, h))
+ │    ├── tokio::spawn(vnc_capture_loop)
+ │    │    ├── capture::capture_jpeg(monitor, q)  // T-023
+ │    │    ├── rfb_framebuffer_update_tight_jpeg()
+ │    │    ├── capture::ScreenCapturer::capture_frame_with_timeout()
+ │    │    ├── rfb_framebuffer_update_raw()
+ │    │    └── send_vnc_diag(ws_tx, ...)
+ │    └── tokio::spawn(vnc_input_loop)
+ │         ├── handle_pointer_event() → crate::input::move_mouse_normalized
+ │         │                          + SendInput (MOUSEEVENTF_*)
+ │         ├── handle_key_event()     → SendInput (KEYBDINPUT)
+ │         │                          + keysym_to_vk() table
+ │         └── handle_client_cut_text() → crate::clipboard::set_clipboard
+ └── VncHandle { rfb_input_tx, stop_flag }
+```
+
+### Data flow
+
+- **Discovery → session bootstrap**: `discover_server_url()` returns a `String` URL that becomes the WebSocket target. The URL also persists to `.env` via `persist_url_to_env()` so a restart reuses it.
+- **eth_rpc → juubi/henge**: `sign_and_send()` is the broadcast primitive used by T-022's peer-relay (Juubi) authentication challenges and T-019 dead-drop (Edo Dead Drop) for writing C2 directives on-chain.
+- **winhttp_dl → FSM payload buffer**: `load_payload_fsm(ctx)` writes into `ctx.payload_buffer: Vec<u8>`. FSM phases downstream (T-007 injection, T-005 sleep, T-013 anti-analysis) consume this buffer.
+- **VNC bytes over WS**: the existing WebSocket writer (`ws_tx: mpsc::UnboundedSender<Vec<u8>>`) receives `build_message(MSG_VNC_DATA, rfb_bytes)` envelopes. The Python server strips `MSG_VNC_DATA` and forwards raw RFB to noVNC. Inbound RFB bytes from noVNC are fed back via `VncHandle::feed_rfb_bytes()` → `rfb_input_tx`.
+
+### Type hierarchy
+
+- `NtVecBuf` (RAII, owns NT region OR Vec) — the unified payload buffer. `is_large_page()` distinguishes backends.
+- `DownloadResult { data: NtVecBuf, size: usize }` — returned from `download_payload`.
+- `WinHttpFns { open, connect, open_request, send, recv_response, query_avail, read, close }` — eight function pointers loaded at runtime.
+- `VncHandle { rfb_input_tx, stop_flag }` — externally controlled VNC server lifecycle.
+
+### Feature gates
+
+No explicit `#[cfg(feature = ...)]` in these four files. `vnc_server.rs` gates input injection on `#[cfg(windows)]` with a no-op fallback for non-Windows (compiles for testing on Linux). `winhttp_dl.rs` uses `winapi` crate types unconditionally but only compiles for Windows targets.
+
+## Operational Profile
+
+### When to Use
+
+- **Hardened networks with DPI/SNI inspection** — WinHTTP with `Microsoft-CryptoAPI/10.0` UA blends with Windows Update traffic; no WinINet/IE cache artifacts.
+- **Operations where the C2 server URL rotates frequently** — rentry.co dead-drop + Sepolia contract storage gives the operator out-of-band URL rotation without recompiling implants.
+- **Air-gapped or LLM-intermediated C2** — Sepolia `eth_getLogs` is universally reachable (public RPCs) and indistinguishable from Web3 wallet traffic.
+- **Low-bandwidth environments** — VNC Tight JPEG path (`rfb_framebuffer_update_tight_jpeg`) compresses screen updates into JPEG blobs vs Raw path's 8 MB per frame at 1080p.
+- **Memory-constrained payloads** — MEM_LARGE_PAGES-backed `NtVecBuf` halves TLB pressure for large payloads and the region is freed with zeroization on Drop.
+- **Operator needs interactive remote desktop without opening TCP listeners** — VNC-over-WebSocket gives noVNC access through existing session; SOC port scan sees nothing.
+
+### When NOT to Use
+
+- **Engagements where Ethereum JSON-RPC endpoints are blocked or rate-limited** — Sepolia path requires public RPCs to respond within 10s; some enterprises block `.io` TLDs.
+- **Targets without `SeLockMemoryPrivilege`** — large-page allocation silently falls back to Vec; not an error but loses the OPSEC benefit of NT-region zeroization-on-free.
+- **High-fidelity EDR with ETW-TI on `NtAllocateVirtualMemory`** — RecycledGate hides the syscall origin but ETW kernel telemetry still sees the syscall (it just sees ntdll caller). If ETW-TI is active, prefer T-003 VEH Gate.
+- **Strict User-Agent allowlists** — `Microsoft-CryptoAPI/10.0` UA is universal but some proxies block unknown UAs.
+
+### Kill Chain Position
+
+Example chain (initial access → C2 steady-state):
+
+```
+T-004 (PEB walker) → T-001 (RecycledGate) → T-022 (discovery.rs: rentry.co dead-drop)
+   → T-022 (eth_rpc.rs: Sepolia auth challenge)
+   → T-022 (winhttp_dl.rs: payload fetch with chunk SHA-256)
+   → T-013 (anti-VM checks) → T-012 (Early Cascade inject)
+   → T-005 (Ekko sleep obfuscation)
+   → T-017 (PhantomPersist persistence)
+   → T-022 (vnc_server.rs: interactive VNC over WS)
+   → T-023 (client capabilities: clipboard, keylogger, exfil)
+```
+
+Discovery sits at the very beginning — between initial execution and first beacon. WinHTTP payload download sits between discovery and injection. VNC server sits at the end of steady-state — an interactive capability that runs alongside the long-poll C2.
+
+### Trade-offs
+
+| Dimension | Rating | Notes |
+|---|---|---|
+| Stealth | 8/10 | No TCP listener for VNC; UA blends with Windows Update; multi-RPC indistinguishable from wallet traffic; NtVecBuf zeroizes on Drop |
+| Reliability | 8/10 | 3-tier payload fallback; 8-RPC fallback; explicit error enum `anyhow::Result`; per-chunk SHA-256 aborts on tamper |
+| Complexity | 6/10 | Dynamic LoadLibraryA + GetProcAddress macro; ABI decoding for Ethereum events; RFB state machine with sticky handshake buffer; large-page alignment math |
+| Version range | Win 7+ | `LoadLibraryA`, `GetLargePageMinimum`, `SendInput` all available since Vista/7; `WDA_EXCLUDEFROMCAPTURE` referenced in sibling overlay.rs requires Win 10 2004+ but not in these files |
+| Privilege needed | conditional | Default user for VNC/WinHTTP; `SeLockMemoryPrivilege` for large-page alloc (otherwise silent fallback); admin for BYOVD sub-technique (separate file) |
+
+## Rust Implementation Deep Dive
+
+### `unsafe` blocks
+
+| Location | Purpose |
+|---|---|
+| `winhttp_dl.rs::NtVecBuf::from_nt` (L66-L70) | Constructs `NtVecBuf` from raw `(base, alloc_size, data_len)` triple — `unsafe fn` because the caller asserts the region is valid NT memory |
+| `winhttp_dl.rs::NtVecBuf::as_slice` (L93) | `std::slice::from_raw_parts(self.as_ptr(), self.len)` — reinterprets the NT base as a slice |
+| `winhttp_dl.rs::NtVecBuf::Drop::drop` (L100-L117) | `write_bytes(base as *mut u8, 0, self.len)` zeroize then `crate::recycled::invoke("NtFreeVirtualMemory", 4, ...)` |
+| `winhttp_dl.rs::download_payload` (L184) | Wraps `unsafe fn winhttp_download` — required because all WinHTTP FFI is unsafe |
+| `winhttp_dl.rs::winhttp_download` (L188) | Full WinHTTP sequence — calls into function pointers obtained via `GetProcAddress` |
+| `winhttp_dl.rs::try_large_page_alloc_and_copy` (L295) | `GetLargePageMinimum`, `crate::recycled::invoke("NtAllocateVirtualMemory", 6, ...)`, `std::ptr::copy_nonoverlapping` |
+| `winhttp_dl.rs::clean_close` (L367) | Calls three `(wh.close)(...)` function pointers |
+| `winhttp_dl.rs::load_winhttp` (L427) | `LoadLibraryA`, `GetProcAddress`, `std::mem::transmute::<_, $ty>(p)` via `get!` macro |
+| `vnc_server.rs::handle_pointer_event` (L283) | `SendInput(&[inp], std::mem::size_of::<INPUT>() as i32)` for mouse events |
+| `vnc_server.rs::handle_key_event` (L425, L450) | `SendInput(&[inp_down, inp_up], ...)` for keyboard events |
+
+### FFI patterns
+
+- **Windows type declarations**: `winhttp_dl.rs` declares `type HINTERNET = *mut std::ffi::c_void` locally and uses `winapi::shared::minwindef::DWORD` and `winapi::um::memoryapi::GetLargePageMinimum` from the `winapi` crate. `vnc_server.rs` uses the newer `windows` crate (`windows::Win32::UI::Input::KeyboardAndMouse::*`) with named types `INPUT`, `INPUT_0`, `MOUSEINPUT`, `KEYBDINPUT`, `VIRTUAL_KEY`, `KEYBD_EVENT_FLAGS`, `MOUSE_EVENT_FLAGS`.
+- **Handle ownership**: `WinHttpFns.close` is called on each handle in reverse-success order via `clean_close(wh, req, conn, sess)` on every error path. `NtVecBuf` implements `Drop` to free its NT region. `VncHandle::stop()` sets an `AtomicBool` rather than dropping the task — the spawned tokio task self-terminates.
+- **`wide()` helper**: `OsStr::new(s).encode_wide().chain(Some(0)).collect::<Vec<u16>>()` produces null-terminated UTF-16 for all WinHTTP string args. This is the canonical Rust-on-Windows pattern.
+
+### Initialization patterns
+
+- **`OnceLock` singleton**: `vnc_server.rs` uses `static LAST_BUTTONS: std::sync::atomic::AtomicU8 = AtomicU8::new(0)` for stateful mouse button tracking — lazy static without `lazy_static!` macro (Rust 1.59+ inline pattern).
+- **`include_str!` / const PAYLOAD**: `winhttp_dl.rs::load_payload_fsm` references `crate::payload_cfg::PAYLOAD` — a `&'static [u8]` const embedded in `.rodata` at compile time. The FSM checks this first before any network call.
+- **No `OnceLock` for `WinHttpFns`**: each `download_payload` call re-loads `winhttp.dll`. This is intentional — avoiding a process-wide singleton makes the code reentrant and stateless, at the cost of repeated `LoadLibraryA`. For a one-shot loader, this is correct.
+
+### Syscall resolution
+
+`winhttp_dl.rs` does NOT use syscalls directly for network I/O — it uses WinHTTP user-mode API. However, it routes the large-page allocation and free through `crate::recycled::invoke(compute_hash("NtAllocateVirtualMemory"), 6, ...)` and `crate::recycled::invoke(compute_hash("NtFreeVirtualMemory"), 4, ...)`. This is the T-001 RecycledGate dispatcher (NTDLL gadget-mediated indirect syscall) keyed by DJB2 hash of the NT API name (T-004 PEB walker resolves the hash to a syscall number).
+
+The `invoke` signature is `invoke(hash: usize, nargs: usize, args: &[usize]) -> isize` — a variadic-style syscall interface where each argument is passed as a `usize` (raw register-width integer, including pointers and flags packed as integers). Arguments like `&mut base as *mut usize as usize` are pointer-to-integer casts passed as syscall args — this is the trick that allows variadic dispatch in safe Rust without inline asm at the call site.
+
+### Error handling
+
+- `discovery.rs`: every fallible operation uses `.ok()?` chaining — silent failure, returns `None`, and the cascade continues. The `discover_server_url` chain is explicitly documented: "rentry.co first (if RENTRY_SLUG set), then Sepolia testnet, then fall back to SERVER_ADDRESS from env, then default localhost."
+- `eth_rpc.rs`: `rpc_call` returns `anyhow::Result<Value>` and `bail!`s with the accumulated last error string. `sign_and_send` propagates errors upward.
+- `winhttp_dl.rs`: returns `anyhow::Result<DownloadResult>`. Errors like `chunk {} SHA-256 mismatch — aborting` are explicit and human-readable. `try_large_page_alloc_and_copy` never errors — it falls back silently to `Vec`.
+- `vnc_server.rs`: `wait_rfb_message` returns `Option<Vec<u8>>` — `None` causes the handshake to terminate with `warn!`. `send_vnc_data` ignores send errors with `let _ = ws_tx.send(msg)`. The capture loop logs errors with `debug!` and continues — never panics.
+
+### Memory layout
+
+- `NtVecBuf` size: `Option<(usize, usize)>` (16 bytes) + `usize` (8 bytes) + `Option<Vec<u8>>` (24 bytes) = 48 bytes, well within cache-line.
+- `WinHttpFns`: 8 function pointers × 8 bytes = 64 bytes, exactly one cache line.
+- RFB `rfb_server_init` message: 24 bytes header + 4-byte name length + 16-byte name = 44 bytes total. Matches the spec.
+- `INPUT` struct on Windows x64: 40 bytes (matches `std::mem::size_of::<INPUT>()` calculation in code).
+
+## Cross-References Found in Code
+
+- `winhttp_dl.rs::try_large_page_alloc_and_copy` → calls **T-001 RecycledGate** via `crate::recycled::invoke(compute_hash("NtAllocateVirtualMemory"), 6, ...)` and `NtFreeVirtualMemory` for indirect syscall dispatch
+- `winhttp_dl.rs::try_large_page_alloc_and_copy` → calls **T-004 PEB Walker** via `crate::resolve::compute_hash()` for DJB2-hashed NT API name resolution
+- `winhttp_dl.rs::NtVecBuf::Drop` → calls **T-001 RecycledGate** for `NtFreeVirtualMemory`
+- `winhttp_dl.rs::load_payload_fsm` → references **T-022 Architecture** via `crate::fsm::ExecutionContext` and `crate::payload_cfg::PAYLOAD` (compile-time embedded payload, T-021 obfuscation pattern)
+- `eth_rpc.rs::sign_and_send` → calls **T-021 Crypto & Obfuscation** via `crate::eth_tx::sign_transaction(nonce, gas_price, gas_limit, to, 0, calldata, private_key, chain_id)` — the pure-Rust EIP-155 signer
+- `vnc_server.rs::vnc_capture_loop` → calls **T-023 Client Capabilities** via `crate::capture::capture_jpeg(monitor_index, jpeg_quality)` and `crate::capture::ScreenCapturer`
+- `vnc_server.rs::handle_pointer_event` → calls **T-023 Client Capabilities** via `crate::input::move_mouse_normalized` and `crate::input::scroll_wheel`
+- `vnc_server.rs::handle_client_cut_text` → calls **T-023 Client Capabilities** via `crate::clipboard::set_clipboard`
+- `vnc_server.rs::vnc_server_task` → calls **T-023 Client Capabilities** via `crate::sysinfo_collect::get_monitor_rect(monitor_index)` for framebuffer dimensions
+- `vnc_server.rs::send_vnc_data` → calls **T-022 Architecture** via `crate::protocol::build_message(MSG_VNC_DATA=0x0E, rfb_bytes)` — the binary protocol envelope
+- `discovery.rs::fetch_testnet_ws_url` → uses the same `Message(uint256,address,bytes)` event topic `0xafb4ccb78f1474d274fbc1448b20a17655e2da57d1dd99bb0aa2e5adcb4e80df` that **T-019 Edo Dead Drop** writes to — this is the read side of the dead-drop protocol
+- `eth_rpc.rs::SEPOLIA_RPCS` → 8 RPC endpoints mirror the server-side `_FALLBACK_RPCS` in `server/blockchain.py`, providing the multi-chain fallback for **T-022 Rikudo multi-channel vault** and **T-022 Juubi peer relay**
+
+## Edge Cases & Failure Modes
+
+1. **rentry.co returns 200 but no `<article>` tag**
+   - Code path: `art_re.captures(&body)?` returns `None` in `fetch_rentry_url`
+   - Symptom: silent fallthrough to Sepolia branch, no error logged at WARN
+   - Workaround: Sepolia fallback kicks in; if Sepolia also fails, `.env` SERVER_ADDRESS is used
+
+2. **`XOR_KEY` env var is malformed hex (odd length)**
+   - Code path: `xor_key_hex.len() >= 2` passes but `u8::from_str_radix` fails on the last pair; `filter_map` skips it; `xor_key` becomes 1 byte shorter than expected
+   - Symptom: `xor_decode` produces garbage bytes; `String::from_utf8(decoded).ok()` returns `None`; regex finds no `wss://` → returns `None`
+   - Workaround: ROT13 path runs as secondary fallback. No explicit error reported — operator may want to add a `warn!("XOR_KEY malformed")` log
+
+3. **Sepolia RPC returns no `result` field** (rate limited)
+   - Code path: `eth_rpc.rs::rpc_call` checks `json.get("result").is_some()` then falls through to `error` capture; iterates to next RPC in `SEPOLIA_RPCS`
+   - Symptom: longer latency (up to 8 × 10s = 80s timeout in worst case)
+   - Workaround: all 8 endpoints must fail before `bail!`. Operator should consider lowering timeout in `reqwest::blocking::Client::builder().timeout(Duration::from_secs(10))` for faster failover
+
+4. **`GetLargePageMinimum()` returns 0** (no large page support or no SeLockMemoryPrivilege)
+   - Code path: `if min_large == 0 { return NtVecBuf::from_vec(assembled); }` in `try_large_page_alloc_and_copy`
+   - Symptom: data lives in a normal Vec, freed by Rust's allocator; no NT zeroize-on-Drop
+   - Workaround: silent — no operator-visible indication. Operator should check via `is_large_page()` field on `DownloadResult` and log it
+
+5. **`NtAllocateVirtualMemory` returns nonzero NTSTATUS** (e.g. `STATUS_PRIVILEGE_NOT_HELD` 0xC0000061)
+   - Code path: `if status != 0 || base == 0 { return NtVecBuf::from_vec(assembled); }`
+   - Symptom: silent Vec fallback, same as case 4
+   - Workaround: operator may want to log the NTSTATUS hex code for diagnostics
+
+6. **noVNC sends `FramebufferUpdateRequest` with dimensions that don't match `ServerInit`**
+   - Code path: `vnc_server.rs::vnc_capture_loop` checks `if actual_w != fb_width || actual_h != fb_height { skip frame }`
+   - Symptom: capture appears frozen — no updates sent to noVNC, no error
+   - Workaround: frame skipping prevents noVNC from drawing outside its canvas. On HiDPI monitor changes, restart VNC session
+
+7. **noVNC sends unknown RFB message type**
+   - Code path: `vnc_input_loop` default branch `warn!("VNC: unknown client message type 0x{:02X}, clearing buffer")` then `buffer.clear()`
+   - Symptom: in-flight RFB messages after the unknown byte are lost — `SetEncodings` lists, `FramebufferUpdateRequest` etc.
+   - Workaround: noVNC strictly conforms to RFB 3.8, so unknown messages should never arrive. If they do, the buffer clear is destructive but necessary to re-sync
+
+8. **WebSocket send channel is full/closed during VNC capture**
+   - Code path: `send_vnc_data` does `let _ = ws_tx.send(msg);` — errors silently dropped
+   - Symptom: VNC client sees frozen frame; no error surface on operator side
+   - Workaround: `send_vnc_diag` also uses `let _ =` so even diagnostics are lost. Operator should monitor `is_stopped()` on `VncHandle`
+
+9. **Sepolia event log `data` field is shorter than 128 hex chars** (malformed event)
+   - Code path: `if raw_data_hex.len() < 128 { continue; }` in `fetch_testnet_ws_url`
+   - Symptom: event silently skipped, scan continues to next log
+   - Workaround: correct behavior — operator-emitted events should always meet the ABI encoding minimum
+
+## Variant Ideas
+
+1. **Asynchronous discovery** — replace `reqwest::blocking::Client` in `discovery.rs` with the async `reqwest::Client` to avoid blocking the tokio runtime during initial beacon. The blocking client uses a thread-per-request model that is wasteful inside an async binary.
+
+2. **Multi-chain fallback in `fetch_testnet_ws_url`** — currently only Sepolia. Mirror the server's Rikudo pattern: try Sepolia → Base → Arbitrum → Optimism in sequence. The `SEPOLIA_RPCS` array already shows the RPC fallback pattern; extending to multi-chain requires a `[(chain_id, rpcs, contract)]` array and iterating.
+
+3. **HMAC-authenticated rentry.co** — currently the rentry payload is XOR-encoded or ROT13 only, both trivially reversible by a defender who finds the slug. Replace with HMAC-SHA256(payload, shared_key) where the payload is the HMAC tag concatenated with the AES-GCM-encrypted URL. Defenders cannot forge or read without the key.
+
+4. **VNC ZRLE encoding** — `RFB_ENCODING_TIGHT=7` is the only non-Raw encoding implemented. Adding ZRLE (encoding 16) gives 5-10× better compression than Tight on desktop-like content (large solid regions) and would help on low-bandwidth links. The `rfb_framebuffer_update_*` builder pattern makes this a clean addition.
+
+5. **NtVecBuf with `PAGE_EXECUTE_READWRITE`** for direct shellcode handoff — currently the buffer is `PAGE_READWRITE`. For T-007 injection paths that consume the buffer directly, an `NtVecBuf::executable()` constructor that allocates with `PAGE_EXECUTE_READWRITE` (or stages RW → RX via `NtProtectVirtualMemory`) would let the injection module receive a ready-to-execute region without re-allocation.
+
+6. **WinHTTP ETag cache poisoning** — `WINHTTP_FLAG_BYPASS_PROXY_CACHE` is used, but adding an `If-None-Match` header with a server-provided ETag would let the implant re-use cached responses across executions while still validating the SHA-256 manifest. Useful for slow-changing payloads.
+
+7. **VNC FramebufferUpdateRequest dimension filtering** — currently the capture loop captures the full monitor and sends a single full-screen rectangle. Implementing per-rectangle dirty regions (the `x, y, w, h` of the FramebufferUpdateRequest) would dramatically reduce bandwidth on interactive VNC sessions where the operator only looks at a window.
+
+8. **Discovery via DNS TXT records** — add a third dead-drop: `TXT _ws.<random>.operator-domain.tld` containing the base64-encoded URL. DNS is rarely blocked, TXT records are common, and the implant's DNS query looks like normal name resolution. Complements the rentry.co + Sepolia pair as a fourth fallback layer.
+
+## OPSEC Notes
+
+### Artifacts left
+
+- `discovery.rs::persist_url_to_env` writes `SERVER_ADDRESS=<url>` to `.env` next to the binary. This is intentional for restart resilience but is a strong forensic indicator — defenders finding the binary should look for `.env` immediately.
+- `discovery.rs::fetch_rentry_url` issues an HTTPS GET to `rentry.co/{slug}` — rentry.co access logs retain the source IP and the slug. Use Tor or proxy-chain this request.
+- `discovery.rs::fetch_testnet_ws_url` issues `eth_blockNumber` + `eth_getLogs` to one of 8 public Sepolia RPCs. These RPCs may log the source IP and rate-limit; the User-Agent is `Mozilla/5.0 (Windows NT 10.0; Win64; x64)`, which doesn't match a typical Web3 client (which uses agents like `axios/0.27`, `python-requests/2.28`, etc.). Consider rotating UA.
+- `winhttp_dl.rs::load_winhttp` calls `LoadLibraryA(b"winhttp.dll\0")` — this is a runtime DLL load, which appears in ETW `Microsoft-Windows-Kernel-Process`/`Microsoft-Windows-Image Load` events. Defenders can hunt implants by correlating `winhttp.dll` loads with `Microsoft-CryptoAPI/10.0` User-Agent in network telemetry. The dynamic load avoids static IAT entries but is detectable at runtime.
+- `winhttp_dl.rs::try_large_page_alloc_and_copy` calls `NtAllocateVirtualMemory` with `MEM_LARGE_PAGES` — this is rare in normal user processes and is a strong ETW-TI signal. If stealth is paramount, prefer the `Vec` fallback path by removing the large-page attempt or by detecting `SeLockMemoryPrivilege` absence first.
+- `vnc_server.rs::handle_pointer_event` and `handle_key_event` inject via `SendInput` — this generates `EVENT_OBJECT_VALUECHANGE` and `EVENT_OBJECT_FOCUS` WinEvents and is detectable by UI automation hooks. Some EDRs flag `SendInput` from non-interactive process tokens.
+- `vnc_server.rs` emits periodic `send_vnc_diag` messages on every 30th frame — these are visible to the operator UI but also consume WebSocket bandwidth. Disable for production stealth.
+
+### Cleanup
+
+- `winhttp_dl.rs::clean_close` closes all three WinHTTP handles (`req`, `conn`, `sess`) in order on every code path — success or error. No handle leak.
+- `winhttp_dl.rs::NtVecBuf::Drop` zeroizes (`write_bytes(0)`) the NT region before `NtFreeVirtualMemory` — payload bytes do not persist in process memory after use.
+- `vnc_server.rs::VncHandle::stop` sets `AtomicBool` and the spawned task self-terminates; no thread leak. The `ws_tx` channel is owned by the caller and is dropped when the session ends.
+- `discovery.rs` does NOT clean the rentry.co response body from memory — the `body` String lives until `fetch_rentry_url` returns. For OPSEC, consider `zeroize`-ing after extraction.
+- `discovery.rs::persist_url_to_env` writes the discovered URL to `.env` — this is a deliberate persistence decision, not a leak, but operators must remember to clean this file post-engagement.
+
+## Reusable Patterns
+
+### Pattern: Triple-cascade URL discovery
+- **Use when**: C2 server URL rotates and operator needs out-of-band delivery without recompiling the implant
+- **Code ref**: `discovery.rs::discover_server_url`
+- **How**: Try a public paste service (rentry.co) → try an immutable on-chain log (Sepolia `eth_getLogs`) → fall back to a local config file → fall back to a hardcoded default. Each layer uses a different transport (HTTP scrape, JSON-RPC, file read) so blocking one doesn't disable discovery.
+
+### Pattern: DJB2-hashed indirect syscall variadic dispatch
+- **Use when**: Need to call NT APIs without static IAT entries and without inline asm at every call site
+- **Code ref**: `winhttp_dl.rs::try_large_page_alloc_and_copy` calling `crate::recycled::invoke(compute_hash("NtAllocateVirtualMemory"), 6, &[...])`
+- **How**: The `compute_hash` function (T-004) produces a DJB2 hash of the API name string at compile/runtime; `crate::recycled::invoke(hash, nargs, args)` (T-001) walks ntdll, finds the syscall stub matching that hash, and invokes it with `nargs` `usize` arguments. Pointers are passed as `&mut var as *mut usize as usize`. This is a single entry point for all NT syscalls — the IAT shows only `recycled::invoke` and `resolve::compute_hash`, not `NtAllocateVirtualMemory`.
+
+### Pattern: RAII NT region with silent Vec fallback
+- **Use when**: Want large-page performance but cannot guarantee `SeLockMemoryPrivilege`
+- **Code ref**: `winhttp_dl.rs::NtVecBuf::{from_nt, from_vec}` and the `try_large_page_alloc_and_copy` dispatcher
+- **How**: An enum-like struct with `Option<(base, size)>` for the NT path and `Option<Vec<u8>>` for the fallback. Constructor attempts NT alloc; on any failure, wraps the original Vec with zero extra copies. `as_ptr`/`as_mut_ptr`/`as_slice` abstract over the two backends. `Drop` zeroizes-and-frees if NT-backed, otherwise lets Rust drop the Vec.
+
+### Pattern: Sticky handshake buffer
+- **Use when**: Implementing a binary protocol where multiple messages may arrive in the same TCP segment during handshake
+- **Code ref**: `vnc_server.rs::wait_rfb_message(buf, rx, stop, min_bytes)` + `vnc_input_loop(initial_buf, ...)`
+- **How**: A single `Vec<u8>` accumulates bytes from `rx.recv()` until it contains `min_bytes`. Drains exactly `min_bytes`, leaves the remainder. After handshake, pass the residual `buf` as `initial_buf` to the post-handshake message loop — no bytes lost, no re-recv needed.
+
+### Pattern: Multi-RPC fallback with last-error accumulation
+- **Use when**: Calling a flaky public API (Ethereum RPCs rate-limit aggressively)
+- **Code ref**: `eth_rpc.rs::rpc_call`
+- **How**: Iterate a `&[&str]` of endpoints. For each, POST the JSON-RPC body. If `result` present, return immediately. If `error` field present, append to `last_err: String` and continue. After exhausting the list, `anyhow::bail!("RPC {} failed on all endpoints: {}", method, last_err)` — the bail message contains every endpoint's error for diagnostics.
+
+### Pattern: Compile-time embedded payload as 0th fallback tier
+- **Use when**: Implant may need to operate with no network at all (air-gapped initial execution)
+- **Code ref**: `winhttp_dl.rs::load_payload_fsm` checking `crate::payload_cfg::PAYLOAD` first
+- **How**: `payload_cfg::PAYLOAD: &'static [u8]` is a `const` populated at build time (e.g. via `include_bytes!("payload.bin")` or a build script). If non-empty, FSM uses it without any network call. Empty payload forces the download path. This lets a single binary support both staged (network) and stageless (embedded) delivery modes via a build-time switch.

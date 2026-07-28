@@ -1,0 +1,673 @@
+{
+  "generated_at": "2026-07-23 19:00:22",
+  "batch": 1,
+  "total_batches": 5,
+  "input_notes": 50,
+  "clusters": [
+    {
+      "cluster_id": "pe-format-traversal-foundation",
+      "canonical_name": "PE Format Header Traversal as Foundational Primitive",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Five convergence/coverage notes across multiple atlas batches all identify PE parsing (IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, Optional Header, DataDirectory, IMAGE_EXPORT_DIRECTORY) as a cross-cutting prerequisite for SSN resolution, export hijack, module stomping, and thread hijack.",
+      "member_note_ids": [
+        "lgtm:pe-format-traversal-foundations",
+        "lgtm:pe-parsing-foundational-utility",
+        "lgtm:pe-format-parsing-foundation",
+        "lgtm:pe-parsing-primitives-coverage",
+        "lgtm:coverage-gap-pe-parsing-prerequisite"
+      ],
+      "consolidated_description": "A foundational reference card documenting the PE format traversal required by T-002, T-004, T-006, T-007, T-008, T-013, T-016, and T-017. Walk the IMAGE_DOS_HEADER (e_magic 0x5A4D \"MZ\", e_lfanew at offset 0x3C), then IMAGE_NT_HEADERS64 (Signature \"PE\\0\\0\"), IMAGE_FILE_HEADER, IMAGE_OPTIONAL_HEADER64 (Magic 0x20B for PE32+), and DataDirectory entries. Critical offsets: IMAGE_DIRECTORY_ENTRY_EXPORT (index 0) for export table traversal to resolve SSNs and function pointers; IMAGE_DIRECTORY_ENTRY_BASERELOC (index 5) for relocation-aware module stomping; IMAGE_DIRECTORY_ENTRY_IAT (index 12) for IAT hooking. The export table walk dereferences IMAGE_EXPORT_DIRECTORY.Name (RVAs to function names), NumberOfNames, AddressOfNames, AddressOfFunctions, AddressOfNameOrdinals — required by both SysWhispers-style SSN resolution and export-hijack DLLs. Without this card, T-002 (syscalls) and T-013 (thread hijack) become hard to navigate for readers without prior PE internals background.\n",
+      "technical_anchor": "IMAGE_DOS_HEADER.e_lfanew at offset 0x3C → IMAGE_NT_HEADERS64 → IMAGE_OPTIONAL_HEADER64.Magic = 0x20B (PE32+) → DataDirectory[0] (IMAGE_DIRECTORY_ENTRY_EXPORT) → IMAGE_EXPORT_DIRECTORY",
+      "would_relate_to": [
+        "T-002",
+        "T-004",
+        "T-006",
+        "T-007",
+        "T-008",
+        "T-013",
+        "T-016",
+        "T-017",
+        "T-009",
+        "T-010"
+      ],
+      "priority": "high",
+      "priority_reason": "Five convergence notes name this as the prerequisite for nine other T-NNN cards; filling this gap unblocks navigation across half the vault."
+    },
+    {
+      "cluster_id": "ntdll-unhook-method-typology",
+      "canonical_name": "NTDLL Unhook Method Typology and Restore Sequence",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Three notes (one gap, two convergence) describe the same three-variant NTDLL unhook technique; consolidating them produces one canonical typology card rather than three fragments.",
+      "member_note_ids": [
+        "lgtm:coverage-gap-ntdll-restore-api-sequence",
+        "lgtm:cross-source-ntdll-unhook-convergence",
+        "lgtm:cross-source-unhook-method-typology"
+      ],
+      "consolidated_description": "Documents the three canonical NTDLL unhook variants and their concrete API sequences. (1) Byte-level prologue patch: per-function search-and-replace of the EDR's trampoline bytes with the original Nt* prologue (the inverse of the inline-hook byte forensics pattern). (2) Fresh-copy file mapping: CreateFileA(L\"\\\\??\\\\C:\\\\Windows\\\\System32\\\\ntdll.dll\") → CreateFileMapping(PAGE_READONLY | SEC_IMAGE) → MapViewOfFile → walk IMAGE_NT_HEADERS to locate .text section → memcpy the clean .text over the hooked .text in the loaded ntdll. (3) Per-function stub restore via RtlPcToFileHeader + the on-disk ntdll .text RVA. All three are partial: kernel callbacks (PsSetCreateProcessNotifyRoutine, ObRegisterCallbacks, CmRegisterCallback) continue to observe operations after userland hooks are removed, so unhooking must be paired with operations that do not trigger callbacks. The fresh-copy variant is operationally preferred because it does not require per-function signature knowledge.\n",
+      "technical_anchor": "MapViewOfFile of fresh \\??\\C:\\Windows\\System32\\ntdll.dll → IMAGE_NT_HEADERS.OptionalHeader.SizeOfImage → memcpy over hooked ntdll .text",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "high",
+      "priority_reason": "Three convergence notes identify this as a discrete technique currently buried inside T-016; promoting to its own card surfaces the variant choice."
+    },
+    {
+      "cluster_id": "inline-hook-byte-forensics-hot-patch",
+      "canonical_name": "Inline Hook Byte-Pattern Forensics and Hot-Patch Prologue",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Two coverage gaps describe the same EDR inline-hook byte patterns and the 32-bit hot-patch prologue that enables them; both are diagnostics for detecting hooks and unhooking correctly.",
+      "member_note_ids": [
+        "lgtm:inline-hook-byte-forensics",
+        "lgtm:32-bit-hot-patch-prologue-coverage"
+      ],
+      "consolidated_description": "Documents the exact byte patterns EDRs leave when inline-hooking ntdll, which an operator must recognize before unhooking. 64-bit hooks: 15-byte trampoline `MOV rax, imm64 (48 B8 ...); JMP rax (FF E0)`. 32-bit hooks exploit the `MOV EDI, EDI` hot-patch prologue slot and the five-NOP padding that precedes 32-bit functions — the EDR overwrites the 2-byte hot-patch slot with a 2-byte short jump back into the 5-NOP pad, then patches the pad with a 5-byte `JMP rel32` into the trampoline. The 32-bit pattern is critical because unhooking must restore both the 5-NOP pad and the `MOV EDI, EDI` prologue, not just one. The vault's T-016 ntdll_unhook documentation is implicitly x64-centric; this card adds the 32-bit prologue protocol.\n",
+      "technical_anchor": "32-bit hot-patch prologue: `MOV EDI, EDI` (8B FF) at function start + 5-NOP pad (90 90 90 90 90) preceding function; 64-bit trampoline bytes `48 B8 <imm64> FF E0`",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Two notes, single operational context (unhooking); merges to round out T-016's x86 coverage."
+    },
+    {
+      "cluster_id": "x64-abi-syscall-stub-construction",
+      "canonical_name": "x64 ABI, Shadow Space, and Calling Convention for Syscall Stubs",
+      "proposed_category": "syscalls",
+      "proposed_tier": "B",
+      "rationale": "Three notes (two coverage gaps, one convergence) all describe the x64 calling convention — RCX/RDX/R8/R9 + stack, 32-byte shadow store at RSP+0..RSP+20h — as the structural constraint on syscall stub construction and ROP frame layout.",
+      "member_note_ids": [
+        "lgtm:x64-calling-convention-stub-constraint",
+        "lgtm:x64-abi-syscall-stub-construction",
+        "lgtm:cross-source-convergence-shadow-store-and-rop"
+      ],
+      "consolidated_description": "Reference card documenting the x64 ABI as it constrains syscall stubs and ROP frames. Arguments flow in RCX, RDX, R8, R9, then stack; the caller must reserve a 32-byte shadow store at RSP+0..RSP+20h (eight 8-byte slots) for the callee to spill those four register arguments into. Syscall stubs must respect this even when they merely load the SSN into EAX and execute `syscall` — Ekko (T-005) and direct-syscall stubs from T-002 both rely on the shadow store being writable. ROP frame construction for syscall gadgets must similarly allocate the shadow store before the gadget's epilogue reads back the spilled arguments. Note this is distinct from the hardware Shadow Stack (Intel CET) enforcement.\n",
+      "technical_anchor": "32-byte shadow store at RSP+0..RSP+20h (8 × 8 bytes); RCX/RDX/R8/R9 first four args, RAX for syscall number",
+      "would_relate_to": [
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-005",
+        "T-006",
+        "T-016"
+      ],
+      "priority": "high",
+      "priority_reason": "Three convergence notes; the prerequisite that makes syscall stubs and ROP frames legible across the syscalls category."
+    },
+    {
+      "cluster_id": "direct-vs-indirect-syscall-callstack-detection",
+      "canonical_name": "Kernel Call-Stack Origin Check Defeating Direct Syscalls",
+      "proposed_category": "syscalls",
+      "proposed_tier": "S",
+      "rationale": "Single convergence note describing a defensive mechanism that breaks direct syscalls and motivates indirect syscalls (T-002); high operational relevance and not currently documented.",
+      "member_note_ids": [
+        "lgtm:direct-vs-indirect-syscall-callstack-detection"
+      ],
+      "consolidated_description": "Documents why direct syscalls (executing `syscall` from implant-owned memory) defeat userland EDR hooks but still fail against kernel-mode components that verify the syscall's return address originates from inside ntdll.dll. EDR kernel drivers (via PsSetLoadImageNotifyRoutine or minifilter altitude registration) walk the call stack at syscall entry using NtQueryInformationThread(ThreadStackLimits) or RtlVirtualUnwind; if the frame immediately below the kernel transition is not within ntdll's image base range, the syscall is flagged. This is the operational reason for indirect syscalls (T-002): jumping into a genuine ntdll `syscall; ret` gadget makes the call stack appear legitimate. Concrete detection primitive: walk the frames, check RSP against the ntdll image range returned by NtQueryInformationProcess(ProcessImageFileName) + RtlImageNtHeader.\n",
+      "technical_anchor": "Kernel call-stack walk via RtlVirtualUnwind at syscall entry; frames outside ntdll.dll image base range (from RtlImageNtHeader on NtQueryInformationProcess(ProcessImageFileName)) are flagged",
+      "would_relate_to": [
+        "T-001",
+        "T-002",
+        "T-016"
+      ],
+      "priority": "high",
+      "priority_reason": "Singleton but uniquely names the defensive mechanism that motivates the entire indirect-syscall technique; novel relative to T-001..T-074."
+    },
+    {
+      "cluster_id": "heavens-gate-wow64-bridge",
+      "canonical_name": "Heaven's Gate 32→64-bit WOW64 Syscall Bridge",
+      "proposed_category": "syscalls",
+      "proposed_tier": "A",
+      "rationale": "Single coverage-gap note describing a distinct syscall evasion primitive (Wow64 transition) that is currently absent from the vault despite touching T-001 and T-002.",
+      "member_note_ids": [
+        "lgtm:vault-gap-heavens-gate"
+      ],
+      "consolidated_description": "Documents the Heaven's Gate technique: a 32-bit Wow64 process jumps to 64-bit code via ntdll.Wow64Transition (the 0x33 segment selector FAR jump into the 64-bit code segment) and wow64cpu.dll's TurboDispatch, allowing direct 64-bit syscalls that bypass 32-bit ntdll hooks. The 32-bit process must construct a 64-bit syscall stub in memory, switch CS to 0x33 via a far return with a manually crafted frame, issue the syscall, and return to 0x23 (32-bit CS). Operationally valuable because 32-bit EDR hooks cannot observe the transition; superseded in part by SysWhispers3 WoW64 stubs and the modern Hells Gate-style SSN extraction.\n",
+      "technical_anchor": "Far jump via segment selector 0x33 (64-bit CS) through ntdll.Wow64Transition → wow64cpu.dll TurboDispatch; FAR RET to switch CS register",
+      "would_relate_to": [
+        "T-001",
+        "T-002"
+      ],
+      "priority": "high",
+      "priority_reason": "Named technique with public tooling and historical reference; distinct primitive not in T-001..T-074."
+    },
+    {
+      "cluster_id": "syswhispers3-reference-tooling",
+      "canonical_name": "SysWhispers3 as Reference SSN-Stub Generator",
+      "proposed_category": "syscalls",
+      "proposed_tier": "A",
+      "rationale": "Single coverage-gap note naming the canonical external tooling for SSN stub generation; operators will encounter this regardless of vault stance.",
+      "member_note_ids": [
+        "lgtm:vault-gap-syswhispers3-tooling"
+      ],
+      "consolidated_description": "Documents SysWhispers3 as the canonical external tooling for SSN-stub generation, with its supported evasion modes: WoW64 stubs (for Heaven's Gate-style transitions), egg-hunter SSN resolution (the `YW...` egg pattern scanned at runtime in ntdll .text), direct syscall jumps in WoW64 and x64, and indirect syscall jumps (calling into ntdll's own `syscall; ret` gadget to defeat kernel call-stack checks). Reference card rather than a how-to; vault's own T-002 implementation should be cross-referenced against SysWhispers3's feature set so operators know what capability parity exists.\n",
+      "technical_anchor": "SysWhispers3 stub modes: WoW64, egg-hunter (`@__Nt` egg pattern), direct `syscall` in user stub, indirect `jmp` into ntdll `syscall; ret` gadget",
+      "would_relate_to": [
+        "T-001",
+        "T-002",
+        "T-006"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton with named tooling and direct capability overlap with the vault's T-002; reference value."
+    },
+    {
+      "cluster_id": "gui-syscall-path-win32u-win32k",
+      "canonical_name": "GUI Syscall Path via win32u.dll and win32k.sys",
+      "proposed_category": "syscalls",
+      "proposed_tier": "A",
+      "rationale": "Two notes (one gap, one emerging-tradecraft) describe the same win32u.dll GUI syscall split; the vault's T-016 unhook documentation does not address this layer.",
+      "member_note_ids": [
+        "lgtm:win32u-gui-syscall-hook-coverage",
+        "lgtm:gui-vs-native-syscall-path-awareness"
+      ],
+      "consolidated_description": "Documents that Windows splits syscall routing into native (ntdll.dll → ntoskrnl.exe / executive) and GUI (win32u.dll → win32k.sys) paths. EDRs hook both; GUI functions like NtUserOpenClipboard, NtUserFindWindowEx, NtUserMessageCall are dispatched through win32u, not ntdll, so a T-016 ntdll unhook does NOT restore clean access to GUI primitives. Thread type matters: a non-GUI thread (no Win32k attributed) issuing a win32k syscall will be rejected; this is enforced by the thread's Win32Thread (THREADINFO) field being NULL. Operators issuing clipboard, window, or input syscalls must ensure the calling thread is GUI-initialized (called User32!Win32InitializeThunk or otherwise have an associated W32THREAD).\n",
+      "technical_anchor": "win32u.dll → win32k.sys syscall routing; NtUserOpenClipboard as exemplar; thread's Win32Thread (THREADINFO) field must be non-NULL",
+      "would_relate_to": [
+        "T-001",
+        "T-002",
+        "T-016",
+        "T-023"
+      ],
+      "priority": "high",
+      "priority_reason": "Two notes flag this as a real coverage gap in T-016; operational consequence for any GUI-touching client capability."
+    },
+    {
+      "cluster_id": "native-process-enumeration-ntquerysysteminformation",
+      "canonical_name": "NtQuerySystemInformation Process Enumeration",
+      "proposed_category": "discovery",
+      "proposed_tier": "A",
+      "rationale": "Two coverage-gap notes both identify NtQuerySystemInformation with SystemProcessInformation as the evasion-friendly enumeration path distinct from Win32 toolhelp32.",
+      "member_note_ids": [
+        "lgtm:native-process-enumeration-coverage",
+        "lgtm:undocumented-native-api-process-enum"
+      ],
+      "consolidated_description": "Documents NtQuerySystemInformation(SystemProcessInformation, class 5) as the native enumeration path that bypasses the Win32 CreateToolhelp32Snapshot/Process32First/Process32Next path EDRs commonly monitor. The buffer contains a linked list of SYSTEM_PROCESS_INFORMATION structures where NextEntryOffset (ULONG at offset 0x00) walks the list; each entry contains UniqueProcessId (HANDLE at offset 0x80 on x64), ImageName (UNICODE_STRING at offset 0x88), and NumberOfThreads (ULONG at offset 0x278). The two-pass allocation pattern: call with NULL buffer, get STATUS_INFO_LENGTH_MISMATCH + required size, allocate, retry. Pairs with NtQueryInformationProcess(ProcessBasicInformation) for per-process PEB and PE walker discovery.\n",
+      "technical_anchor": "NtQuerySystemInformation(SystemProcessInformation = class 5) → SYSTEM_PROCESS_INFORMATION.NextEntryOffset walk; STATUS_INFO_LENGTH_MISMATCH two-pass allocation",
+      "would_relate_to": [
+        "T-007",
+        "T-020",
+        "T-023"
+      ],
+      "priority": "high",
+      "priority_reason": "Two convergence notes; distinct primitive that replaces the Win32 enumeration path monitored by EDRs."
+    },
+    {
+      "cluster_id": "eprocess-kprocess-object-manager-visibility",
+      "canonical_name": "EPROCESS / KPROCESS Object-Manager Visibility Split",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Single concept note documenting a Windows internals distinction that recurs across T-014/T-015/T-016; prerequisite for understanding handle-vs-kernel-only fields.",
+      "member_note_ids": [
+        "lgtm:eprocess-kprocess-split-concept"
+      ],
+      "consolidated_description": "Documents the kernel object split: EPROCESS is partially exposed via the Object Manager (HandleTable, ImageFileName, UniqueProcessId, Pcb) while _KPROCESS — the embedded head of EPROCESS — holds DirectoryTableBase (CR3 at offset 0x028 on x64), ThreadListHead (offset 0x030), ReadyListHead (offset 0x038), and Affinity (offset 0x040) and is strictly kernel-only. User-mode code cannot read _KPROCESS directly; any technique that requires CR3 pivoting or thread-list walking must obtain a kernel handle or read through NtQuerySystemInformation. This split underpins why T-014 (NtCreateUserProcess) does not expose affinity or page-table root to the caller, and why forensic scanners pivot through EPROCESS→Pcb→ThreadListHead to detect PEB-unlinked modules.\n",
+      "technical_anchor": "_KPROCESS.DirectoryTableBase (CR3) at offset 0x028, ThreadListHead at 0x030, ReadyListHead at 0x038 inside EPROCESS.Pcb",
+      "would_relate_to": [
+        "T-014",
+        "T-015",
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Concept node unblocking T-014/T-015/T-016 navigation; singleton but referenced across three cards."
+    },
+    {
+      "cluster_id": "kprocess-forensic-anchor-peb-unlink-detection",
+      "canonical_name": "_KPROCESS ThreadListHead as Forensic Pivot for PEB Unlinking",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Single coverage-gap note naming _KPROCESS.ThreadListHead as the forensic pivot that defeats PEB-based hiding; complements the EPROCESS/KPROCESS concept card.",
+      "member_note_ids": [
+        "lgtm:kprocess-as-forensic-anchor"
+      ],
+      "consolidated_description": "Documents the forensic pivot that defeats the vault's T-016 PEB-unlink technique. A scanner that operated only on the PEB Ldr.InLoadOrderModuleList (PEB_LDR_DATA.InLoadOrderModuleList at PEB offset 0x10 on x64) can be defeated by unlinking the module entry. Forensic scanners pivot through EPROCESS.Pcb (the embedded _KPROCESS) → ThreadListHead to enumerate threads, then through KTHREAD.Process (back-pointer) to find processes whose PEB has been tampered with. They also compare the PEB module list against EPROCESS.Pcb.DirectoryTableBase walks of the VAD tree (MMVAD via MiQueryAddressTree). The vault's T-016 PEB unlink is therefore incomplete as a hiding technique; a fuller hide must also patch the VAD.\n",
+      "technical_anchor": "EPROCESS.Pcb.ThreadListHead (offset 0x030) pivot → KTHREAD.Process (back-pointer to EPROCESS) → cross-check against PEB_LDR_DATA.InLoadOrderModuleList",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but closes a real operational gap in T-016's PEB-unlink coverage."
+    },
+    {
+      "cluster_id": "handle-table-entry-protect-from-close",
+      "canonical_name": "Handle Table Entry Structure and Protect-from-Close Flag",
+      "proposed_category": "exploit-primitive",
+      "proposed_tier": "B",
+      "rationale": "Single coverage-gap note documenting a kernel object internals topic that recurs across T-013/T-015/T-016; concept card supporting handle-protection tradecraft.",
+      "member_note_ids": [
+        "lgtm:handle-table-entry-internals"
+      ],
+      "consolidated_description": "Documents the kernel HANDLE_TABLE_ENTRY structure: a 64-bit ObjectPointer field (low bits used as flags: OBJ_PROTECT_CLOSE = bit 0, OBJ_INHERIT = bit 1, OBJ_AUDIT_OBJECT_CLOSE = bit 2), and the AccessMask (GrantedAccess) packed into the upper 32 bits. The Protect-from-close and Audit-on-close flags are set via NtSetInformationObject(ObjectHandleFlagInformation, OBJECT_HANDLE_FLAG_INFORMATION { Inherit = 0x1, ProtectFromClose = 0x2 }). Operations include NtQueryObject and NtSetInformationObject. Setting ProtectFromClose on a privileged handle (e.g., a thread token or PPL-protected process handle) causes NtClose to return STATUS_HANDLE_NOT_CLOSABLE, which denies defensive scanners the ability to strip the implant's access. Pairs with T-013 (waiting thread hijack requiring retained thread handles) and T-015 (token manipulation).\n",
+      "technical_anchor": "NtSetInformationObject(ObjectHandleFlagInformation) → OBJECT_HANDLE_FLAG_INFORMATION.ProtectFromClose = 0x2 → NtClose returns STATUS_HANDLE_NOT_CLOSABLE",
+      "would_relate_to": [
+        "T-013",
+        "T-015",
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but distinct primitive with operational consequence; supports three existing cards."
+    },
+    {
+      "cluster_id": "thread-hijack-context-modification-primitive",
+      "canonical_name": "Thread Hijack Requires CONTEXT Modification",
+      "proposed_category": "process-injection",
+      "proposed_tier": "A",
+      "rationale": "Single convergence note formulating the foundational thread-hijack primitive (CONTEXT.Rip manipulation) referenced across SEC670, MalDev Academy, and CRTO.",
+      "member_note_ids": [
+        "lgtm:cross-source-convergence-thread-context-hijack-requirement"
+      ],
+      "consolidated_description": "Documents the foundational thread-hijack primitive: hijacking execution requires NtGetContextThread / NtSetContextThread to modify the thread's CONTEXT record (specifically Rip on x64, Rsp for stack pivot, and segment registers for WOW64 transitions). Modifying thread priority (NtSetInformationThread(ThreadPriority)) or thread state (NtSetEvent / NtAlertThread) is not hijacking — these do not redirect the instruction pointer. The canonical sequence: suspend target thread via NtSuspendThread, NtGetContextThread to capture CONTEXT, overwrite Rip with the payload address, optionally Rbp/Rsp for stack pivot, NtSetContextThread to apply, then NtResumeThread. Pairs with T-013's waiting_thread_hijack_ref.rs but elevates the primitive to its own card so the CONTEXT modification step is documented independently.\n",
+      "technical_anchor": "NtGetContextThread / NtSetContextThread on CONTEXT.Rip (offset 0xF8 on x64) and Rsp (offset 0x98) for stack pivot",
+      "would_relate_to": [
+        "T-013"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but cross-source convergence and a foundational primitive; the CONTEXT-modification step is the conceptual anchor."
+    },
+    {
+      "cluster_id": "wdac-dynamic-code-trust-query",
+      "canonical_name": "WDAC Dynamic Code Trust Query via WldpQueryDynamicCodeTrust",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Single coverage-gap note documenting a specific WLDP API for pre-checking CIG/WDAC enforcement; not in T-001..T-074.",
+      "member_note_ids": [
+        "lgtm:coverage-gap-wdac-dynamic-code-trust-query"
+      ],
+      "consolidated_description": "Documents WldpQueryDynamicCodeTrust as the user-mode query for Windows Defender Application Control (WDAC) dynamic-code trust — the API an implant uses to check whether a candidate payload region (e.g., RWX memory about to be executed) would survive Code Integrity Guard (CIG) enforcement before committing the allocation. Without this check, an implant attempting module stomping or shellcode-to-PIC transition on a WDAC-enforced process triggers a CiInitializeSigned policy violation and process termination. The query takes the candidate base address and returns a trust verdict; pairs with WLDP API set wldp.dll. Distinct from WldpIsClassApproved / WldpQueryDynamicCodeTrust — the latter is the runtime check, the former is policy enumeration.\n",
+      "technical_anchor": "WldpQueryDynamicCodeTrust(base, size) → returns trust verdict for candidate executable region under WDAC/CIG enforcement",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "high",
+      "priority_reason": "Singleton but uniquely named API not in existing cards; operationally critical for WDAC-enforced targets."
+    },
+    {
+      "cluster_id": "binary-patching-memory-and-disk",
+      "canonical_name": "Binary Patching as Standalone Offensive Capability",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Two notes (one gap, one convergence) both treat binary patching — on disk or in memory — as a distinct operational concept currently buried inside T-016.",
+      "member_note_ids": [
+        "lgtm:binary-patching-as-standalone-capability",
+        "lgtm:binary-patching-as-distinct-technique"
+      ],
+      "consolidated_description": "Documents binary patching as a discrete operational concept: modifying binaries on disk or in memory to change execution behavior. Memory patching: NTDLL unhook (T-016 byte-level), AMSI patch (AmsiScanBuffer prologue → ret), ETW patch (NtTraceEvent prologue → ret). Disk patching: persisting a modified PE on disk (e.g., patching an Import Directory or adding an export to enable IAT hijack on next load), or modifying a signed-but-relaxed binary's checksum-adjusted bytes. SEC670 lists this as a discrete Red Team Tools capability; the vault references patching implicitly inside T-016 but does not document it as a unified capability with the byte-alignment, checksum, and signature-discipline considerations that distinguish memory from disk patching.\n",
+      "technical_anchor": "Memory: AMSI patch (`AmsiScanBuffer` prologue → `ret 0x80070057`); Disk: IMAGE_OPTIONAL_HEADER.CheckSum field must be recomputed via RtlImageNtHeader + CheckSumMappedFile",
+      "would_relate_to": [
+        "T-016",
+        "T-017",
+        "T-020"
+      ],
+      "priority": "medium",
+      "priority_reason": "Two convergence notes flag this as currently fragmented across T-016/T-017/T-020; consolidating to a unified card."
+    },
+    {
+      "cluster_id": "iat-hooking-primitive",
+      "canonical_name": "Import Address Table (IAT) Hooking Primitive",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Single coverage-gap note describing the complete 6-step IAT hooking primitive, currently absent from the vault despite being a foundational hooking technique.",
+      "member_note_ids": [
+        "lgtm:iat-hooking-as-technique"
+      ],
+      "consolidated_description": "Documents the IAT hooking primitive in 6 steps: (1) parse the target PE's IMAGE_NT_HEADERS → DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT (index 12)], or DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT (index 1)] for the descriptor; (2) walk the IMAGE_IMPORT_DESCRIPTOR array (OriginalFirstThunk → INT, FirstThunk → IAT, Name → DLL name); (3) for each imported function, match by name or ordinal; (4) flip the IAT page protection from PAGE_READONLY to PAGE_READWRITE via VirtualProtect (the IAT is typically read-only at runtime); (5) overwrite the function pointer with the hook address; (6) restore PAGE_READONLY. Distinct from inline hooking (which patches function prologue bytes) — IAT hooking only affects calls routed through the IAT, not direct GetProcAddress returns.\n",
+      "technical_anchor": "DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT = 12] → FirstThunk array; VirtualProtect to PAGE_READWRITE → overwrite pointer → restore PAGE_READONLY",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but a complete primitive with named API sequence and 6-step protocol; educational/completeness value."
+    },
+    {
+      "cluster_id": "native-application-nt-main-entry",
+      "canonical_name": "Native Application (NT_main) Execution Surface",
+      "proposed_category": "anti-analysis",
+      "proposed_tier": "B",
+      "rationale": "Two notes (one gap, one emerging-tradecraft) both surface the native Windows application entry signature as a distinct execution mode currently undocumented in the vault.",
+      "member_note_ids": [
+        "lgtm:native-application-execution-surface",
+        "lgtm:native-application-entry-point"
+      ],
+      "consolidated_description": "Documents the native Windows application execution mode: entry signature `NTSTATUS NTAPI NT_main(int argc, char* argv[])`, distinct from the Win32 main / WinMainCRTStartup. Native applications run before the Win32 subsystem is fully initialized — they are invoked via the Session Manager (smss.exe) during early boot or via RtlCreateUserProcess with the image registered as a known DLL. They have no subsystem import binding; must call only ntdll exports. Operations: registry access via NtCreateKey/NtSetValueKey, file I/O via NtCreateFile, no kernel32/kernelbase. Useful for early-boot persistence (Boot Execute via HKLM\\System\\CurrentControlSet\\Control\\Session Manager\\BootExecute), SurvivableProtectedProcess launchers, and minimal recon droppers that avoid the Win32 API surface EDRs monitor.\n",
+      "technical_anchor": "NTSTATUS NTAPI NT_main(int argc, char* argv[]) — entry point invoked before Win32 subsystem; HKLM\\System\\CurrentControlSet\\Control\\Session Manager\\BootExecute registration",
+      "would_relate_to": [
+        "T-017",
+        "T-020"
+      ],
+      "priority": "medium",
+      "priority_reason": "Two notes flag this as emerging tradecraft; minimal but distinct execution mode not in existing cards."
+    },
+    {
+      "cluster_id": "registry-walking-api-set",
+      "canonical_name": "Registry Walking API Set for Persistence and Recon",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Single coverage-gap note documenting the complete registry-walking Win32 API set as a foundational primitive underlying T-017 persistence and T-023 recon.",
+      "member_note_ids": [
+        "lgtm:registry-api-enumeration-primitives"
+      ],
+      "consolidated_description": "Documents the complete registry-walking Win32 API set: RegOpenKeyExW(HKEY_LOCAL_MACHINE, subpath, 0, KEY_READ, &hKey), RegQueryValueExW(hKey, valueName, NULL, &type, buffer, &size), RegEnumValue(hKey, index, valueName, &nameLen, NULL, &type, data, &dataLen), RegQueryInfoKey(hKey, NULL, NULL, NULL, &subKeys, &maxSubKeyLen, NULL, &values, &maxValueNameLen, &maxValueLen, NULL, NULL, NULL). The two-pass buffer-size pattern (call with NULL buffer → ERROR_MORE_DATA/ERROR_INSUFFICIENT_BUFFER → allocate → retry) underlies all registry enumeration. Pairs with T-017 persistence enumeration (walking Run keys, Image File Execution Options, AppInit_DLLs, AppCertDlls) and T-023 recon (registry-based discovery).\n",
+      "technical_anchor": "RegQueryInfoKey + RegEnumValue/RegEnumKeyEx two-pass pattern; ERROR_INSUFFICIENT_BUFFER (0x7A) signals buffer sizing",
+      "would_relate_to": [
+        "T-017",
+        "T-023"
+      ],
+      "priority": "low",
+      "priority_reason": "Foundational primitive reference card; narrow completeness value over T-017/T-023."
+    },
+    {
+      "cluster_id": "file-enumeration-findfirstfile-recon",
+      "canonical_name": "FindFirstFile/FindNextFile Directory Walk for Recon and Exfil",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Single coverage-gap note documenting the foundational directory-walking API underlying T-023 client recon and exfil.",
+      "member_note_ids": [
+        "lgtm:file-enumeration-recon-primitives"
+      ],
+      "consolidated_description": "Documents the Win32 directory-walking primitive: FindFirstFileA(lpPath, &WIN32_FIND_DATAA) returns a HANDLE for continued enumeration and populates the first entry; FindNextFileA(hFind, &fd) walks subsequent entries; FindClose(hFind) releases. WIN32_FIND_DATAA contains dwFileAttributes (FILE_ATTRIBUTE_DIRECTORY = 0x10), ftCreationTime / ftLastAccessTime / ftLastWriteTime (FILETIME), nFileSizeHigh / nFileSizeLow (file size split for > 4GB), cFileName (MAX_PATH = 260 chars), cAlternateFileName (8.3 short name). The pattern for recursive walk: prepend path with \"\\\\*\" for FindFirstFileA, recurse on FILE_ATTRIBUTE_DIRECTORY entries excluding \".\" and \"..\".\n",
+      "technical_anchor": "FindFirstFileA/FindNextFileA with WIN32_FIND_DATAA.dwFileAttributes FILE_ATTRIBUTE_DIRECTORY = 0x10",
+      "would_relate_to": [
+        "T-023"
+      ],
+      "priority": "low",
+      "priority_reason": "Foundational primitive reference; niche completeness value."
+    },
+    {
+      "cluster_id": "network-adapter-enumeration-getadaptersaddresses",
+      "canonical_name": "GetAdaptersAddresses Network Recon Primitive",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Single coverage-gap note documenting the canonical network adapter enumeration API underlying T-023 client recon.",
+      "member_note_ids": [
+        "lgtm:network-adapter-enumeration-primitive"
+      ],
+      "consolidated_description": "Documents GetAdaptersAddresses(Family, Flags, Reserved, pAdapterAddresses, &size) and GetNumberOfInterfaces(&count) as the canonical Win32 network recon primitives. GetAdaptersAddresses uses the ERROR_BUFFER_OVERFLOW (0x6F / 111) two-pass allocation pattern: call with NULL buffer → returns ERROR_BUFFER_OVERFLOW and populates size → allocate → retry. Returns IP_ADAPTER_ADDRESSES linked list with FirstUnicastAddress, FirstDnsSuffix, FirstGateway, FriendlyName, and AdapterName (GUID). GetNumberOfInterfaces returns a ULONG/DWORD count (depending on Win32 version) for quick inventory. Pairs with WSAStartup + gethostname for hostname enumeration and IP helper API (Ipifcons.h) for interface type classification.\n",
+      "technical_anchor": "GetAdaptersAddresses with ERROR_BUFFER_OVERFLOW (0x6F) two-pass allocation; IP_ADAPTER_ADDRESSES linked list via Next pointer",
+      "would_relate_to": [
+        "T-023"
+      ],
+      "priority": "low",
+      "priority_reason": "Foundational primitive reference; narrow completeness value."
+    },
+    {
+      "cluster_id": "named-pipe-ipc-channel",
+      "canonical_name": "Named Pipes as Implant IPC and C2 Relay Channel",
+      "proposed_category": "networking",
+      "proposed_tier": "B",
+      "rationale": "Single coverage-gap note naming named pipes as a distinct IPC/C2-relay channel currently absent from the vault despite touching T-022 and T-023.",
+      "member_note_ids": [
+        "lgtm:named-pipe-ipc-channel"
+      ],
+      "consolidated_description": "Documents CreateNamedPipeW(PIPE_NAME, PIPE_ACCESS_DUPLEX, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, PIPE_UNLIMITED_INSTANCES, bufSize, bufSize, 0, NULL) and ConnectNamedPipe(hPipe, &overlapped) as the canonical implant-IPC channel. Operationally valuable for relay chains: an implant on Host A can expose a named pipe `\\\\.\\pipe\\<name>` that a forwarder on Host B reads via a S4U/piggy-backed handle; the pipe impersonates the connecting client's token via ImpersonateNamedPipeClient (the pivot for many potato-class privilege escalations). Pairs with T-022 (NT sockets) for SMB relay tunnels and T-023 (peer relay) for implant-to-implant communication across a pivot host.\n",
+      "technical_anchor": "CreateNamedPipeW(PIPE_ACCESS_DUPLEX, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE) + ImpersonateNamedPipeClient for token capture",
+      "would_relate_to": [
+        "T-022",
+        "T-023"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but distinct IPC channel with named API; supports existing relay cards."
+    },
+    {
+      "cluster_id": "uacme-dll-search-order-hijack",
+      "canonical_name": "UACMe Auto-Elevation DLL Search-Order Hijack",
+      "proposed_category": "privesc",
+      "proposed_tier": "A",
+      "rationale": "Single convergence note documenting the UACMe FusionScanDirectory search-order hijack as a discrete UAC-bypass primitive; named tooling reference.",
+      "member_note_ids": [
+        "lgtm:uacme-dll-search-order-hijack"
+      ],
+      "consolidated_description": "Documents the UACMe FusionScanDirectory technique for auto-elevation DLL search-order hijack. The target is a binary in %SystemRoot%\\System32\\ that has the autoElevate manifest flag (slui.exe, dccw.exe, eventvwr.exe exemplars). The hijack enumerates the application's directory for plantable DLL names using FindFirstFile/FindNextFile (RtlSecureZeroMemory'd WIN32_FIND_DATA buffer), drops a malicious DLL with a matching name into a writable adjacent path, then triggers the auto-elevated binary which loads the malicious DLL via the default search order (application directory first). Distinct from COM hijack (T-021) which manipulates CLSID registry entries.\n",
+      "technical_anchor": "FusionScanDirectory() from UACMe — auto-elevated binary (autoElevate=true manifest) + FindFirstFile/FindNextFile enumeration of plantable DLL names",
+      "would_relate_to": [
+        "T-021",
+        "T-023"
+      ],
+      "priority": "high",
+      "priority_reason": "Singleton but named technique with public tooling (UACMe); high operational value for UAC bypass."
+    },
+    {
+      "cluster_id": "token-manipulation-openprocesstoken",
+      "canonical_name": "Process Token Access via OpenProcessToken",
+      "proposed_category": "privesc",
+      "proposed_tier": "A",
+      "rationale": "Single coverage-gap note documenting OpenProcessToken as the foundational token-manipulation primitive; the vault lacks a dedicated card for this despite T-015/T-017 touching it.",
+      "member_note_ids": [
+        "lgtm:token-manipulation-via-openprocesstoken"
+      ],
+      "consolidated_description": "Documents OpenProcessToken(GetCurrentProcess() | OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION), TOKEN_ALL_ACCESS, &hToken) as the foundational primitive for all token manipulation. Pairs with GetTokenInformation(hToken, TokenStatistics / TokenUser / TokenGroups / TokenPrivileges, ...) to enumerate the token's user SID, group memberships, and privilege bitmap. The SANS TokenThief lab demonstrates duplicating a SYSTEM token from a higher-privilege process via OpenProcessToken + DuplicateTokenEx(MAXIMUM_ALLOWED, SecurityImpersonation, TokenPrimary) and replacing the calling thread's token via ImpersonateLoggedOnUser or SetThreadToken. Required by T-015 (token impersonation chains) and T-017 (privilege escalation persistence).\n",
+      "technical_anchor": "OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &hToken) → GetTokenInformation(TokenPrivileges) → DuplicateTokenEx + SetThreadToken",
+      "would_relate_to": [
+        "T-015",
+        "T-017"
+      ],
+      "priority": "high",
+      "priority_reason": "Singleton but a foundational primitive missing from the vault; supports T-015 and T-017."
+    },
+    {
+      "cluster_id": "memory-forensics-tooling-awareness",
+      "canonical_name": "Memory Forensics Tooling Awareness (Volatility, PE-sieve, Moneta)",
+      "proposed_category": "anti-analysis",
+      "proposed_tier": "A",
+      "rationale": "Two coverage-gap notes both name Volatility, PE-sieve, and Moneta as the defensive memory-forensics stack an operator must assume is in use; cross-cutting awareness metadata.",
+      "member_note_ids": [
+        "lgtm:memory-forensics-tooling-coverage-gap",
+        "lgtm:memory-forensics-defense-landscape"
+      ],
+      "consolidated_description": "Documents the three memory forensics tools an operator must assume are in use: Volatility (vol.py, the reference framework — scans for DTB, walks EPROCESS list, PEB module lists, VAD tree, handles), PE-sieve (hashes the .text section of every loaded module and compares against on-disk counterparts to find hooked/hollowed DLLs), and Moneta (scans for PAGE_EXECUTE_READWRITE pages with no corresponding mapped file in the VAD — catches PIC shellcode and module stomping). The operational consequence: \"being in memory is not a get out of jail free card\" — T-007 injection and T-016 unhook must consider detection by these scanners, not just by EDR hooks. Specific evasion responses: hash-mismatch hiding via T-016 fresh-copy unhook (defeats PE-sieve), VAD-backed allocation via NtMapViewOfSection of a legitimate DLL (defeats Moneta).\n",
+      "technical_anchor": "PE-sieve hashes ntdll.dll .text and compares against on-disk counterpart; Moneta scans for PAGE_EXECUTE_READWRITE with no VAD backing",
+      "would_relate_to": [
+        "T-007",
+        "T-013",
+        "T-016"
+      ],
+      "priority": "high",
+      "priority_reason": "Two convergence notes; cross-cutting defensive awareness that constrains every evasion technique in the vault."
+    },
+    {
+      "cluster_id": "av-cloud-sample-submission-opsec",
+      "canonical_name": "AV/EDR Cloud Sample Submission OPSEC Discipline",
+      "proposed_category": "anti-analysis",
+      "proposed_tier": "B",
+      "rationale": "Two coverage-gap notes both surface the cloud-submission risk for unique binaries; cross-cutting operational discipline currently undocumented.",
+      "member_note_ids": [
+        "lgtm:av-cloud-sample-submission-opsec",
+        "lgtm:cloud-sample-submission-egress-discipline"
+      ],
+      "consolidated_description": "Documents the cloud-sample-submission OPSEC risk: some AV/EDR vendors (notably Defender SmartScreen, CrowdStrike Falcon, SentinelOne) automatically submit unique binaries (those that match no known signature and trigger a behavioral alert) to vendor cloud analysis, potentially exposing \"all tool capabilities or trade secrets\" to the vendor. The operational response is egress discipline: cutting the implant off from internet except for the C2 channel, blocking the vendor's submission endpoints (defender-smartscreen-endpoint-*.cloud.app, falon-.crowdstrike.com) at the host firewall, and using only known-signed payload containers when possible. The vault has no card or cross-cutting metadata documenting this risk; should be referenced from T-016 (after bypass) and T-020 (pre-flight hygiene).\n",
+      "technical_anchor": "Defender SmartScreen cloud submission to *.cloud.app endpoints; CrowdStrike Falcon archive submission; host-firewall egress block as precondition",
+      "would_relate_to": [
+        "T-016",
+        "T-020",
+        "T-021"
+      ],
+      "priority": "medium",
+      "priority_reason": "Two convergence notes; operational discipline rather than a discrete technique but cross-cuts evasion category."
+    },
+    {
+      "cluster_id": "malware-drm-process-ghosting",
+      "canonical_name": "Malware DRM via Process Ghosting for Anti-Copy Launchers",
+      "proposed_category": "anti-analysis",
+      "proposed_tier": "S",
+      "rationale": "Single emerging-tradecraft note documenting a novel application of process ghosting (T-009) as anti-copy protection; high operational novelty.",
+      "member_note_ids": [
+        "lgtm:malware-drm-via-process-ghosting"
+      ],
+      "consolidated_description": "Documents the Skrull PoC's application of process ghosting as \"malware DRM\" — making launchers break when submitted to AV analysis. The launcher is staged via NtCreateProcessEx with the source file in a transient state (opened with FILE_DELETE_ON_CLOSE, then marked for deletion via NtSetInformationFile(FileDispositionInfo, FILE_DISPOSITION_INFORMATION.DeleteFile = TRUE) before the image section is created via NtCreateSection). Once the image section is mapped and the process is initialized, the file is deleted; the running process holds the only copy. When an analyst copies the process memory to disk for submission, the rebuilt binary lacks the original file's PE structure alignment and signature, breaking execution. This converges with T-009 process ghosting but applies it as a defensive anti-analysis wrapper rather than as an evasion primitive.\n",
+      "technical_anchor": "NtCreateProcessEx + NtCreateSection(SECTION_IMAGE) on FILE_DELETE_ON_CLOSE handle; NtSetInformationFile(FileDispositionInfo.DeleteFile) before image section creation",
+      "would_relate_to": [
+        "T-009",
+        "T-020"
+      ],
+      "priority": "high",
+      "priority_reason": "Singleton emerging tradecraft with novel application of an existing primitive; S-tier operational novelty."
+    },
+    {
+      "cluster_id": "vx-underground-av-artifacts-catalog",
+      "canonical_name": "VX-Underground AV Artifacts Catalog as EDR Hook Reference",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Single emerging-tradecraft note naming the VX-Underground AV Artifacts whitepaper series as the canonical reference for which Nt* APIs each EDR hooks and in which module.",
+      "member_note_ids": [
+        "lgtm:vx-underground-av-artifacts-catalog"
+      ],
+      "consolidated_description": "Documents the VX-Underground \"AntiVirus Artifacts\" whitepaper series (first, second, third editions) as the canonical catalog enumerating which Nt* APIs each EDR vendor hooks and in which module (ntdll.dll vs win32u.dll vs kernelbase.dll). The vault's T-016 unhook documentation is implicitly vendor-agnostic; this reference card surfaces vendor-specific hook inventories so an operator targeting a known EDR (e.g., CrowdStrike Falcon, SentinelOne, Microsoft Defender for Endpoint) can pre-compute which Nt* stubs need restoration and which are clean. Cross-references to the inline-hook byte-forensics card for runtime verification.\n",
+      "technical_anchor": "VX-Underground AV Artifacts whitepaper series enumerating per-vendor Nt* hook inventories across ntdll.dll / win32u.dll / kernelbase.dll",
+      "would_relate_to": [
+        "T-001",
+        "T-002",
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but canonical reference catalog with direct operational application; reference value."
+    },
+    {
+      "cluster_id": "powershell-clm-detection-and-bypass",
+      "canonical_name": "PowerShell Constrained Language Mode Detection and Bypass",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Single coverage-gap note documenting CLM detection primitives and their distinction from ExecutionPolicy; operationally distinct from T-016's hook-based evasion.",
+      "member_note_ids": [
+        "lgtm:clm-detection-and-bypass-coverage"
+      ],
+      "consolidated_description": "Documents PowerShell Constrained Language Mode (CLM) detection and bypass. Detection primitive: query `$ExecutionContext.SessionState.LanguageMode` — returns \"ConstrainedLanguage\" under CLM, \"FullLanguage\" otherwise. Secondary probe: `[Math]::Pow(2, 10)` — succeeds in FullLanguage, throws in ConstrainedLanguage. CLM is enforced when WDAC/CIG policies are present, AppLocker is in enforce mode, or a Device Guard policy is active; it is distinct from and far more restrictive than ExecutionPolicy (which is bypassable via `-ExecutionPolicy Bypass` flag). Bypass requires either disabling the triggering policy (registry HKLM\\System\\CurrentControlSet\\Control\\CI\\Config), running outside the constrained process (custom Runspace via CreateDefaultApplicationRunspace), or invoking COM objects through the default installer.\n",
+      "technical_anchor": "$ExecutionContext.SessionState.LanguageMode == 'ConstrainedLanguage'; [Math]::Pow(2,10) probe; triggered by HKLM\\System\\CurrentControlSet\\Control\\CI\\Config",
+      "would_relate_to": [
+        "T-016",
+        "T-023"
+      ],
+      "priority": "high",
+      "priority_reason": "Singleton but operationally distinct evasion pathway with named detection primitives."
+    },
+    {
+      "cluster_id": "defender-exclusion-path-abuse",
+      "canonical_name": "Defender Exclusion Path Abuse for Payload Staging",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Single coverage-gap note documenting Set-MpPreference -ExclusionPath as a simple administrative evasion route currently absent from the vault.",
+      "member_note_ids": [
+        "lgtm:defender-exclusion-path-abuse-as-evasion"
+      ],
+      "consolidated_description": "Documents Set-MpPreference -ExclusionPath as a simple administrative route to keep payloads out of scanning scope. The exclusion persists in registry under HKLM\\Software\\Microsoft\\Windows Defender\\Exclusions\\Paths (MpEnableDefaults = 1 flag enables policy). Requires local Administrator privileges — pairs naturally with T-017 persistence (post-privilege-escalation) and T-021 client capability (defender enumeration). The vault's T-016 evasion suite covers AMSI, ETW, hooks, and policy enforcement but does not document this simple administrative lever. Detection: defender event logs (Operational channel, event ID 5007 \"configuration changed\") and MpCmdRun -RestoreDefaults countermeasure.\n",
+      "technical_anchor": "Set-MpPreference -ExclusionPath → HKLM\\Software\\Microsoft\\Windows Defender\\Exclusions\\Paths registry persistence",
+      "would_relate_to": [
+        "T-016",
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but operationally simple evasion lever currently missing; complements T-016."
+    },
+    {
+      "cluster_id": "av-detection-tier-taxonomy",
+      "canonical_name": "AV Detection Tier Taxonomy (Static, Dynamic, Scan)",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Single coverage-gap note documenting the conceptual distinction between static signature, dynamic execution, and scan-engine modes; reference taxonomy.",
+      "member_note_ids": [
+        "lgtm:av-detection-tier-taxonomy"
+      ],
+      "consolidated_description": "Documents the SEC670 AV detection tier taxonomy: (1) Static signature matching — YARA-style rules against file bytes and PE structure (IMPHASH, RichPE, section hash), evaluated pre-runtime; (2) Dynamic execution in virtualized containers (sandbox) — full process execution with API hook telemetry, timeout-bounded; (3) Configurable scan-engine modes — Defender's Automatic (default action on detection) vs Custom (operator selects quarantine/remove/allow) with ML scoring engine (MpEngine.dll) producing confidence-weighted verdicts. The taxonomy underpins why different evasion techniques target different tiers: T-016 unhook defeats dynamic API monitoring; T-017 persistence timing (sleep obfuscation) defeats sandbox timeout; T-020 obfuscation (string encryption) defeats static signature.\n",
+      "technical_anchor": "IMPHASH (PE Import Table hash) for static signature; MpEngine.dll ML scoring for dynamic verdicts; Defender Automatic vs Custom scan-engine mode",
+      "would_relate_to": [
+        "T-016",
+        "T-020",
+        "T-021",
+        "T-022"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton taxonomy reference; completeness value over multiple evasion cards."
+    },
+    {
+      "cluster_id": "appcert-dll-persistence",
+      "canonical_name": "AppCert DLLs as Persistence Surface",
+      "proposed_category": "persistence",
+      "proposed_tier": "B",
+      "rationale": "Single coverage-gap note documenting AppCert DLLs as a Windows persistence mechanism currently absent from T-017's persistence suite.",
+      "member_note_ids": [
+        "lgtm:appcert-dll-persistence-coverage"
+      ],
+      "consolidated_description": "Documents the AppCert DLL persistence mechanism: CreateProcess and WinExec trigger loading of DLLs registered in HKLM\\System\\CurrentControlSet\\Control\\Session Manager\\AppCertDlls. Each value under this key is a REG_EXPAND_SZ path to a DLL whose DllName exports a CreateProcessNotify function (NtCreateProcessEx calls back into each registered DLL before process creation). Distinct from AppInit_DLLs (which loads into every user32-bound process) — AppCert DLLs load only into processes created via CreateProcess / WinExec (not NtCreateProcessEx bypass). The vault's T-017 persistence suite covers COM hijack, NTFS EA, schtask, TLS callback, and IFEO; this surfaces an additional persistence vector that survives reboots and applies broadly to GUI-spawned processes.\n",
+      "technical_anchor": "HKLM\\System\\CurrentControlSet\\Control\\Session Manager\\AppCertDlls registry value entries; loaded by NtCreateProcessEx / CreateProcess callback chain",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but distinct persistence vector with named registry path; fills T-017 coverage gap."
+    },
+    {
+      "cluster_id": "ifeo-globalflag-silent-process-exit",
+      "canonical_name": "IFEO GlobalFlag Silent Process Exit as Persistence / Monitoring",
+      "proposed_category": "persistence",
+      "proposed_tier": "B",
+      "rationale": "Single coverage-gap note documenting the IFEO GlobalFlag / Silent Process Exit mechanism as a distinct persistence surface from traditional IFEO debugger keys.",
+      "member_note_ids": [
+        "lgtm:ifeo-globalflag-silent-exit-persistence"
+      ],
+      "consolidated_description": "Documents the IFEO GlobalFlag Silent Process Exit mechanism: HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\<image>\\.GlobalFlag set to FLG_MONITOR_SILENT_PROCESS_EXIT (0x2) triggers silent-process-exit monitoring, configurable via gflags.exe / sflg.exe (bundled with Windows SDK). When the monitored process exits, the Windows Error Reporting (WER) service invokes ReportingMode flags (LAUNCH_DEBUGGER = 0x1 for debugger persistence, NOTIFICATION = 0x2 for event log, LOCAL_DUMP = 0x4 for minidump) and StartDebugger processes specified under SilentProcessExit\\ReportingMode and \\MonitorProcess. Distinct from the traditional IFEO Debugger key (which spawns the debugger on process start) — Silent Process Exit triggers on process termination, providing postmortem persistence and exit monitoring. Configurable via gflags.exe -i <image> +sls.\n",
+      "technical_anchor": "HKLM\\...\\Image File Execution Options\\<image>\\.GlobalFlag = 0x2 (FLG_MONITOR_SILENT_PROCESS_EXIT); SilentProcessExit\\ReportingMode = 0x1 (LAUNCH_DEBUGGER) for persistence",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but distinct IFEO submechanism with named registry path; fills T-017 IFEO coverage gap."
+    },
+    {
+      "cluster_id": "certificate-pinning-c2-ssl-inspection-evasion",
+      "canonical_name": "Certificate Pinning for C2 SSL Inspection Evasion",
+      "proposed_category": "networking",
+      "proposed_tier": "A",
+      "rationale": "Single coverage-gap note documenting certificate pinning as the C2-side response to SSL inspection proxies; distinct from T-022's transport-layer work.",
+      "member_note_ids": [
+        "lgtm:certificate-pinning-c2-tradecraft"
+      ],
+      "consolidated_description": "Documents certificate pinning as a technique to prevent MITM inspection of C2 traffic by SSL proxy appliances (F5 BIG-IP, Blue Coat, Netscaler). The Win32 implementation uses InternetQueryOption(hRequest, INTERNET_OPTION_SERVER_CERT_CHAIN_CONTEXT, &certChainCtx, &size) to retrieve the server's certificate chain, CertGetNameString(CERT_NAME_SIMPLE_DISPLAY_TYPE) to extract the subject CN, and a byte-level comparison of the certificate's SHA-256 fingerprint (computed via CryptHashCertificate) against a pre-pinned list. Pairs with WinHTTP's WINHTTP_OPTION_SERVER_CERT_CONTEXT for transport-agnostic implementation. The vault's T-022 documents NT sockets and transport-level framing but does not document the application-layer certificate validation that defeats SSL inspection.\n",
+      "technical_anchor": "InternetQueryOption(INTERNET_OPTION_SERVER_CERT_CHAIN_CONTEXT) + CertGetNameString + SHA-256 fingerprint byte-comparison",
+      "would_relate_to": [
+        "T-022"
+      ],
+      "priority": "high",
+      "priority_reason": "Singleton but distinct technique with named Win32 API sequence; fills T-022 SSL evasion coverage gap."
+    },
+    {
+      "cluster_id": "cng-cryptoapi-modernization",
+      "canonical_name": "CNG API Migration from Legacy CryptoAPI",
+      "proposed_category": "crypto",
+      "proposed_tier": "B",
+      "rationale": "Single convergence note documenting the deprecation of legacy CryptoAPI calls and the recommended CNG replacements; reference card for T-021 crypto hygiene.",
+      "member_note_ids": [
+        "lgtm:cng-vs-legacy-cryptoapi-modernization"
+      ],
+      "consolidated_description": "Documents the deprecation of legacy CryptoAPI (CAPI) and the recommended CNG (Cryptography API: Next Generation) replacements. Legacy API sequence: CryptAcquireContextA(&hProv, container, provider, PROV_RSA_AES, 0) → CryptCreateHash → CryptHashData → CryptDeriveKey → CryptDecrypt. CNG replacement: BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, NULL, 0) → BCryptSetProperty(hAlg, BCRYPT_CHAINING_MODE, BCRYPT_CHAIN_MODE_CBC) → BCryptGenerateSymmetricKey(hAlg, &hKey, ...) → BCryptDecrypt(hKey, ciphertext, ..., &iv, plaintext, ...). CNG provides FIPS-validated algorithm providers, better key isolation (asymmetric keys stored in KSP), and AES-GCM authenticated encryption modes that legacy CAPI lacks. Pairs with T-021 client capability for payload decryption and C2 frame crypto.\n",
+      "technical_anchor": "BCryptOpenAlgorithmProvider(BCRYPT_AES_ALGORITHM) + BCryptSetProperty(BCRYPT_CHAINING_MODE = BCRYPT_CHAIN_MODE_CBC) replacing CryptAcquireContextA(PROV_RSA_AES)",
+      "would_relate_to": [
+        "T-021"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but cross-source convergence on the modernization recommendation; reference value for crypto implementations."
+    },
+    {
+      "cluster_id": "kernel-callback-resilience-metadata",
+      "canonical_name": "Kernel-Callback Resilience Defeating Userland Unhooking",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Single coverage-gap note documenting the cross-cutting limitation of T-016 userland unhooking — kernel callbacks continue to observe operations despite userland hook removal.",
+      "member_note_ids": [
+        "lgtm:kernel-callback-resilience-metadata"
+      ],
+      "consolidated_description": "Documents the cross-cutting limitation of T-016 userland NTDLL unhooking: kernel callbacks continue to observe operations regardless of userland hook state. The relevant callback primitives: PsSetCreateProcessNotifyRoutine (process create/exit, via PsSetCreateProcessNotifyRoutineEx2 with extended info), PsSetLoadImageNotifyRoutine (image load — fires for every PE mapped, including ntdll itself), ObRegisterCallbacks (object handle pre/post-operation — filters on OB_PRE_OPERATION_HANDLER for process/thread/file types), CmRegisterCallback (registry — fires on NtSetValueKey, NtCreateKey, NtDeleteKey), and ExNotifyCallback (object directory). The operational consequence: any T-007 process injection or T-013 thread hijack that triggers a kernel-observable transition (process creation, image load, thread creation via NtCreateThreadEx) will be observed. Evasion responses: direct thread creation via existing thread CONTEXT hijack (avoids NtCreateThreadEx trigger), map-and-execute without image load (PIC shellcode rather than DLL reflect), or kernel-mode compromise (driver unload / callback deregistration).\n",
+      "technical_anchor": "PsSetCreateProcessNotifyRoutineEx2 + PsSetLoadImageNotifyRoutine + ObRegisterCallbacks(OB_PRE_OPERATION_HANDLER) — kernel callbacks fire after T-016 unhook",
+      "would_relate_to": [
+        "T-007",
+        "T-013",
+        "T-016"
+      ],
+      "priority": "high",
+      "priority_reason": "Singleton but cross-cutting metadata that constrains every evasion technique in T-016; high operational relevance."
+    }
+  ],
+  "synthesis_notes": [],
+  "validation": {
+    "missing": [],
+    "extra": [],
+    "duplicates": []
+  }
+}

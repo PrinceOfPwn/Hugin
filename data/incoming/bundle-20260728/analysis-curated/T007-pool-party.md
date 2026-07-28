@@ -1,0 +1,362 @@
+---
+id: T-007
+name: Pool Party Injection
+category: process-injection
+tier: S
+mitre: T1055
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires: [T-001, T-004]
+enables: [T-005, T-008, T-023]
+vault_references:
+  - dark_crystal/crowd/src/pool_party.rs
+implements:
+  - file: dark_crystal/crowd/src/pool_party.rs
+    key_functions:
+      - pool_party_inject
+      - inner_pool_party
+      - map_shellcode_into_target
+      - find_worker_factory_handle
+      - is_type_worker_factory
+      - set_worker_factory_start_routine
+      - release_one_worker
+    key_structs:
+      - SysHandleEntryEx
+      - SysHandleInfoEx
+      - ObjTypeInfo
+      - WorkerFactoryBasicInfo
+    key_constants:
+      - SECTION_ALL_ACCESS
+      - WORKER_FACTORY_ALL
+      - PAGE_EXECUTE_READ
+      - PAGE_READWRITE
+      - SEC_COMMIT
+      - PROCESS_ALL_ACCESS
+      - MEM_COMMIT
+      - MEM_RESERVE
+    lines_of_interest:
+      - "L41-L50: NT access mask constants"
+      - "L53-L62: SysHandleEntryEx (ULONG_PTR for PID > 65535)"
+      - "L65-L71: SysHandleInfoEx class 64 wrapper"
+      - "L74-L80: ObjTypeInfo (ObjectTypeInformation)"
+      - "L84-L105: WorkerFactoryBasicInfo 0x70-byte layout"
+      - "L110-L115: pool_party_inject entry"
+      - "L117-L138: inner_pool_party orchestration"
+      - "L143-L196: map_shellcode_into_target (section mapping, write-local/remap-remote)"
+      - "L201-L263: find_worker_factory_handle (handle enumeration + type verification)"
+      - "L265-L289: is_type_worker_factory name check"
+      - "L293-L313: set_worker_factory_start_routine (NtSetInformationWorkerFactory class 1)"
+      - "L318-L330: release_one_worker (NtReleaseWorkerFactoryWorker)"
+min_windows: "6.1 (Windows 7) — SystemExtendedHandleInformation class 64 requires Win7+"
+needs_admin: "yes — NtQuerySystemInformation(SystemExtendedHandleInformation) and OpenProcess(PROCESS_ALL_ACCESS) both require elevation"
+tags: [injection, thread-pool, worker-factory, version-agnostic, section-mapping, indirect-syscalls]
+---
+
+# Pool Party Injection — Operator Playbook
+
+## TL;DR
+Hijacks a victim process's `TpWorkerFactory` to dispatch shellcode as if it were a queued work item — **zero new threads, zero APCs, zero SetThreadContext**. The implementation in `dark_crystal/crowd/src/pool_party.rs` uses SafeBreach's variant #4 (`WorkerFactoryThreadMinimum` overwrite via `NtSetInformationWorkerFactory` class 1) combined with a section-based mapping injection for the shellcode delivery itself. The whole chain rides on `crate::recycled` (T-001 RecycledGate) and `crate::resolve::compute_hash` (T-004 DJB2 PEB walker), so every NT call is indirect and unsignatured.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `dark_crystal/crowd/src/pool_party.rs` | Pool Party variant #4 — `TpWorkerFactory.StartRoutine` manipulation, with section-mapping shellcode delivery | `pool_party_inject(target_pid: u32, shellcode: &[u8]) -> Result<()>` | ~579 lines |
+
+## How It Works
+
+Step-by-step mechanism, grounded in the actual code:
+
+1. **Public entry — `pool_party_inject(target_pid, shellcode)`** (L110-L115)
+   Thin wrapper that immediately delegates to `unsafe fn inner_pool_party`. No state, no caching — call it once per target.
+
+2. **Process acquisition — `inner_pool_party`** (L117-L138)
+   Calls `winapi::um::processthreadsapi::OpenProcess(PROCESS_ALL_ACCESS, FALSE, target_pid)`. `PROCESS_ALL_ACCESS = 0x1FFFFF`. Failure returns `Err(anyhow!("PoolParty: OpenProcess({}) failed"))`. Note: the code uses the legacy `winapi` crate here (not the indirect `crate::recycled` path) for `OpenProcess` — this is a minor OPSEC inconsistency worth patching.
+
+3. **Shellcode write via section mapping — `map_shellcode_into_target(h_proc, shellcode)`** (L143-L196)
+   - `crate::recycled::nt_create_section(...)` with `PAGE_READWRITE` + `SEC_COMMIT` (0x08000000) and `max_size = shellcode.len() as u64`.
+   - **Local map**: `nt_map_view_of_section(h_section, (-1isize) as usize, ...)` with `PAGE_READWRITE`. The `-1isize` cast is the canonical `NtCurrentProcess( )` sentinel.
+   - `std::ptr::copy_nonoverlapping(shellcode.as_ptr(), local as *mut u8, shellcode.len())` — write into the local view.
+   - `nt_unmap_view_of_section((-1isize), local)` — drop the local mapping (shellcode is now committed in the section's pagefile-backed storage).
+   - **Remote map**: `nt_map_view_of_section(h_section, h_proc, ...)` with `PAGE_EXECUTE_READ` (0x20) — target gets the pages already RX, **no RW→RX transition in the remote process**.
+   - `nt_close(h_section)` releases the section object; the mapped view persists in target.
+   - Returns `Ok(remote as usize)`.
+
+4. **Handle enumeration — `find_worker_factory_handle(target_pid, h_proc)`** (L201-L263)
+   - `NtQuerySystemInformation` class `64` (`SystemExtendedHandleInformation`) — chosen explicitly for PIDs > 65535, since `SysHandleEntryEx.unique_pid` is `usize` (L56), not `u16`.
+   - Buffer doubling loop (`buf_size *= 2`) up to `128 * 1024 * 1024` cap, retrying on `STATUS_INFO_LENGTH_MISMATCH` (0xC0000004) and `STATUS_BUFFER_TOO_SMALL` (0xC0000023).
+   - For each `SysHandleEntryEx` where `entry.unique_pid == target_pid as usize`:
+     - `NtDuplicateObject(h_proc, entry.handle_value, NtCurrentProcess, &mut h_dup, WORKER_FACTORY_ALL = 0xF00FF, 0, 0)` — clone the handle into the *attacker's* process with full rights.
+     - `is_type_worker_factory(h_dup)` (L265-L289) verifies the type name string equals `"TpWorkerFactory"` via `NtQueryObject` class 2 (`ObjectTypeInformation`). The string is reconstructed from the `UNICODE_STRING` returned at `buf.as_ptr().add(16)` (Length field at offset 0).
+     - `NtQueryInformationWorkerFactory(h_dup, 7=WorkerFactoryBasicInformation, &mut f_info, 0x70, &ret_len)` — reads the basic info. Confirms `f_info.process_id == target_pid as usize` (this is the kernel-side owner PID, not the handle creator).
+     - Match → `return Ok(h_dup)`. Mismatch → `crate::recycled::nt_close(h_dup)` and continue.
+   - Exhausted → `Err(anyhow!("PoolParty: no TpWorkerFactory handle found in PID {}", target_pid))`.
+
+5. **StartRoutine overwrite — `set_worker_factory_start_routine(h_factory, sc_addr)`** (L293-L313)
+   - Constructs `let info = [sc_addr; 1]` (1-element usize array).
+   - `NtSetInformationWorkerFactory(h_factory, 1=WorkerFactoryThreadMinimum, info.as_ptr(), size_of::<usize>())`.
+   - **Note on the comment vs. the syscall**: The source comment claims class 1 is `WorkerFactoryThreadMinimum` and that the struct is `{ StartRoutine: usize }`. In the canonical `WORKER_FACTORY_INFORMATION_CLASS` enumeration, class 1 is `WorkerFactoryTimeout`. This looks like an off-by-one or a custom enumeration order in the developer's reference; functionally, the call writes `sc_addr` (8 bytes) into the worker factory's information buffer. Operators patching this should verify against the actual running kernel's enum, since the comment is misleading. **Treat the syscall as "write 8 bytes into WorkerFactory class 1" and confirm behavioral success empirically.**
+   - Returns `Err` on nonzero NTSTATUS.
+
+6. **Trigger — `release_one_worker(h_factory)`** (L318-L330)
+   - `NtReleaseWorkerFactoryWorker(h_factory)` — signals the factory to dispatch the next work item. With `StartRoutine` already overwritten, the next worker the factory releases uses the new entry point.
+   - Returns `Ok(())` on success.
+
+7. **Cleanup — `inner_pool_party` tail** (L131-L134)
+   - `crate::recycled::nt_close(h_factory)` — releases the duplicated factory handle.
+   - `winapi::um::handleapi::CloseHandle(h_proc)` — releases the process handle.
+   - Returns the inner `Result`.
+
+## Code Architecture
+
+### Call Graph (this file → external modules)
+
+```
+pool_party_inject  (L110)
+  └─ inner_pool_party  (L117)
+       ├─ winapi::um::processthreadsapi::OpenProcess        [legacy direct Win32 call]
+       ├─ map_shellcode_into_target  (L143)
+       │    ├─ crate::recycled::nt_create_section         → T-001 RecycledGate
+       │    ├─ crate::recycled::nt_map_view_of_section     → T-001
+       │    ├─ std::ptr::copy_nonoverlapping               (Rust intrinsic, no FFI)
+       │    ├─ crate::recycled::nt_unmap_view_of_section   → T-001
+       │    └─ crate::recycled::nt_close                   → T-001
+       ├─ find_worker_factory_handle  (L201)
+       │    ├─ crate::recycled::invoke(hash=NtQuerySystemInformation, argc=4, ...)  → T-001
+       │    ├─ crate::recycled::invoke(hash=NtDuplicateObject, argc=7, ...)         → T-001
+       │    ├─ is_type_worker_factory  (L265)
+       │    │    └─ crate::recycled::invoke(hash=NtQueryObject, argc=5, ...)       → T-001
+       │    └─ crate::recycled::invoke(hash=NtQueryInformationWorkerFactory, argc=5)→ T-001
+       ├─ set_worker_factory_start_routine  (L293)
+       │    └─ crate::recycled::invoke(hash=NtSetInformationWorkerFactory, argc=4)→ T-001
+       ├─ release_one_worker  (L318)
+       │    └─ crate::recycled::invoke(hash=NtReleaseWorkerFactoryWorker, argc=1)→ T-001
+       └─ crate::recycled::nt_close + winapi CloseHandle   → T-001
+```
+
+Every NT call goes through `crate::recycled::invoke(hash, argc, &[args])` — that is the **T-001 RecycledGate** indirect syscall stub. Hash strings come from `crate::resolve::compute_hash(...)` — **T-004 PEB walker + DJB2**.
+
+### Data Flow
+
+```
+shellcode: &[u8]
+   │
+   ├─→ copy into LOCAL section view (PAGE_READWRITE)  [attacker process]
+   │         │
+   │         └─→ unmap local → section retains the bytes
+   │
+   └─→ REMOTE section view in target  (PAGE_EXECUTE_READ)   [victim process]
+            │  sc_addr = remote as usize
+            │
+            └─→ written into WorkerFactoryThreadMinimum info buffer
+                     │
+                     └─→ NtReleaseWorkerFactoryWorker triggers dispatch
+                              │
+                              └─→ shellcode executes in pool worker thread
+```
+
+### Type Hierarchy
+
+- **`SysHandleInfoEx`** (class 64 envelope) — variable-length array via `[SysHandleEntryEx; 1]` FAM pattern; iteration via `handles_base.add(i)` for `i in 0..count`.
+- **`SysHandleEntryEx`** — `unique_pid: usize` is the critical field that makes this PID-safe beyond 65535 (vs. `SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX.UniqueProcessId` which is `USHORT` in older revisions).
+- **`WorkerFactoryBasicInfo`** — 112 bytes (0x70), with `start_routine` at `+0x40`, `start_parameter` at `+0x48`, `process_id` at `+0x50`. The struct definition is **only used for the query**, not for the set — `set_worker_factory_start_routine` passes a bare `usize` array, relying on class-1 behavior rather than the basic info struct.
+
+### Feature Gates
+
+None in this file — `pool_party.rs` is always compiled when the `crowd` crate is built. Caller gating is upstream in `dark_crystal/crowd/src/chain.rs` (T-022 architecture).
+
+## Operational Profile
+
+### When to Use
+- Mature EDR with thread-creation hooks (ETW `ThreadStart`) — Pool Party is invisible to those.
+- EDRs that flag `QueueUserApc`, `NtSetContextThread`, `NtCreateThreadEx` — Pool Party uses none of them.
+- Long-lived victim processes (svchost, explorer, runtimebroker) where a TpWorkerFactory already exists.
+- Post-exploitation staging where you want to spawn a payload in another process without `CreateRemoteThread` signature.
+
+### When NOT to Use
+- **Suspended / freshly spawned targets** — they won't have a TpWorkerFactory handle. Use T-012 Early Cascade or T-007 in conjunction with T-014 (NtCreateUserProcess) + a "warm-up" period.
+- **PPL / Protected processes** — `OpenProcess(PROCESS_ALL_ACCESS)` will fail; the winapi path won't fall back to indirect.
+- **Tight in-memory scanning EDRs** — the `PAGE_EXECUTE_READ` remote mapping is still detectable by `VirtualQuery` walks looking for non-image-backed RX regions. Pair with T-013 Module Overloading for image-backed backing.
+- **Hardened Windows versions where NtSetInformationWorkerFactory class 1 is hooked** — few EDRs hook it today, but SentinelOne/BizDefender have started.
+
+### Kill Chain Position
+
+Standard chain:
+```
+T-004 (PEB walk) → T-002 (SSN resolve) → T-001 (RecycledGate) → T-014 (NtCreateUserProcess spawn victim) → T-007 (Pool Party) → T-005 (Ekko sleep) → T-017 (persistence) → T-023 (client)
+```
+
+Pool Party sits late in the dropper chain, after the target process exists and before the payload's own self-protection kicks in. Variant #4's advantage is that the dispatched shellcode runs **inside the victim's pool worker thread context**, so the payload's first action should re-establish its own TpWorkerFactory or migrate (otherwise the worker thread keeps cycling the pool).
+
+### Trade-offs
+
+## Rust Implementation Deep Dive
+
+For operators modifying the code:
+
+### `unsafe` blocks
+
+1. **`pool_party_inject`** (L113) — Thin shim, calls `inner_pool_party` in an unsafe context because all called functions are unsafe FFI.
+
+2. **`inner_pool_party`** (L117-L138) —
+   - `OpenProcess(...)` returns a raw `HANDLE`. The code stores it as `h_proc_u = h_proc as usize` for passing to indirect syscalls (which expect `usize` args).
+   - Cleanup order on success: `nt_close(h_factory)` → `CloseHandle(h_proc)`. 
+
+3. **`map_shellcode_into_target`** (L143-L196) —
+   - Uses `null_mut()` for the (optional) `ObjectAttributes` parameter of `NtCreateSection` and for the `BaseAddress` `IN OUT` pointer on first map (kernel picks the address).
+   - Section is created with `SEC_COMMIT` (0x08000000) — **pagefile-backed, not file-backed**. This means the section is **not MEM_IMAGE** and shows as `MEM_MAPPED` in `VirtualQuery` — a tell for memory scanners. 
+   - `(-1isize) as usize` is the canonical `NtCurrentProcess()` (a.k.a. `NtCurrentProcess = (HANDLE)-1`).
+   - The local `nt_unmap_view_of_section` after `copy_nonoverlapping` flushes the local commit so that the next `nt_map_view_of_section` into the target maps the *current* section state, not a stale view.
+   - On any failure, the section handle is closed via `crate::recycled::nt_close(h_section)` to prevent handle leaks.
+
+4. **`find_worker_factory_handle`** (L201-L263) —
+   - Buffer doubling: starts at `64 * 1024`, doubles up to `128 * 1024 * 1024` (128MB). On `STATUS_INFO_LENGTH_MISMATCH` or `STATUS_BUFFER_TOO_SMALL`, retries.
+   - The struct access pattern `&(*info).handles[0] as *const SysHandleEntryEx` then `.add(i)` is the **flexible-array-member idiom** — Rust doesn't support FAM directly, so the `[SysHandleEntryEx; 1]` is a stand-in and the pointer arithmetic walks the true allocation.
+   - `NtDuplicateObject` with `WORKER_FACTORY_ALL = 0xF00FF` access mask and flags `0` (no `DUPLICATE_CLOSE_SOURCE` — does not invalidate the source handle in target).
+   - Final verification via `NtQueryInformationWorkerFactory` class 7: checks `f_info.process_id == target_pid as usize` — this is the kernel-asserted owner PID of the factory, not the handle's creator. Prevents false positives on duplicated handles.
+   - **Bug to be aware of**: in the inner loop, when `is_type_worker_factory(h_dup)` returns true but `NtQueryInformationWorkerFactory` fails (q_st != 0), the code calls `crate::recycled::nt_close(h_dup)` and continues. Good. But when `is_type_worker_factory` returns false, the code path `continues` without closing `h_dup` — **handle leak**. 
+
+5. **`is_type_worker_factory`** (L265-L289) —
+   - Allocates a 256-byte buffer, queries `ObjectTypeInformation`.
+   - Reads `length = *(buf.as_ptr() as *const u16) as usize` — the `UNICODE_STRING.Length` field (in bytes, not chars).
+   - Skips 16 bytes (size of `UNICODE_STRING` itself) to reach `Buffer`.
+   - `std::slice::from_raw_parts(chars_ptr, length / 2)` reconstructs UTF-16 chars; `String::from_u32` converts.
+   - Compares equality with `"TpWorkerFactory"`. **Case-sensitive** — fine for NT object types which are always title-cased.
+
+6. **`set_worker_factory_start_routine`** (L293-L313) —
+   - **The most interesting block**: passes `info.as_ptr()` (pointing at a 1-element usize array `[sc_addr]`) as the `Buffer` and `size_of::<usize>()` (= 8) as the `BufferLength` to `NtSetInformationWorkerFactory` with class 1.
+   - The source comment calls class 1 "WorkerFactoryThreadMinimum" but the canonical enum has class 1 as `WorkerFactoryRetryTimeout`. Operators must verify against the kernel running on the target before relying on the stated semantics. The behavioral claim ("overwrites StartRoutine") should be empirically validated by running against a test victim and confirming that the worker thread's new entry point matches `sc_addr`.
+   - On success, `Ok(())`; on failure, `Err` with the NTSTATUS hex.
+
+7. **`release_one_worker`** (L318-L330) —
+   - Single-arg indirect syscall: `NtReleaseWorkerFactoryWorker(h_factory)`. The worker factory immediately dequeues one pending work item (or wakes an idle worker). Combined with the StartRoutine overwrite, the worker runs the shellcode.
+
+### FFI patterns
+
+- **Handle types**: All NT handles passed as `usize`. Conversion `h_proc as usize` at the winapi boundary and back to whatever `recycled::invoke` expects.
+- **Pointer args**: `&mut h_section` cast through `as *mut _ as usize` — the universal `usize`-as-`PVOID*` idiom used by the `recycled::invoke` ABI.
+- **String conversion**: `String::from_u32` in a `filter_map` — UTF-16 → Rust String with graceful skip on invalid code points.
+- **Struct zeroing**: `std::mem::zeroed()` for `WorkerFactoryBasicInfo` before `NtQueryInformationWorkerFactory` populates it.
+
+### Initialization patterns
+
+- No `OnceLock`/`LazyCell` in this file. State is local to each call. Re-entry safety is not required because every call has its own duplicated handle.
+- Constants are `const` (compile-time), not `static` — they inline at every use site.
+
+### Error handling
+
+- `anyhow::Result` throughout. `anyhow!` macro for formatted error messages with NTSTATUS hex.
+- **Every NTSTATUS is checked**: `if st != 0 { return Err(...); }`. No silent failures.
+- `STATUS_INFO_LENGTH_MISMATCH` / `STATUS_BUFFER_TOO_SMALL` are explicitly handled in the handle-enumeration loop (retry with bigger buffer).
+
+### Memory layout
+
+- `WorkerFactoryBasicInfo`: explicit field offsets documented in comments (`+0x00`, `+0x08`, `+0x18`, `+0x20`, etc.). Total `0x70 = 112` bytes matches the kernel's `WORKER_FACTORY_BASIC_INFORMATION`.
+- **Padding fields** (`_pad_paused`, `_pad_turbo`, `_pad2`, `_pad3`) are explicit — Rust `#[repr(C)]` would otherwise insert implicit padding, but the developer marked them so the offsets are visible in the source. Important for cross-version field verification.
+- **One quirk**: the layout skips `+0x10` between `retry_timeout` (i64 at +0x08) and `idle_timeout` (i64 at +0x18). There's an 8-byte gap not represented as a named field. In the canonical kernel struct this is a separate field; the developer left it implicit. Operators matching offsets to a new kernel should verify against `ntddk.h` rather than trusting this struct.
+
+### Syscall numbers
+
+- **Not resolved in this file**. All syscalls go through `crate::recycled::invoke(hash, argc, &[args])`. The hash comes from `crate::resolve::compute_hash("NtXxx")` (T-004 DJB2). The actual SSN and gadget resolution happens in the recycled crate (T-001 RecycledGate + T-002 SSN resolution cascade).
+
+## Cross-References Found in Code
+
+| Location | Reference | Technique |
+|---|---|---|
+| `pool_party.rs:143-196` (`map_shellcode_into_target`) | calls `crate::recycled::nt_create_section`, `nt_map_view_of_section`, `nt_unmap_view_of_section`, `nt_close` | T-001 RecycledGate |
+| `pool_party.rs:206` (`find_worker_factory_handle`) | `crate::resolve::compute_hash("NtQuerySystemInformation")` → `crate::recycled::invoke(hash, 4, &[...])` | T-001 + T-004 |
+| `pool_party.rs:222-231` | `crate::resolve::compute_hash("NtDuplicateObject")` → `crate::recycled::invoke` | T-001 + T-004 |
+| `pool_party.rs:267-276` (`is_type_worker_factory`) | `crate::resolve::compute_hash("NtQueryObject")` | T-001 + T-004 |
+| `pool_party.rs:243-252` | `crate::resolve::compute_hash("NtQueryInformationWorkerFactory")` | T-001 + T-004 |
+| `pool_party.rs:303-312` (`set_worker_factory_start_routine`) | `crate::resolve::compute_hash("NtSetInformationWorkerFactory")` | T-001 + T-004 |
+| `pool_party.rs:323-329` (`release_one_worker`) | `crate::resolve::compute_hash("NtReleaseWorkerFactoryWorker")` | T-001 + T-004 |
+| `pool_party.rs:120` (`inner_pool_party`) | `winapi::um::processthreadsapi::OpenProcess` (direct) | **OPSEC gap** — direct Win32 not routed via T-001 |
+| `pool_party.rs:133` | `winapi::um::handleapi::CloseHandle` (direct) | **OPSEC gap** — should use `crate::recycled::nt_close` |
+
+## Edge Cases & Failure Modes
+
+1. **Target has no `TpWorkerFactory` handle**
+   - Path: `find_worker_factory_handle` exhausts the enumeration loop.
+   - Symptom: `Err(anyhow!("PoolParty: no TpWorkerFactory handle found in PID {}", target_pid))`.
+   - Workaround: ensure target is a long-lived process (svchost/explorer). Or fall back to T-012 (Early Cascade) into a freshly suspended process and let the loader initialize a thread pool before triggering.
+
+2. **`NtQuerySystemInformation` requires `SeDebugPrivilege`**
+   - Path: enumeration loop returns STATUS_ACCESS_DENIED (0xC0000022).
+   - Symptom: `Err(anyhow!("PoolParty: NtQuerySystemInformation(64) failed: 0xC0000022"))`.
+   - Workaround: enable `SeDebugPrivilege` in the operator's token before calling; the chain runner in `crate::runner` should ensure this.
+
+3. **Handle leak when `is_type_worker_factory` returns false**
+   - Path: L226-230, `if is_type_worker_factory(h_dup) { ... }` branch's `else` is implicit (no `nt_close`).
+   - Symptom: Slow handle-table exhaustion over many runs.
+   - Workaround: **operator patch**: add `crate::recycled::nt_close(h_dup); continue;` after the `if is_type_worker_factory(h_dup)` block.
+
+4. **Buffer-too-large cap**
+   - Path: handle enumeration loop doubles `buf_size` past 128MB.
+   - Symptom: `Err(anyhow!("PoolParty: buffer too large"))`.
+   - Workaround: target process has an abnormal handle table; use `NtQueryInformationProcess(ProcessHandleInformation)` on the target directly instead of system-wide enumeration.
+
+5. **`NtSetInformationWorkerFactory` class 1 behavior variance**
+   - Path: `set_worker_factory_start_routine` may succeed at the NTSTATUS level but the field actually written depends on the kernel's `WORKER_FACTORY_INFORMATION_CLASS` enum layout.
+   - Symptom: shellcode not executed; `release_one_worker` returns success but no worker runs the shellcode.
+   - Workaround: dump `WorkerFactoryBasicInfo` before and after the set; verify which field changed. Adjust the class number if needed.
+
+6. **Section mapping as `MEM_MAPPED` (not `MEM_IMAGE`)**
+   - Path: `map_shellcode_into_target` uses `SEC_COMMIT`, so `VirtualQuery` in the victim returns `Type = MEM_MAPPED`.
+   - Symptom: EDRs scanning for non-image-backed RX regions flag the allocation.
+   - Workaround: replace with `SEC_IMAGE` + a transplanted PE (T-013 Module Overload pattern in `dark_crystal/crowd/src/module_stomp.rs`).
+
+7. **PID > 65535 truncation**
+   - Path: NOT a failure here — the code correctly uses `SysHandleEntryEx.unique_pid: usize` (L56) and compares against `target_pid as usize` (L219). This is one of the few Pool Party implementations that explicitly handles PIDs > 65535.
+   - Symptom: N/A.
+   - Workaround: N/A (already handled).
+
+## OPSEC Notes
+
+### Artifacts left in target
+- **Mapped section view** with `PAGE_EXECUTE_READ` at an address chosen by the kernel. Survives until the payload itself unmaps it.
+- **Modified `WorkerFactoryThreadMinimum` info buffer**: the kernel object's state may persist depending on which class 1 actually targets. TppWorkerThread` before returning.
+- **No new thread** in the target — `ProcessHacker` and similar tools will not show a thread-creation event.
+
+### Artifacts left in attacker
+- Duplicated `TpWorkerFactory` handle closed via `crate::recycled::nt_close` (clean).
+- Process handle closed via `winapi::um::handleapi::CloseHandle` (clean, but direct Win32 — see OPSEC gap below).
+- Local section view unmapped before remote map (clean).
+
+### OPSEC gaps in current code
+- `OpenProcess` (L120) goes through `winapi::um::processthreadsapi::OpenProcess` — direct Win32, not the indirect path. Should be replaced with `crate::recycled` NtOpenProcess wrapper.
+- `CloseHandle` (L133) likewise — replace with `crate::recycled::nt_close`.
+- `NtQuerySystemInformation(class 64)` is a known telemetry-rich call. ETW `Microsoft-Windows-Kernel-Process` may log it. Consider limiting to `ProcessHandleInformation` on the specific target process instead of system-wide.
+
+### Telemetry surface
+- **No ETW TI `ThreadStart` event** — no thread created.
+- **No ETW TI `QueueApc` event** — no APC.
+- **Possible `SetInformationWorkerFactory` ETW event** — uncommon but a few EDRs ( CrowdStrike Falcon 6.x+, SentinelOne 4.5+) emit it.
+- `NtQuerySystemInformation(class 64)` may trigger Defender's `MsMpEng.exe` scan of the calling process.
+
+## Reusable Patterns
+
+### Pattern: Section-Mediated Shellcode Write (Local-Map / Unmap / Remote-Map)
+- **Use when**: you need to avoid `NtWriteVirtualMemory` (heavily hooked) and want RX-only in the target.
+- **Code ref**: `pool_party.rs:map_shellcode_into_target` (L143-L196).
+- **How**: create a section (`SEC_COMMIT`, `PAGE_READWRITE`), map locally with RW, write bytes, unmap, then map the same section into the target with `PAGE_EXECUTE_READ`. The bytes live in the section's commit storage between the unmap and the remote map. No `WriteProcessMemory`, no RW→RX transition in the remote. **Caveat**: produces `MEM_MAPPED`, not `MEM_IMAGE` — pair with module stomping for image-backed stealth.
+
+### Pattern: ULONG_PTR Handle Enumeration with PID-Safe Comparison
+- **Use when**: enumerating handles for processes whose PID exceeds 65535 (modern Windows session/process IDs).
+- **Code ref**: `pool_party.rs:find_worker_factory_handle` (L201-L263), `SysHandleEntryEx.unique_pid: usize`.
+- **How**: declare `unique_pid` as `usize` (matches `ULONG_PTR` in the kernel struct), and compare against `target_pid as usize`. Avoids the classic `u16` truncation bug in `SYSTEM_HANDLE_INFORMATION`.
+
+### Pattern: Object-Type Verification via NtQueryObject
+- **Use when**: you have a duplicated handle and need to confirm its kernel type without trusting the source process's handle table.
+- **Code ref**: `pool_party.rs:is_type_worker_factory` (L265-L289).
+- **How**: `NtQueryObject(handle, ObjectTypeInformation, buf, len, &ret_len)` returns a `UNICODE_STRING`. Read `Length` from offset 0, skip 16 bytes (full `UNICODE_STRING`), slice `Length / 2` UTF-16 chars, compare to the expected type name. Decouples type trust from the handle's creator.
+
+### Pattern: Buffer-Doubling Retry Loop with Cap
+- **Use when**: querying variable-length system information with no upper bound on required size.
+- **Code ref**: `pool_party.rs:find_worker_factory_handle` loop (L208-L263).
+- **How**: start at 64KB, double on `STATUS_INFO_LENGTH_MISMATCH` or `STATUS_BUFFER_TOO_SMALL`, cap at 128MB. Hard fail beyond cap. Prevents both allocation bombs and infinite loops.
+
+### Pattern: Indirect-Syscall Argument Array
+- **Use when**: calling NT APIs via a uniform indirect dispatcher (RecycledGate / VEH Gate).
+- **Code ref**: `pool_party.rs` throughout — e.g., `crate::recycled::invoke(hash, 4, &[64usize, buf.as_mut_ptr() as usize, buf_size, &mut out_len as *mut u32 as usize])`.
+- **How**: pass `argc` (literal count) and a `&[usize]` slice of arguments. Pointers cast through `as *mut _ as usize`. Each element is one positional parameter of the NT function. The dispatcher is responsible for register/stack layout (T-001 `sys_indirect.rs` handles this).

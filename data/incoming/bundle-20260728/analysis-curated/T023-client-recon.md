@@ -1,0 +1,401 @@
+---
+id: T-023
+name: Client Capabilities Suite
+category: client
+tier: mixed
+mitre: T1046, T1018, T1056.001, T1056.002, T1564
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires: [T-022]
+enables: []
+vault_references:
+  - techniques/T023-client-capabilities.md
+  - src/client_rust/src/byakugan.rs
+  - src/client_rust/src/input.rs
+  - src/client_rust/src/input_blocker.rs
+implements:
+  - file: src/client_rust/src/byakugan.rs
+    key_functions: [dispatch, handle_arp_scan, handle_port_scan, handle_banner_grab, handle_ad_enum, handle_passive_discovery, handle_cancel, run_system_command, run_piped_command, parse_arp_output, parse_arp_line_windows, parse_arp_line_unix, parse_local_interfaces, parse_nltest_output, parse_net_user_output, parse_net_group_output, parse_nbtstat_output, parse_port_range, guess_service, get_probe_for_port, scan_single_port, build_message, build_error, build_host_msg, build_scan_result, cancel_registry::cancel, cancel_registry::is_cancelled, cancel_registry::clear]
+    key_structs: [ArpScanRequest, PortScanRequest, BannerGrabRequest, AdEnumRequest, PassiveRequest, CancelRequest]
+    key_constants: [MSG_BYAKUGAN_SCAN_RESULT=0x40, MSG_BYAKUGAN_HOST=0x41, MSG_BYAKUGAN_ERROR=0x42, PORT_SCAN_BATCH_SIZE=100, PORT_SCAN_TIMEOUT_MS=2000, BANNER_GRAB_TIMEOUT_MS=3000, MAX_BANNER_BYTES=1024, DEFAULT_PASSIVE_DURATION_SECS=30, PASSIVE_POLL_INTERVAL_SECS=5]
+    lines_of_interest: ["L25-L30: protocol constants", "L36-L52: OnceLock cancel registry", "L100-L110: build_message 5-byte header [type][u32 len]", "L113-L180: ARP scan via `arp -a` + ipconfig", "L183-L260: port scan with 100-conn batches + 2s TCP timeout", "L265-L325: banner grab with port-specific probe bytes", "L330-L410: AD enum: nltest, net user/group /domain", "L415-L490: passive ARP poll loop", "L575-L650: Windows ARP line parser", "L655-L735: ipconfig parser with Windows/Unix dual support", "L740-L790: nltest parser", "L795-L850: net user/group parsers", "L945-L990: dispatch match statement"]
+  - file: src/client_rust/src/input.rs
+    key_functions: [vk_from_name, send_inputs, mouse_input, key_input, try_post_message_mouse_move, try_post_message_click, move_mouse_normalized, move_mouse_normalized_on_monitor, set_natural_mouse, is_natural_enabled, get_cursor_pos, norm_to_pixel, pixel_to_norm, norm_to_pixel_with_bounds, make_lparam, ease_in_out_cubic, bezier_cubic, rand_f64, rand_range, issue_move_token, token_matches, cancel_mouse_move, move_mouse_natural_pixels, move_mouse_natural, move_mouse_natural_and_click, move_mouse_natural_and_scroll, do_click, left_click, right_click, middle_click, scroll_wheel, type_text, press_key, press_hotkey]
+    key_structs: [INPUT, MOUSEINPUT, KEYBDINPUT]
+    key_constants: [MOVE_TOKEN, NATURAL_MOUSE_ENABLED, FALLBACK_LOG_COUNT]
+    lines_of_interest: ["L14-L75: vk_from_name name→VK map", "L82-L87: send_inputs unsafe SendInput call", "L89-L115: mouse_input and key_input INPUT constructors", "L123-L142: make_lparam and norm_to_pixel_with_bounds helpers", "L150-L170: try_post_message_mouse_move PostMessage fallback", "L175-L200: try_post_message_click PostMessage down+up", "L210-L250: move_mouse_normalized 3-tier fallback chain SendInput→SetCursorPos→PostMessage", "L255-L300: move_mouse_normalized_on_monitor per-monitor coord conversion", "L315-L345: AtomicU32 MOVE_TOKEN + AtomicBool NATURAL_MOUSE_ENABLED globals", "L375-L395: ease_in_out_cubic + bezier_cubic math", "L400-L425: thread_local LCG rand_f64 seeded from SystemTime nanos", "L440-L470: move_mouse_natural_pixels main loop with token check + jitter", "L500-L530: move_mouse_natural_and_click with 30% overshoot probability", "L555-L575: left_click/right_click/middle_click with PostMessage fallback", "L590-L600: scroll_wheel MOUSEEVENTF_WHEEL", "L605-L620: type_text KEYEVENTF_UNICODE per-char", "L625-L660: press_key single-char fallback via VkKeyScanW", "L665-L720: press_hotkey with VkKeyScanW modifier auto-extraction"]
+  - file: src/client_rust/src/input_blocker.rs
+    key_functions: [block_input, keyboard_proc, mouse_proc]
+    key_structs: [HookState]
+    key_constants: [LLKHF_INJECTED=0x10, LLMHF_INJECTED=0x01, HOOK_STATE, BLOCKING]
+    lines_of_interest: ["L16-L17: LLKHF_INJECTED and LLMHF_INJECTED flag constants", "L19-L23: HookState struct with HHOOK handles and thread_id", "L27-L28: HOOK_STATE OnceLock + BLOCKING AtomicBool globals", "L30-L47: keyboard_proc unsafe extern system callback - blocks physical keypresses when BLOCKING", "L49-L66: mouse_proc unsafe extern system callback - blocks physical mouse events", "L68-L130: block_input main fn - spawns hook thread, installs WH_KEYBOARD_LL + WH_MOUSE_LL, runs GetMessageW pump, cleanup via WM_QUIT"]
+min_windows: Windows 7 SP1 (WH_KEYBOARD_LL/WH_MOUSE_LL, SendInput, GetSystemMetrics SM_*VIRTUALSCREEN)
+needs_admin: no
+tags: [bof, keylogger, browser-hook, uac-bypass, capture, h264, input-blocker, recon, clipboard, ui-automation, dirty-rect, exfil, sysinfo, network-recon, arp-scan, port-scan, banner-grab, ad-enum, sendinput, natural-mouse, bezier, ease-in-out, low-level-hooks]
+---
+
+# Client Capabilities Suite — Operator Playbook
+
+## TL;DR
+T-023 is the operator-facing feature surface of the `client_rust` RAT: post-exploitation modules covering network recon (`byakugan.rs`), Win32 input injection with humanized mouse/keyboard (`input.rs`), and physical-input blocking with synthetic-pass-through (`input_blocker.rs`). The three files analyzed here represent the *recon-and-control* axis of the suite — they don't touch kernel space or syscalls, but they ship careful engineering: a cancellation registry for long-running scans, three-tier SendInput→SetCursorPos→PostMessage fallback chains for headless/VM targets, cubic Bézier curves with LCG micro-jitter for humanized motion, and LLKHF/LLMHF injected-flag filtering so the blocker stops the user without stopping our own `SendInput`. Use these when you've already got execution via T-007/T-012 and need to enumerate the LAN, take remote control of a session, or freeze the user out during a fake UI overlay.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `src/client_rust/src/byakugan.rs` | 360° network recon: ARP scan, TCP port scan (batches of 100), banner grab with port-specific probes, AD enumeration via `nltest`/`net user /domain`, passive ARP polling. Three protocol message types (0x40-0x42). `OnceLock<Mutex<HashSet<u32>>>` per-scan cancellation registry. Cross-platform (`#[cfg(target_os = "windows")]` for AD enum and nbtstat). | `dispatch(cmd_type, payload) -> Vec<Vec<u8>>`, `cancel_registry::{cancel, is_cancelled, clear}` | ~1100 LOC |
+| `src/client_rust/src/input.rs` | Win32 SendInput-based mouse/keyboard injection. Virtual-key name map (50+ keys). Cubic Bézier natural mouse movement with ease-in-out cubic pacing, ±2px micro-jitter, 30% overshoot probability. 3-tier fallback: SendInput → SetCursorPos → PostMessage(WM_*). `AtomicU32` move token for cancellation of long motions. `KEYEVENTF_UNICODE` per-char typing; `VkKeyScanW` for hotkey auto-modifier detection. | `move_mouse_natural`, `move_mouse_natural_and_click`, `type_text`, `press_key`, `cancel_mouse_move`, `set_natural_mouse` | ~720 LOC |
+| `src/client_rust/src/input_blocker.rs` | `WH_KEYBOARD_LL` + `WH_MOUSE_LL` low-level hooks installed on a dedicated message-pump thread. Blocks physical input by checking `LLKHF_INJECTED` (0x10) / `LLMHF_INJECTED` (0x01) — synthetic SendInput events always pass through. Teardown via `PostThreadMessageW(WM_QUIT)`. | `block_input(bool)` | ~140 LOC |
+
+## How It Works
+
+### Byakugan — Network Reconnaissance (`byakugan.rs`)
+
+1. **Command dispatch entry** (`dispatch()` L945). Operator sends a string command type (`BYAKUGAN_ARP_SCAN`, `BYAKUGAN_PORT_SCAN`, `BYAKUGAN_BANNER_GRAB`, `BYAKUGAN_AD_ENUM`, `BYAKUGAN_PASSIVE`, `BYAKUGAN_CANCEL`) and a JSON payload. `dispatch` matches the string, calls `serde_json::from_str::<...Request>(payload)`, and routes to the matching `handle_*` async fn. On parse failure it returns `vec![build_error(0, ...)]` (scan_id=0 means "no scan context").
+
+2. **Message framing** (`build_message` L100). Every reply is `[1B msg_type][4B big-endian payload_len][payload_bytes]`. The 5-byte header is consistent across `MSG_BYAKUGAN_SCAN_RESULT (0x40)`, `MSG_BYAKUGAN_HOST (0x41)`, and `MSG_BYAKUGAN_ERROR (0x42)`. The payload itself is a `serde_json::to_string()` UTF-8 blob — wire format is JSON-in-binary, not pure binary.
+
+3. **ARP scan** (`handle_arp_scan` L113). Calls `run_system_command("arp", &["-a"])` via `tokio::process::Command`, plus `ipconfig /all` (Windows) or `ip addr` (Unix). `parse_arp_output` tries Windows format first (`IP whitespace MAC whitespace Type`, dashes converted to colons, broadcast `ff-ff-ff-ff-ff-ff` filtered) then Unix format (`? (IP) at MAC [ether] on iface`). Each discovered host is streamed back immediately via `build_host_msg` before the final `build_scan_result` summary — operator sees hosts as they parse, not at the end.
+
+4. **Port scan** (`handle_port_scan` L183). Parses range (`"1-1024"` or single port) via `parse_port_range`. Iterates in batches of `PORT_SCAN_BATCH_SIZE = 100` ports. For each port in the batch, `tokio::spawn(scan_single_port(host, p))` — a TCP `TcpStream::connect` wrapped in `tokio::time::timeout(2000ms)`. Joins all task handles, emits `build_host_msg` per open port with `guess_service(p)` (hardcoded table of ~60 well-known ports). Final summary includes `ports_scanned`, `total_ports`, `open_count`.
+
+5. **Cancellation** (`cancel_registry` L36). A `static CANCELLED: OnceLock<Mutex<HashSet<u32>>>` is lazily initialized. `BYAKUGAN_CANCEL` calls `cancel_registry::cancel(scan_id)`. Inside every scan loop the worker calls `is_cancelled(scan_id)` between batch iterations — if true, emits `build_error(scan_id, "cancelled")`, calls `clear(scan_id)`, and returns early. This is the **same pattern as `amaterasu.rs`** (per the manifest), making it a reusable module-level cancellation idiom.
+
+6. **Banner grab** (`handle_banner_grab` L265). Connects to `target:port` with 3s timeout. `get_probe_for_port(port)` returns port-specific probe bytes: HTTP `GET / HTTP/1.0\r\nHost: target\r\n\r\n` for 80/8080/8000/8888, `EHLO probe\r\n` for 25/587, `PING\r\n` for 6379 (Redis), and empty for protocols that speak first (SSH, FTP, POP3, IMAP, MySQL, PostgreSQL, MongoDB). Reads up to `MAX_BANNER_BYTES = 1024` bytes back with another 3s read timeout. Result JSON includes `banner`, `banner_bytes`, `service`.
+
+7. **AD enumeration** (`handle_ad_enum` L330, Windows-only). Five-step chain, each step cancellable:
+   - `nltest /dsgetdc:` → parsed by `parse_nltest_output` into `dc`, `address`, `domain_guid`, `domain_name`, `forest_name`, `dc_site`, `our_site`.
+   - `systeminfo | findstr /B /C:Domain` via `run_piped_command` (uses `cmd /C` on Windows).
+   - `net user /domain` → `parse_net_user_output` (columnar, split on `------` separator).
+   - `net group /domain` → `parse_net_group_output` (groups prefixed with `*`).
+   - `net group "Domain Admins" /domain` → reuses `parse_net_user_output` to extract DA list.
+   
+   On non-Windows builds, returns `build_error(scan_id, "AD enumeration requires Windows")`.
+
+8. **Passive discovery** (`handle_passive_discovery` L415). Initial `arp -a` snapshot fills `known_hosts: HashSet<String>`. On Windows, also runs `nbtstat -n` parsed by `parse_nbtstat_output` (NetBIOS name suffix `<00>`, type UNIQUE/GROUP). Then enters a poll loop: every `PASSIVE_POLL_INTERVAL_SECS = 5s`, re-runs `arp -a`, emits `build_host_msg` for any IP not in `known_hosts`. Duration capped at 600s. Cancellation checked at the top of every iteration.
+
+9. **System command execution** (`run_system_command` L860, `run_piped_command` L880). Both are thin `tokio::process::Command::output().await` wrappers. Failures return empty string (`String::new()`) — they do **not** propagate errors. Piped commands use `cmd /C "cmd1 args1 | cmd2 args2"` on Windows, `sh -c "..."` on Unix. This is LOtL — *no binaries dropped, all built-in OS tools*. **This is the OPSEC risk surface**: process creation events for `arp.exe`, `ipconfig.exe`, `nltest.exe`, `net.exe`, `systeminfo.exe`, `cmd.exe` will fire on EDR/ETW.
+
+### Input Injection (`input.rs`)
+
+1. **SendInput wrapper** (`send_inputs` L82). Single `unsafe` block calling Win32 `SendInput(inputs, size_of::<INPUT>() as i32)`. Returns count of events injected. `0` = failure (e.g., UAC secure desktop, no-input session, RDP-only session).
+
+2. **INPUT construction** (`mouse_input` L89, `key_input` L101). Both build the discriminated union `INPUT { r#type, Anonymous: INPUT_0 { mi | ki } }`. Mouse uses `MOUSEINPUT { dx, dy, mouseData, dwFlags, time: 0, dwExtraInfo: 0 }`; keyboard uses `KEYBDINPUT { wVk, wScan, dwFlags, time: 0, dwExtraInfo: 0 }`.
+
+3. **Three-tier mouse move fallback** (`move_mouse_normalized` L210). Tier 1: `SendInput` with `MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK` and normalized 0-65535 coords. If `send_inputs` returns 0 (failure):
+   - Tier 2: `SetCursorPos(px, py)` where `(px, py)` computed from normalized coords via `norm_to_pixel_with_bounds` (uses `GetSystemMetrics(SM_XVIRTUALSCREEN)`/`SM_CXVIRTUALSCREEN`).
+   - Tier 3: `try_post_message_mouse_move(px, py)` — `GetForegroundWindow()` → `GetWindowRect` → `PostMessageW(hwnd, WM_MOUSEMOVE, 0, MAKELPARAM(client_x, client_y))`.
+   - Each fallback logs first 3 occurrences via `FALLBACK_LOG_COUNT: AtomicU32` — diagnostic-only.
+
+4. **Monitor-local movement** (`move_mouse_normalized_on_monitor` L255). Converts monitor-local normalized `(0-65535)` → monitor pixel → virtual-desktop normalized → SendInput. Same 3-tier fallback.
+
+5. **Natural (humanized) motion** (`move_mouse_natural_pixels` L440). When `NATURAL_MOUSE_ENABLED` AtomicBool is true and distance > 20px:
+   - Compute Euclidean distance from current `GetCursorPos()` to target.
+   - Steps = `clamp(dist / 10, 10, 50)`.
+   - Perpendicular unit vector `(-dy/dist, dx/dist)` multiplied by `rand_range(0.10, 0.30) * dist` with random sign → Bézier control point offsets `p1, p2`.
+   - Total time = `clamp(dist * 0.15, 50ms, 200ms)`.
+   - For each step: `t = ease_in_out_cubic(i / steps)` → `bezier_cubic(t, p0, p1, p2, p3)` → add `rand_range(-2.0, 2.0)` micro-jitter (+5% chance of ±4px extra) → `pixel_to_norm` → `move_mouse_normalized`.
+   - Final step pins exactly to target (jitter=0).
+   - Per-step delay = `step_ms ± 1ms` (variable cadence).
+
+6. **Cancellation token** (`MOVE_TOKEN: AtomicU32` L320). `move_mouse_natural_pixels(token, ...)` checks `token_matches(token)` at every step. `cancel_mouse_move()` issues a fresh token, invalidating all in-flight motions using the old token. This is critical because Bézier paths can take 50-200ms and a newer click target may have arrived.
+
+7. **Overshoot click** (`move_mouse_natural_and_click` L500). 30% probability: compute unit direction from current cursor → target, move to `target + (5-15px) * direction` first, `tokio::sleep(30-80ms)` random pause, then move to actual target. After landing, `tokio::sleep(5-20ms)` pre-click pause, then `do_click(button)`.
+
+8. **Click fallback** (`left_click` L555, `right_click`, `middle_click`). If `send_inputs` returns 0, falls back to `try_post_message_click(cx, cy, button)` which sends `WM_LBUTTONDOWN`+`WM_LBUTTONUP` (or `WM_RBUTTONDOWN`+`WM_RBUTTONUP`) to the foreground window. Middle click PostMessage is unreliable, falls back to left-click PostMessage.
+
+9. **Text input** (`type_text` L605). Per-character: `KEYEVENTF_UNICODE` down + `KEYEVENTF_UNICODE | KEYEVENTF_KEYUP` up, scan code = `char as u16`. Handles any Unicode codepoint ≤ U+FFFF.
+
+10. **Hotkey composition** (`press_hotkey` L665). Splits on `+`. For each part, if it's a single ASCII char, calls `VkKeyScanW(ch as u16)` which packs `[shift_state_byte | vk_code]` in the high/low bytes. The high byte bit flags (1=SHIFT, 2=CTRL, 4=ALT) are auto-extracted as modifiers. Builds INPUT array: press mods → press+release main key → release mods in reverse order.
+
+### Input Blocker (`input_blocker.rs`)
+
+1. **Globals** (`HOOK_STATE`, `BLOCKING` L27-28). `HOOK_STATE: OnceLock<Mutex<Option<HookState>>>` lazily holds the hook handles and the pump thread ID. `BLOCKING: AtomicBool` is the live gate the hook callbacks check on every event.
+
+2. **Hook callbacks** (`keyboard_proc` L30, `mouse_proc` L49). Both are `unsafe extern "system" fn(code, wparam, lparam) -> LRESULT` — the ABI required by `SetWindowsHookExW`. Inside, if `code >= 0`:
+   - Cast `lparam.0 as *const KBDLLHOOKSTRUCT` (or `MSLLHOOKSTRUCT` for mouse).
+   - Check `kb.flags.0 & LLKHF_INJECTED == 0` (i.e., NOT synthetic) AND `BLOCKING.load(SeqCst)` → return `LRESULT(1)` to swallow the event.
+   - Otherwise, look up the saved hook handle from `HOOK_STATE` and call `CallNextHookEx` to pass-through.
+
+3. **Thread + pump** (`block_input(true)` L68). Spawns `std::thread::spawn` (sync, not tokio) that calls `GetModuleHandleW(None)` for `HINSTANCE`, installs `WH_KEYBOARD_LL` and `WH_MOUSE_LL` via `SetWindowsHookExW`, stores handles + `GetCurrentThreadId()` in `HOOK_STATE`, then enters `GetMessageW` loop calling `TranslateMessage`/`DispatchMessageW`. The loop is mandatory — LL hooks only fire on the thread that installed them, and that thread must pump messages or the hook callbacks never run.
+
+4. **Teardown** (`block_input(false)` L120). Stores `BLOCKING=false` first (so callbacks stop blocking immediately), then `PostThreadMessageW(tid, WM_QUIT, 0, 0)` to break the `GetMessageW` loop. The spawned thread's cleanup code unhooks both via `UnhookWindowsHookEx` and clears `HOOK_STATE`.
+
+5. **Why LLKHF_INJECTED matters**. `SendInput` (used by `input.rs`) sets the `LLKHF_INJECTED` (0x10) flag on every event it generates. The blocker lets those through while blocking physical hardware events where the flag is clear. This is the elegant coexistence: operator-controlled `SendInput` motion + clicks work fine even while the user's physical mouse/keyboard is dead. Critical for phishing overlays — user can't Alt-Tab away from the fake dialog, but our `press_key("ENTER")` automation to dismiss it works.
+
+## Code Architecture
+
+### Module relationship
+
+```
+commands.rs (ClientState)
+    │
+    ├─→ byakugan::dispatch(cmd_type, payload) ──→ Vec<Vec<u8>> to protocol.rs
+    │       ├── tokio::process::Command (arp, ipconfig, ip, nltest, net, systeminfo, cmd)
+    │       ├── tokio::net::TcpStream (port scan, banner grab)
+    │       └── cancel_registry (OnceLock<Mutex<HashSet<u32>>>)
+    │
+    ├─→ input::win::{move_mouse_natural, type_text, press_key, ...}
+    │       ├── unsafe SendInput
+    │       ├── unsafe SetCursorPos, GetCursorPos, GetSystemMetrics, GetForegroundWindow, GetWindowRect
+    │       ├── unsafe PostMessageW (fallback)
+    │       ├── unsafe VkKeyScanW
+    │       └── MOVE_TOKEN (AtomicU32), NATURAL_MOUSE_ENABLED (AtomicBool)
+    │
+    └─→ input_blocker::block_input(bool)
+            ├── unsafe SetWindowsHookExW (WH_KEYBOARD_LL, WH_MOUSE_LL)
+            ├── unsafe GetMessageW / TranslateMessage / DispatchMessageW
+            ├── unsafe UnhookWindowsHookEx
+            ├── unsafe PostThreadMessageW (teardown)
+            └── HOOK_STATE (OnceLock<Mutex<Option<HookState>>>), BLOCKING (AtomicBool)
+```
+
+### Data flow
+
+- **Byakugan**: JSON `&str` payload → `serde_json::from_str` → typed request struct → async handler → `Vec<Vec<u8>>` (1 type byte + 4B len + JSON bytes per message) returned to the caller for transmission over T-022 transport.
+- **Input**: caller passes normalized coords `(i32, i32)` in 0-65535 space → internal conversion to virtual-desktop pixel coords → SendInput.
+- **Input blocker**: caller passes `bool` → spawns a thread that lives for the lifetime of `BLOCKING==true`. Cancellation is via WM_QUIT message to that thread.
+
+### Type hierarchy
+
+- `byakugan.rs`: 6 `#[derive(Debug, Deserialize)]` request structs, all carrying `scan_id: u32`. Polymorphic dispatch via string match in `dispatch()`. No trait objects — direct match. `serde_json::Value` is the universal output type for hosts/scan results.
+- `input.rs`: All Win32 types (`INPUT`, `MOUSEINPUT`, `KEYBDINPUT`, `VIRTUAL_KEY`, `LPARAM`, `HHOOK`, `POINT`, `RECT`) come from the `windows` crate. Custom types: none — only `AtomicU32`/`AtomicBool` module-globals and a `thread_local!` `Cell<u64>` LCG state.
+- `input_blocker.rs`: One custom struct `HookState { kb_hook: HHOOK, mouse_hook: HHOOK, thread_id: u32 }` with manual `unsafe impl Send`. Note: `HHOOK` is not `Send` by default in the `windows` crate — the manual impl is required because the hook handles are stored in a `Mutex` accessed cross-thread.
+
+### Feature gates
+
+- `byakugan.rs`: `#[cfg(target_os = "windows")]` guards `handle_ad_enum`, `run_piped_command` (uses `cmd /C`), `parse_nltest_output`, `parse_nbtstat_output`, and the nbtstat call inside `handle_passive_discovery`. Non-Windows builds get stubs returning errors.
+- `input.rs`: `#[cfg(windows)]` guards the entire `win` module. Non-Windows gets no-op stubs preserving the same public API (`move_mouse_normalized(_x, _y) {}`, etc.).
+- `input_blocker.rs`: same `#[cfg(windows)]` pattern with no-op `block_input(_block: bool) {}` stub.
+
+## Operational Profile
+
+### When to Use
+
+- **Byakugan**: After landing on a corporate host via T-007/T-012, run `BYAKUGAN_ARP_SCAN` first for fast LAN enumeration, then `BYAKUGAN_PORT_SCAN` against discovered IPs to find internal services (file shares, RDP, MSSQL, Redis). On a domain-joined host, `BYAKUGAN_AD_ENUM` is gold — it dumps DC name, domain users, domain groups, and Domain Admins list with zero credentials. `BYAKUGAN_PASSIVE` is the slow-burn option for environments where active scanning would trip NDR.
+- **Input**: When you need to interact with a GUI app that doesn't have a CLI (browser, LOB app, ERP client). Use `move_mouse_natural_and_click` for clicking through dialogs that detect automation (some CAPTCHAs and behavioral-biometric systems flag teleporting cursors). `type_text` for filling forms without clipboard exposure. `press_key("CTRL+C")` for clipboard ops via hotkey.
+- **Input blocker**: Pair with `html_overlay.rs` phishing — render a fake MFA prompt, call `block_input(true)`, user can't Alt-Tab/Esc out of it. When user types the credentials you can `SendInput` an Enter key to dismiss your own overlay after capture. Also useful for keeping a victim's screen still during `dirty_rect.rs` screen capture for H.264 streaming.
+
+### When NOT to Use
+
+- **Byakugan**: Don't run `BYAKUGAN_PORT_SCAN` against a default range like `1-65535` on a host with EDR + NDR — even 100-batch concurrency looks like a port sweep to most NDR vendors. Don't run `BYAKUGAN_AD_ENUM` if `nltest.exe` and `net.exe` are blocked by AppLocker/WDAC. Don't run passive ARP polling for >10 minutes — the constant `arp -a` re-execution will look abnormal in process telemetry.
+- **Input**: Don't use natural mouse on a host you suspect has cursor-tracking user behavior analytics — Bézier + LCG jitter is a fingerprint, not invisibility. Don't use `try_post_message_click` as primary path — `PostMessage` click events don't trigger many UI frameworks' hover/focus state correctly (WinForms, WPF sometimes), so the click hits the wrong target.
+- **Input blocker**: Don't enable on a host where the operator doesn't have an alternative control path (e.g., the C2 socket drops and you can't re-enable input). Don't leave enabled for >2-3 minutes — user will hard-reboot, killing the session. Don't use on a server with multiple concurrent RDP sessions — `WH_KEYBOARD_LL` is session-global, you'll freeze everyone.
+
+### Kill Chain Position
+
+T-023 sits in **post-exploitation / C2-interactive phase**, after the dropper (`dark_crystal`) has implanted `client_rust`. Byakugan supports **discovery** for lateral movement planning; input + input_blocker support **collection / impact / defense evasion** during interactive operator tasks.
+
+Example chain:
+T-004 (PEB walk) → T-001 (RecycledGate) → T-012 (Early Cascade injection into `explorer.exe`) → T-022 (network transport established) → **T-023 byakugan:ARP scan → AD enum** → operator pivots → **T-023 input_blocker:true → html_overlay phishing** → credentials captured → **T-023 input:SendInput** to dismiss overlay → **T-023 input_blocker:false** → exfil via T-022.
+
+### Trade-offs
+
+## Rust Implementation Deep Dive
+
+### `unsafe` blocks
+
+#### byakugan.rs
+**No `unsafe` blocks.** All Win32 interaction is via `tokio::process::Command` (safe wrapper over `CreateProcess`) and `tokio::net::TcpStream` (safe wrapper over winsock). The entire module is safe Rust — its risk surface is logical (command-string injection from operator JSON, parser robustness), not memory-safety.
+
+#### input.rs
+
+1. **`send_inputs(inputs: &[INPUT]) -> u32`** (L82-87). Calls `SendInput(inputs, size_of::<INPUT>() as i32)`. The slice pointer is passed to Win32; lifetime is bounded by the function call. Safe in practice — Win32 copies the INPUT array synchronously before returning.
+
+2. **`norm_to_pixel_with_bounds(norm_x, norm_y)`** (L123-142). Six `GetSystemMetrics` calls (`SM_XVIRTUALSCREEN`, `SM_YVIRTUALSCREEN`, `SM_CXVIRTUALSCREEN`, `SM_CYVIRTUALSCREEN`). All return `i32`, no pointers — pure read of OS state.
+
+3. **`try_post_message_mouse_move`** (L150-170). `GetForegroundWindow`, `GetWindowRect(hwnd, &mut rect)`, `PostMessageW(hwnd, WM_MOUSEMOVE, WPARAM(0), LPARAM)`. The `HWND` returned could be `0` (no foreground) — checked. `GetWindowRect` returns `Result` in the `windows` crate, handled via `.is_err()`. `PostMessageW` is async (returns before delivery), so this is fire-and-forget.
+
+4. **`move_mouse_normalized` fallback path** (L222-250). `SetCursorPos(px, py)` returns `Result<()>`. Wrapped in `unsafe` because `SetCursorPos` is `unsafe fn` in `windows` crate. After failure, falls through to `try_post_message_mouse_move`.
+
+5. **`move_mouse_normalized_on_monitor`** (L255-300). Same `GetSystemMetrics` + `SendInput` + `SetCursorPos` + `PostMessageW` chain, just with monitor-coordinate math.
+
+6. **`get_cursor_pos()`** (L345-355). `GetCursorPos(&mut POINT::default())` — writes to a stack-allocated `POINT`. Result discarded (only `pt.x, pt.y` read).
+
+7. **`norm_to_pixel` / `pixel_to_norm`** (L360-385). `GetSystemMetrics` calls only.
+
+8. **`press_key` single-char path** (L640-655). `VkKeyScanW(ch as u16)` — takes `u16`, returns `SHORT`. The high byte is the modifier mask; bit 0 = SHIFT, bit 1 = CTRL, bit 2 = ALT.
+
+9. **`press_hotkey`** (L665-720). Same `VkKeyScanW` call per character part.
+
+#### input_blocker.rs
+
+1. **`keyboard_proc`** (L30-47). `unsafe extern "system" fn`. Casts `lparam.0 as *const KBDLLHOOKSTRUCT` and dereferences `&*(...)`. This is the OS-guaranteed pointer to the hook struct — safe in practice, but Rust can't prove it.
+
+2. **`mouse_proc`** (L49-66). Same pattern with `MSLLHOOKSTRUCT`.
+
+3. **`block_input(true)` thread body** (L75-130). Long `unsafe` block:
+   - `GetModuleHandleW(None)` → `HINSTANCE`.
+   - `SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), hmod, 0)` → `HHOOK` (or `HHOOK(0)` on failure).
+   - `SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), hmod, 0)` → `HHOOK`.
+   - `GetCurrentThreadId()` → `u32`.
+   - `GetMessageW(&mut msg, HWND(0), 0, 0)` in a loop — `.0 <= 0` breaks (WM_QUIT returns -1, error returns 0).
+   - `TranslateMessage(&msg)`, `DispatchMessageW(&msg)`.
+   - On exit: `UnhookWindowsHookEx(kb_hook)`, `UnhookWindowsHookEx(mouse_hook)`, clear `HOOK_STATE`.
+
+4. **`block_input(false)`** teardown (L120-130). `PostThreadMessageW(tid, WM_QUIT, WPARAM(0), LPARAM(0))` — `unsafe fn` in `windows` crate. Async — sends the message and returns; the pump thread receives it on next `GetMessageW` and breaks the loop.
+
+### `core::arch::asm!` usage
+None. All three files use only the `windows` crate's safe-ish FFI bindings (`windows::Win32::*`). No inline assembly.
+
+### FFI patterns
+
+- **Byakugan**: `tokio::process::Command` wraps `CreateProcessW` — no direct FFI. `tokio::net::TcpStream` wraps winsock — no direct FFI.
+- **Input**: Heavy use of `windows::Win32::UI::Input::KeyboardAndMouse::*` and `windows::Win32::UI::WindowsAndMessaging::*`. All functions are imported as `windows` crate safe wrappers (which internally call the `windows_targets::link!` macro). The `INPUT` union is constructed via `INPUT { r#type, Anonymous: INPUT_0 { mi: MOUSEINPUT { ... } } }` — the `r#type` keyword escape is because `type` is reserved in Rust.
+- **Input blocker**: `windows::Win32::UI::WindowsAndMessaging::{SetWindowsHookExW, UnhookWindowsHookEx, CallNextHookEx, GetMessageW, TranslateMessage, DispatchMessageW, PostThreadMessageW}`. The hook callback signature `extern "system" fn(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT` is the Win32 `HOOKPROC` ABI.
+
+### Initialization patterns
+
+- `OnceLock<Mutex<HashSet<u32>>>` in `byakugan.rs::cancel_registry` — get-or-init pattern for module-global cancellation state.
+- `OnceLock<Mutex<Option<HookState>>>` in `input_blocker.rs` — same pattern for hook handle storage.
+- `AtomicU32`/`AtomicBool` in `input.rs` — simple module-globals, no OnceLock needed because atomics are const-constructible.
+- `thread_local! { static SEED: Cell<u64> }` in `input.rs::rand_f64` — per-thread LCG seeded once from `SystemTime::now()` nanos. Not cryptographically secure; intended only for humanizing mouse motion, not for crypto use.
+
+### Error handling
+
+- **Byakugan**: All errors → `build_error(scan_id, &str)` → `MSG_BYAKUGAN_ERROR` message back to operator. Never panics. `run_system_command` swallows errors and returns `String::new()` (parsers handle empty input gracefully). `parse_port_range` returns `Option<(u16, u16)>`, `None` → `build_error(scan_id, "invalid port range: ...")`.
+- **Input**: `send_inputs` returns `u32` count — 0 is failure, triggers fallback. `SetCursorPos` returns `windows::core::Result` — handled with `.is_ok()`. `GetWindowRect` returns `Result` — `.is_err()` check. `VkKeyScanW` returns `SHORT`, low byte `0xFF` means "no mapping" — checked.
+- **Input blocker**: `SetWindowsHookExW(...).unwrap_or(HHOOK(0))` — failure becomes a null handle that `UnhookWindowsHookEx` will no-op on. `HOOK_STATE.lock().ok()` — Mutex poison doesn't propagate, just becomes `None`. `PostThreadMessageW(...).ok()` — errors silently dropped (acceptable: if the thread already exited, the message is irrelevant).
+
+### Memory layout
+
+- `INPUT` is a discriminated union: `r#type: INPUT_TYPE` (u32) + anonymous union of `MOUSEINPUT`/`KEYBDINPUT`/`HARDWAREINPUT`. Size = `size_of::<INPUT>()` as used in `send_inputs` — the `windows` crate exposes this as `i32` for the cbSize parameter.
+- `KBDLLHOOKSTRUCT`: `vk, scan, flags, time, dwExtraInfo` — `flags` is `KBDLLHOOKSTRUCT_FLAGS(u32)` so `.0` is used to extract the raw bits (`kb.flags.0 & LLKHF_INJECTED`).
+- `MSLLHOOKSTRUCT`: `pt, mouseData, flags, time, dwExtraInfo` — `flags` is plain `u32` (`ms.flags & LLMHF_INJECTED`).
+- `LPARAM(isize)` — packed via `make_lparam` as `((y & 0xFFFF) << 16) | (x & 0xFFFF)` — note sign extension: the cast `as isize` happens after the bitwise pack, so negative client coords (e.g., window above/left of screen origin) are handled correctly because `(y & 0xFFFF)` masks to 16 bits.
+
+### Syscall numbers
+None of these three files do direct syscalls. The `windows` crate handles all FFI via `windows_targets::link!` (which generates `GetProcAddress`-resolved extern thunks). For syscall-direct equivalents in this vault, see T-001 RecycledGate / T-003 VEH Gate / T-004 PEB Walker — none of which are used by `client_rust`.
+
+## Cross-References Found in Code
+
+- `byakugan.rs:dispatch()` → produces `MSG_BYAKUGAN_*` (0x40-0x42) messages consumed by **T-022 Networking Suite** (`protocol.rs` defines the surrounding binary protocol). The 5-byte `[type][u32 len]` header matches the framing pattern used by `amaterasu.rs` (0x20-0x23) — same protocol layer.
+- `byakugan.rs:cancel_registry` module → identical idiom to **T-023 amaterasu.rs** (per manifest: "Module-scoped cancellation: OnceLock<Mutex<HashSet>>"). This is a reusable client-side pattern, not a separate technique.
+- `input.rs:SendInput(MOUSEEVENTF_*)` → synthetic events consumed by **T-023 input_blocker.rs** as `LLKHF_INJECTED`-flagged passthrough. The two modules are co-designed — disable `input_blocker` if you remove `input.rs`.
+- `input_blocker.rs:WH_KEYBOARD_LL` → same hook infrastructure (and same `KBDLLHOOKSTRUCT.flags` bit-check pattern) used by **T-023 keylogger.rs** (per card: "Filters injected (synthetic) keystrokes via LLKHF_INJECTED flag"). The keylogger reads what the blocker blocks.
+- `input_blocker.rs:SetWindowsHookExW(WH_MOUSE_LL)` → relevant to cursor manipulation features listed in **T-023 cursor_hider.rs** and `overlay.rs` (WDA_EXCLUDEFROMCAPTURE). Pair: block user input → hide cursor → render invisible-to-capture overlay.
+- `input.rs:move_mouse_natural_and_click` → consumed by **T-023 html_overlay.rs** (per card: WebView2 phishing overlays with credential capture) for clicking submit buttons on fake login dialogs while user is blocked.
+- `input.rs:try_post_message_click` → fallback path also useful for **T-023 ui_automation.rs** (`EnumWindows`/`EnumChildWindows`) where direct SendInput to a specific HWND is preferred over desktop-level events.
+- `byakugan.rs:handle_ad_enum` (net user /domain, net group /domain) → produces target lists consumed by **T-022 juubi.rs** peer relay for credential-based pivots.
+- `byakugan.rs:guess_service` → port → service map useful for **T-022 kamui.rs** SOCKS5 proxy targeting (knowing 445 is SMB, 3389 is RDP, etc.).
+- `byakugan.rs:run_piped_command` on Windows uses `cmd /C "..." | "..."` → same LOtL pattern as **T-020 kaguya.rs** (per card: "LOtL binary inventory + EDR detection"). Both rely on built-in Windows binaries.
+- No imports from `dark_crystal` crates — `client_rust` is a self-contained RAT that depends only on the `windows` crate, `tokio`, `serde`, `serde_json`, `tracing`. This confirms the manifest's two-crate split.
+
+## Edge Cases & Failure Modes
+
+1. **SendInput returns 0 in RDP-only session**
+   - Code path: `input.rs::move_mouse_normalized` L213 — `if result > 0 { return; }` falls through.
+   - Symptom: mouse doesn't move, but no error reported.
+   - Workaround: tier-2 `SetCursorPos` is attempted next; tier-3 `PostMessageW(WM_MOUSEMOVE)` is the last resort. If all three fail, the function returns silently — operator must check `GetCursorPos` to confirm.
+   - Diagnostic: `FALLBACK_LOG_COUNT: AtomicU32` logs first 3 fallbacks to stderr.
+
+2. **`HHOOK` is not `Send` in `windows` crate**
+   - Code path: `input_blocker.rs::HookState` with `unsafe impl Send for HookState {}` (manual, L23).
+   - Symptom: without the manual impl, code wouldn't compile (Mutex is accessed from multiple threads).
+   - Risk: if the hook handle were ever used from a thread other than the installing one, behavior would be undefined. The code avoids this by only accessing `kb_hook`/`mouse_hook` from inside `keyboard_proc`/`mouse_proc` (which the OS calls on the installing thread).
+   - Workaround: the existing code is correct as long as the manual `Send` is honored.
+
+3. **`block_input(false)` when pump thread has already exited**
+   - Code path: `input_blocker.rs::block_input` L120 — `PostThreadMessageW(tid, WM_QUIT, ...)` to a dead thread.
+   - Symptom: `PostThreadMessageW` returns error, `.ok()` discards it.
+   - Workaround: none needed — `HOOK_STATE` is already `None` because the pump thread's cleanup ran. Subsequent `block_input(true)` re-spawns the thread cleanly.
+   - Edge case: race between pump thread cleanup setting `*g = None` and `block_input(false)` reading `state_opt` — Mutex serializes, no UB.
+
+4. **User reboots while `BLOCKING=true`**
+   - Code path: hooks are process-bound, so reboot kills them — but if `client_rust` is running as a service, the service restart re-runs `block_input(true)` from a saved state... actually the code has no persistence — `BLOCKING` resets to `false` on process restart. So a reboot naturally clears the block.
+   - Symptom: user is locked out for the duration of the session.
+
+5. **`net user /domain` returns localized column headers**
+   - Code path: `byakugan.rs::parse_net_user_output` L795 — looks for `------` separator and `"The command completed"` / `"Se ha completado"` (Spanish) termination.
+   - Symptom: on locales other than en-US/es-ES, the `"The command completed"` check fails, parsing includes trailing text as usernames.
+   - Workaround: the `split_whitespace()` loop will still extract usernames from the columnar section, but the end boundary is wrong — extra garbage usernames get added. Add more locale strings or use the `------` separator twice (header + footer).
+
+6. **`nltest.exe` not present on Win10 Home / non-domain-joined hosts**
+   - Code path: `byakugan.rs::run_system_command("nltest", &["/dsgetdc:"])` returns `String::new()` on spawn failure.
+   - Symptom: `parse_nltest_output("")` returns empty JSON object; `"domain_controller": {"raw": "", "parsed": {}}`.
+
+7. **Bézier path with `dist < 20.0` short-circuits**
+   - Code path: `input.rs::move_mouse_natural_pixels` L450 — `if dist < 20.0 { move_mouse_normalized(target); return; }`.
+   - Symptom: short mouse motions teleport instead of animating.
+   - Workaround: intended behavior — animating 19px of motion looks more robotic than just clicking.
+
+8. **`move_mouse_natural` token check failure**
+   - Code path: `input.rs::move_mouse_natural_pixels` L443 — `if !token_matches(token) { return; }` at top.
+   - Symptom: motion never starts; `cancel_mouse_move()` was called between request issue and motion start.
+   - Workaround: caller should re-issue the move with the new token after canceling.
+
+9. **`type_text` cannot emit characters > U+FFFF**
+   - Code path: `input.rs::type_text` L605 — `let code = ch as u16` truncates chars above U+FFFF to surrogate halves.
+   - Symptom: emoji and astral-plane characters produce garbage.
+   - Workaround: Win32 `SendInput` doesn't support surrogate pair emission in a single `KEYBDINPUT` — would need to send each surrogate half as separate events. Not implemented.
+
+10. **`#[cfg(not(target_os = "windows"))]` `handle_ad_enum` returns error**
+    - Code path: `byakugan.rs` L410 — returns `vec![build_error(req.scan_id, "AD enumeration requires Windows")]`.
+    - Symptom: if cross-compiled to Linux for some reason, AD enum is a no-op.
+    - Workaround: intended — AD enum is fundamentally a Windows capability.
+
+## OPSEC Notes
+
+### Artifacts
+
+- **Process creations** (highest-volume artifact): `arp.exe`, `ipconfig.exe` or `ip.exe`, `nltest.exe`, `net.exe` (×3 per AD enum), `systeminfo.exe`, `cmd.exe` (piped commands on Windows), `nbtstat.exe`. Each fires Sysmon EID 1, ETW `Microsoft-Windows-Kernel-Process`, and likely the EDR's process-create telemetry.
+- **Network connections**: `byakugan.rs::scan_single_port` opens TCP connections to every IP:port in the range. EDR network connections (EID 3 in Sysmon, ETW `Microsoft-Windows-Kernel-Network`) will log every connect. Even closed ports log the SYN/SYN-ACK/RST cycle.
+- **DNS queries**: `byakugan.rs` does not explicitly call DNS, but `tokio::net::TcpStream::connect("hostname:port")` will trigger `getaddrinfo` → DNS lookup. Logs in ETW `Microsoft-Windows-DNS-Client`.
+- **Hook installation**: `input_blocker.rs::SetWindowsHookExW(WH_KEYBOARD_LL)` is monitored by some EDRs (Carbon Black, ESET) because it's a classic keylogger technique. No file artifacts but behavioral signature.
+- **Cursor replacement**: `input.rs` itself doesn't replace cursors, but pairs with `cursor_hider.rs` (T-023) which calls `SetSystemCursor` — that's a system-wide state change visible to forensic tools.
+
+### Telemetry
+
+- **Byakugan**: ETW `Microsoft-Windows-Kernel-Process` (process create/exit), ETW `Microsoft-Windows-Kernel-Network` (TCP connect), ETW `Microsoft-Windows-DNS-Client` (resolves). No file writes — pure in-memory.
+- **Input**: ETW `Microsoft-Windows-UI-Settings` (cursor position changes via `SetCursorPos`), Sysmon doesn't log `SendInput`. EDR-specific behavioral telemetry varies — CrowdStrike Falcon's sensor has been observed logging low-level hook installation.
+- **Input blocker**: ETW `Microsoft-Windows-Win32k-Desktop` (low-level hook registration is logged here on Win10+). Sysmon EID 8 (RemoteThread) is not triggered because the pump thread is in-process, but cross-process hooking (not done here) would trigger EID 8.
+
+### Cleanup
+
+- `byakugan.rs` cleans up `cancel_registry::clear(scan_id)` after each scan completes — no leaked cancellation entries across scans.
+- `input_blocker.rs::block_input(false)` calls `PostThreadMessageW(WM_QUIT)` to terminate the pump thread, which then runs `UnhookWindowsHookEx` for both hooks and clears `HOOK_STATE`. **The hooks are properly removed before the spawned thread exits — no orphaned hooks.**
+- `input.rs` is stateless except for the three atomics — no cleanup needed.
+- **No file artifacts** are produced by any of these three modules. No temp files, no registry writes (the technique card's persistence is in separate files under `dark_crystal/crowd/src/persist/`).
+
+## Reusable Patterns
+
+### Pattern: OnceLock Cancellation Registry
+- **Use when**: long-running async operations that need operator-initiated cancel.
+- **Code ref**: `byakugan.rs::cancel_registry` (L36-52) and (per manifest) `amaterasu.rs`.
+- **How**: `static CANCELLED: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();` with three free functions `cancel(id)`, `is_cancelled(id)`, `clear(id)`. Workers call `is_cancelled(id)` between batch iterations and return `build_error(id, "cancelled")` early. Caller invokes `cancel(id)` from another async task. The `OnceLock` lazy-inits on first use — no setup boilerplate. Pattern scales to any module that needs scan-job cancellation.
+
+### Pattern: Three-Tier API Fallback
+- **Use when**: Win32 API that fails in headless/VM/RDP-only sessions.
+- **Code ref**: `input.rs::move_mouse_normalized` (L210-250).
+- **How**: Try the most-capable API first (`SendInput` with `MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK`). On failure (`result == 0`), try `SetCursorPos(px, py)` with manual coordinate conversion. On further failure, fall back to `PostMessageW(WM_MOUSEMOVE, ...)` to the foreground window — most compatible but only works if target window is foreground. `FALLBACK_LOG_COUNT: AtomicU32` limits stderr noise to first 3 fallbacks.
+
+### Pattern: Atomic Token for Long Async Cancellation
+- **Use when**: long-running animation loop that should be preempted by newer requests.
+- **Code ref**: `input.rs::MOVE_TOKEN: AtomicU32` (L320) + `move_mouse_natural_pixels` (L440).
+- **How**: `MOVE_TOKEN: AtomicU32` starts at 0. `cancel_mouse_move()` does `MOVE_TOKEN.fetch_add(1, SeqCst).wrapping_add(1)` returning the new token. Each `move_mouse_natural_pixels(token, ...)` call captures its token at entry; the loop checks `token_matches(token)` (i.e., `MOVE_TOKEN.load(Relaxed) == token`) before each step. If a new motion has been issued (token changed), the old motion exits early. Async-friendly: no `CancellationToken` import, no `tokio::select!`, no runtime cooperation needed.
+
+### Pattern: LLKHF/LLMHF Injected-Flag Filtering
+- **Use when**: low-level input hook must distinguish operator-controlled synthetic events from user physical events.
+- **Code ref**: `input_blocker.rs::keyboard_proc` (L30-47) and (per card) `keylogger.rs`.
+- **How**: `KBDLLHOOKSTRUCT.flags.0 & LLKHF_INJECTED` (0x10) is set on every event from `SendInput` and clear on hardware-originated events. The hook callback checks `(kb.flags.0 & LLKHF_INJECTED) == 0` — i.e., NOT injected — to decide whether to block. Pair with `SendInput`-based injection (e.g., `input.rs`) so operator automation passes through while user is frozen.
+
+### Pattern: Per-Thread LCG with SystemTime Seeding
+- **Use when**: cheap non-crypto PRNG for behavioral randomization (jitter, overshoot, control point offsets).
+- **Code ref**: `input.rs::rand_f64` (L400-425).
+- **How**: `thread_local! { static SEED: Cell<u64> = Cell::new(SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.subsec_nanos() as u64 ^ (d.as_secs() << 17)).unwrap_or(12345)); }`. Each call does `s.set(s.get().wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407))` (Numerical Recipes LCG constants) and returns `(next >> 11) as f64 / (1u64 << 53) as f64` — 53-bit mantissa for full `f64` precision in `[0, 1)`. Thread-local so no contention; per-thread so different tokio tasks get independent streams. **Not cryptographically secure** — for behavioral obfuscation only.
+
+### Pattern: Cubic Bézier with Perpendicular Control Points
+- **Use when**: humanized cursor motion between two points.
+- **Code ref**: `input.rs::move_mouse_natural_pixels` (L440-490).
+- **How**: Given start `p0` and target `p3`, compute the perpendicular unit vector `(-dy/dist, dx/dist)`. Pick random `perp_scale = rand_range(0.10, 0.30) * dist` and random signs `sign1, sign2 ∈ {-1, +1}`. Set `p1 = p0 + (dx/3 + perp_x * off1, dy/3 + perp_y * off1)` and `p2 = p0 + (2*dx/3 + perp_x * off2, 2*dy/3 + perp_y * off2)` where `off2 *= rand_range(0.5, 1.0)` for asymmetry. Sample `N = clamp(dist/10, 10, 50)` points along the curve with `t = ease_in_out_cubic(i/N)`. Apply ±2px jitter (+5% chance of ±4px extra) per step except the final one. Total time scales linearly with distance, clamped `[50ms, 200ms]`. The math produces arcs and S-curves that look like real human cursor drift.
+
+### Pattern: Discriminated Union Construction in `windows` Crate
+- **Use when**: building `INPUT` structs for `SendInput`.
+- **Code ref**: `input.rs::mouse_input` (L89), `input.rs::key_input` (L101).
+- **How**: `INPUT { r#type: INPUT_MOUSE, Anonymous: INPUT_0 { mi: MOUSEINPUT { dx, dy, mouseData, dwFlags, time: 0, dwExtraInfo: 0 } } }`. The `r#type` keyword escape is required because `type` is a Rust reserved word. The `Anonymous` field is a union named `INPUT_0` (the trailing underscore indicates compiler-generated name). Pattern repeats for `INPUT_KEYBOARD`/`KEYBDINPUT` and `INPUT_HARDWARE`/`HARDWAREINPUT`. Each constructor returns a fully-initialized `INPUT` value safe to pass to `SendInput` via slice.
+
+### Pattern: cfg-Gated Cross-Platform Stub
+- **Use when**: module needs Windows-only Win32 APIs but the crate must compile on Unix for dev/test.
+- **Code ref**: `input.rs::win` (L725-755), `input_blocker.rs::win` (L135-137), `byakugan.rs::handle_ad_enum` (L410-415).
+- **How**: `#[cfg(windows)] pub mod win { ... real impl ... } #[cfg(not(windows))] pub mod win { pub fn move_mouse_normalized(_x: i32, _y: i32) {} ... }` then `pub use win::*;` at module root. Non-Windows callers get no-op stubs with identical signatures — the code compiles and runs (doing nothing) on Linux/macOS, useful for running unit tests in CI.

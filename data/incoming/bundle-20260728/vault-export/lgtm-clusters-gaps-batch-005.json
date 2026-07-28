@@ -1,0 +1,432 @@
+{
+  "generated_at": "2026-07-23 19:27:12",
+  "batch": 5,
+  "total_batches": 5,
+  "input_notes": 38,
+  "clusters": [
+    {
+      "cluster_id": "kuser-shared-data-direct-read",
+      "canonical_name": "KUSER_SHARED_DATA Direct Read Recon",
+      "proposed_category": "discovery",
+      "proposed_tier": "A",
+      "rationale": "Two notes converge on KUSER_SHARED_DATA at 0x7FFE0000 as a telemetry-free alternative to documented sysinfo APIs.",
+      "member_note_ids": [
+        "lgtm:kuser-shared-data-recon",
+        "lgtm:coverage-kuser-shared-data-access"
+      ],
+      "consolidated_description": "KUSER_SHARED_DATA is a read-only page mapped at fixed virtual address 0x7FFE0000 in every user-mode process, containing SystemTime, TickCount, TimeZoneBias, NtMajorVersion, NtMinorVersion, ProductType, and SuiteMask. Direct reads avoid invoking NtQuerySystemInformation, GetSystemTime, or GetVersionEx and therefore bypass userland hooks while generating no ETW or syscall telemetry. SEC670 presents this as the undocumented alternative path for OS fingerprinting and timestamp reads, framing it as critical for evasive recon. The vault currently has neither a technique card nor a concept node documenting the layout and tradecraft around this primitive; a new card should enumerate the structure's high-value fields (offsets for SystemTime at 0x14, TickCount at 0x320, NtMajorVersion at 0x260, NtMinorVersion at 0x264), the fixed virtual address, and the implication that an operator can fingerprint OS, read high-resolution time, and enumerate processors without any syscall.\n",
+      "technical_anchor": "KUSER_SHARED_DATA at virtual address 0x7FFE0000; fields SystemTime (offset 0x14), TickCount (offset 0x320), NtMajorVersion (offset 0x260), NtMinorVersion (offset 0x264)",
+      "would_relate_to": [
+        "T-023",
+        "T-020",
+        "T-016",
+        "T-004"
+      ],
+      "priority": "high",
+      "priority_reason": "Cross-source convergence (SEC670 + CRTO) on a concrete, telemetry-free primitive not documented in T-001..T-074"
+    },
+    {
+      "cluster_id": "process-enumeration-api-tradeoff-matrix",
+      "canonical_name": "Process Enumeration API Trade-off Matrix",
+      "proposed_category": "discovery",
+      "proposed_tier": "A",
+      "rationale": "Four notes converge on three documented process-enumeration APIs plus NtQuerySystemInformation as the undocumented alternative, with consistent trade-off matrix across SEC670, MalDev Academy, and CRTO.",
+      "member_note_ids": [
+        "lgtm:process-enumeration-api-tradeoffs",
+        "lgtm:convergence-process-enum-api-tradeoffs",
+        "lgtm:coverage-gap-process-enumeration-variants",
+        "lgtm:ntquerysysteminformation-recon-via-syscall"
+      ],
+      "consolidated_description": "Documented process enumeration APIs split into three families: K32EnumProcesses / EnumProcessModules (simple flat PID list, no parent-child), CreateToolhelp32Snapshot (TH32CS_SNAPPROCESS, PROCESSENTRY32 with th32ParentProcessID, full PID tree), and WTSEnumerateProcessesEx (multi-session support, returns SID and full path via WTS_PROCESS_INFO). Each has explicit trade-offs: simplicity vs detail vs remote/session visibility. NtQuerySystemInformation with SystemProcessInformation (class 5) is the undocumented alternative returning a linked list of SYSTEM_PROCESS_INFORMATION structures via NextEntryOffset, including thread info, CPU times, and image base; bypasses userland hooks in ntdll when called via direct or indirect syscall. The vault documents syscall dispatch (T-001..T-004) but does not catalog which recon APIs pair with which dispatch mechanism; a new card should explicitly bridge the syscall cards with the recon surface.\n",
+      "technical_anchor": "NtQuerySystemInformation(SystemProcessInformation=class 5) returning SYSTEM_PROCESS_INFORMATION linked list via NextEntryOffset field",
+      "would_relate_to": [
+        "T-023",
+        "T-013",
+        "T-007",
+        "T-012",
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-004"
+      ],
+      "priority": "high",
+      "priority_reason": "Four member notes with strong cross-source convergence (SEC670 / MalDev / CRTO) on a concrete API matrix bridging syscall and recon cards"
+    },
+    {
+      "cluster_id": "persistence-vector-suite-gap",
+      "canonical_name": "Persistence Vector Catalog Gap (Run, AppInit, AppCert, IFEO, WMI, PortMon, Weak Svc ACL)",
+      "proposed_category": "persistence",
+      "proposed_tier": "S",
+      "rationale": "Five notes converge on multiple persistence vectors absent from T-017's current five-layer suite; the cross-source convergence raises priority.",
+      "member_note_ids": [
+        "lgtm:gap-run-key-persistence",
+        "lgtm:gap-appinit-appcert-ifeo-wmi-persistence",
+        "lgtm:persistence-suite-coverage-gap",
+        "lgtm:cross-source-persistence-tradecraft-convergence",
+        "lgtm:weak-service-acl-persistence"
+      ],
+      "consolidated_description": "T-017 documents COM hijack, NTFS EA, schtask, TLS callback, and PhantomPersist but lacks Run / RunOnce (HKLM and HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run), AppInit_DLLs (HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Windows\\AppInit_DLLs loaded into every User32-linked process), AppCert (HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\AppCertDlls), IFEO Debugger values (HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\<exe>\\Debugger, plus SilentProcessExit monitor), WMI Event Subscriptions (__EventFilter + __EventConsumer + __FilterToConsumerBinding in root\\subscription namespace), Port Monitors (HKLM\\SYSTEM\\CurrentControlSet\\Control\\Print\\Monitors\\<name>\\Driver), and weak service ACL replacement via sc.exe sdset combined with binary path overwrite. The convergence pattern: each abuses an admin or debugging feature by redirecting a code path the OS executes on a scheduled or trigger-based event. The vault's T-017 currently lists only five layers and should be expanded to catalog at least seven more vectors with explicit trigger, detection surface, and required privilege per vector.\n",
+      "technical_anchor": "IFEO Debugger value at HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\<target.exe>\\Debugger + WMI __EventFilter / __EventConsumer / __FilterToConsumerBinding binding in root\\subscription namespace",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "high",
+      "priority_reason": "Five member notes covering at least 7 distinct persistence vectors absent from T-017; cross-source convergence across SEC670 modules elevates priority"
+    },
+    {
+      "cluster_id": "sddl-service-concealment",
+      "canonical_name": "SDDL-Based Service Security Descriptor Concealment",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Singleton with operational distinctness from kernel-based process hiding or PEB unlinking; surfaces a user-mode defensive evasion technique.",
+      "member_note_ids": [
+        "lgtm:cross-source-convergence-sddl-service-hiding"
+      ],
+      "consolidated_description": "sc.exe sdset allows an operator to rewrite a service's DACL using Security Descriptor Definition Language (SDDL), stripping query permissions so that subsequent sc.exe qc / query / EnumServicesStatus / EnumDependentServices calls from non-impersonated contexts return ERROR_ACCESS_DENIED. SEC670 frames this as operationally distinct from kernel-driver-based PspCidTable process hiding or PEB unlinking because it works from any integrity level, only against service enumeration (not active execution), and complements rather than replaces binary-based service persistence. The vault's T-016/T-017 should document the SDDL syntax: D:(D;;0x4;;;WD) to deny SERVICE_QUERY_STATUS and D:(D;;0x20;;;WD) to deny SERVICE_QUERY_CONFIG to Everyone, plus the sc.exe command `sc sdset <svc> <SDDL>`.\n",
+      "technical_anchor": "sc.exe sdset <service> D:(D;;0x4;;;WD)(D;;0x20;;;WD) stripping SERVICE_QUERY_STATUS (0x4) and SERVICE_QUERY_CONFIG (0x20) rights from Everyone (WD) SID",
+      "would_relate_to": [
+        "T-017",
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but operationally distinct from existing T-016/T-017 evasion primitives; clear tradecraft value"
+    },
+    {
+      "cluster_id": "regnotify-change-key-resilience-monitor",
+      "canonical_name": "RegNotifyChangeKey Resilience Monitor Primitive",
+      "proposed_category": "persistence",
+      "proposed_tier": "B",
+      "rationale": "Singleton documenting a watchdog primitive for persistence configuration that fills a gap in T-017's resilience monitor layer.",
+      "member_note_ids": [
+        "lgtm:regnotify-resilience-monitor-primitive"
+      ],
+      "consolidated_description": "RegNotifyChangeKey allows a thread to receive asynchronous notification when a registry key or its subkeys / values change, with filters REG_NOTIFY_CHANGE_NAME (0x1), REG_NOTIFY_CHANGE_LAST_SET (0x2), REG_NOTIFY_CHANGE_ATTRIBUTES (0x4), REG_NOTIFY_CHANGE_SECURITY (0x8), and the REG_NOTIFY_THREAD_APCWOW64 flag for cross-architecture APC delivery. SEC670 uses this as a watchdog primitive: a worker thread blocks in RegNotifyChangeKey on the persistence key, and on notification rewrites the value or signals an upper layer to re-establish persistence. The primitive also serves for AV-install detection by watching HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall or HKLM\\SOFTWARE\\Microsoft\\Windows Defender for new subkeys. The vault's T-017 PhantomPersist layer mentions a resilience monitor but does not document the RegNotify API surface or the APC delivery mechanism.\n",
+      "technical_anchor": "RegNotifyChangeKey with REG_NOTIFY_CHANGE_LAST_SET (0x2) filter and REG_NOTIFY_THREAD_APCWOW64 flag for async APC delivery to a wait thread via NtNotifyChangeKey",
+      "would_relate_to": [
+        "T-017",
+        "T-020"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton with clear tradecraft value; bridges existing PhantomPersist layer with concrete API surface"
+    },
+    {
+      "cluster_id": "persistence-risk-decision-framework",
+      "canonical_name": "Persistence Risk-Benefit Decision Framework",
+      "proposed_category": "persistence",
+      "proposed_tier": "C",
+      "rationale": "Singleton methodology note that adds operational decision-making context missing from T-017's suite enumeration.",
+      "member_note_ids": [
+        "lgtm:persistence-risk-decision-framework"
+      ],
+      "consolidated_description": "SEC670 frames persistence as a bounded decision: not every engagement requires persistence, the chosen method depends on target sensitivity and dwell-time budget, and the operator should select the least risky method available. Decision factors include detection surface (e.g., schtask XML triggers ETW Microsoft-Windows-ScheduledTask, IFEO Debugger produces ImageLoad events under Microsoft-Windows-Kernel-Image), survivability across reboot / logout / user switch, and required privileges (admin vs SYSTEM vs user-only). T-017 enumerates the suite layers without a decision framework that an operator can use to triage which layer fits a specific engagement profile; a methodology card should map each T-017 layer to detection surface, privilege requirement, and dwell-time profile.\n",
+      "technical_anchor": "Decision matrix: ETW providers Microsoft-Windows-ScheduledTask (for schtask layer) and Microsoft-Windows-Kernel-Image (for IFEO Debugger layer) vs privilege requirement vs reboot-survivable flag",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but adds methodology-level context that informs card selection from existing T-017 suite"
+    },
+    {
+      "cluster_id": "registry-write-blending-timing-tradecraft",
+      "canonical_name": "Registry Persistence Write Blending via OS Read-Timing Windows",
+      "proposed_category": "persistence",
+      "proposed_tier": "B",
+      "rationale": "Singleton emerging-tradecraft note documenting timing windows for registry writes that minimize EDR signal-to-noise.",
+      "member_note_ids": [
+        "lgtm:registry-blending-timing-tradecraft"
+      ],
+      "consolidated_description": "SEC670 identifies four registry-read timing windows during which an OS component reads specific keys: initial boot (smss.exe reads HKLM\\SYSTEM\\Setup for boot execution order), kernel boot (kernel reads HKLM\\SYSTEM\\CurrentControlSet for driver loading), logon (winlogon.exe reads HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\Userinit), and app startup. Continuous-polling applications (OneDrive, Teams) read their own keys repeatedly. An operator can blend persistence writes into these windows so a value-write event correlates with expected OS behavior, reducing EDR signal-to-noise and avoiding heuristic flag-on-write alerts. The vault's T-017 does not document this timing tradecraft layer; the card should map the four windows to specific keys and to the OS component performing the read.\n",
+      "technical_anchor": "winlogon.exe read of HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\Userinit at logon phase, providing write-blend window for persistence value",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton with concrete operational tradecraft; enhances existing T-017 layers"
+    },
+    {
+      "cluster_id": "disk-artifact-protection-tradecraft",
+      "canonical_name": "Disk Artifact Placement and DRM Protection Tradecraft",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Both notes address on-disk implant artifact handling — placement heuristics and DRM protection — forming a coherent disk-artifact discipline.",
+      "member_note_ids": [
+        "lgtm:disk-placement-tradecraft",
+        "lgtm:implant-drm-protection"
+      ],
+      "consolidated_description": "SEC670 devotes material to strategic on-disk drop placement — Desktop, Documents, Downloads, Pictures, Temp, AppData, Program Files, SysWow64, System32, OneDrive — with explicit risk / signal trade-offs (e.g., System32 raises AV scrutiny, AppData blends with legitimate app noise, OneDrive sync can exfiltrate the implant off-host). For integrity protection when drop-to-disk is unavoidable, SEC670 references the PoC Skrull implant using Windows DRM techniques (IPRIP-protected PE, code signing with self-signed certs, or PIMAGE_LOAD_CONFIG_DIRECTORY integrity check entries) to prevent static analysis by AV signatures or reverse-engineering. Together these form a disk-artifact-protection discipline the vault lacks: a card should map each placement location to detection attention, and document the DRM techniques available to harden the dropped binary.\n",
+      "technical_anchor": "Strategic placement (AppData, OneDrive) combined with PE DRM via PIMAGE_LOAD_CONFIG_DIRECTORY Security Guard flags in Skrull-style implant",
+      "would_relate_to": [
+        "T-017",
+        "T-020"
+      ],
+      "priority": "medium",
+      "priority_reason": "Two member notes; fills an operational-tradecraft gap around disk-resident artifacts"
+    },
+    {
+      "cluster_id": "memory-forensics-detection-layer",
+      "canonical_name": "Memory Forensics Detection Layer (PE-sieve, Moneta, Volatility)",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Both notes cross-reference memory scanners as the detection surface that vault injection / evasion cards must address.",
+      "member_note_ids": [
+        "lgtm:memory-forensics-tooling",
+        "lgtm:convergence-pe-sieve-vs-vault-injection"
+      ],
+      "consolidated_description": "PE-sieve (Hasherzade), Moneta (forrest-orr), and Volatility (Volatility Foundation) detect in-memory implants even when on-disk AV does not, by scanning process address spaces for unbacked executable regions, hollowed modules, suspicious PE header anomalies, IAT mismatches, and RWX permissions inconsistent with the original image. The vault's detection narrative narrows to kernel callbacks and ETW; the gap leaves operators without a model of how memory scanners fingerprint module stomping (T-007), Threadless injection (T-008), and NTDLL unhooking (T-016). PE-sieve specifically walks the PEB Loader list (PEB->Ldr->InLoadOrderModuleList) and cross-checks each entry against the on-disk image via MEMORY_BASIC_INFORMATION, flagging modules where ImageBase mismatches or MZ / PE headers indicate shadow copies; Moneta targets unbacked RWX / EXECUTE_READWRITE memory in a more generic fashion.\n",
+      "technical_anchor": "PE-sieve scan: enumerate PEB.Ldr.InLoadOrderModuleList, for each LDR_DATA_TABLE_ENTRY compare MEMORY_BASIC_INFORMATION.AllocationProtect (PAGE_EXECUTE_READWRITE vs PAGE_EXECUTE_WRITECOPY) and MappedFileName against ntdll on disk",
+      "would_relate_to": [
+        "T-007",
+        "T-008",
+        "T-011",
+        "T-013",
+        "T-016",
+        "T-003"
+      ],
+      "priority": "high",
+      "priority_reason": "Cross-source convergence across SEC670 and Huntress Labs; surfaces detection surface for 6 existing injection / evasion cards"
+    },
+    {
+      "cluster_id": "kernel-mode-edr-survives-unhooking",
+      "canonical_name": "Kernel-Mode EDR Survives Userland Unhooking",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Singleton cross-source convergence note that constrains T-016's operational claims about NTDLL unhooking.",
+      "member_note_ids": [
+        "lgtm:unhooking-kernel-limitation-convergence"
+      ],
+      "consolidated_description": "SEC670 explicitly states that unhooking ntdll does not truly blind a security product because a kernel driver can still observe via PsSetCreateProcessNotifyRoutine (process create / exit callback), PsSetLoadImageNotifyRoutine (image load callback), PsSetCreateThreadNotifyRoutine (thread create callback), ObRegisterCallbacks (process / thread handle duplication callback), CmRegisterCallback (registry modification callback), and mini-filter FileFilter callbacks. T-016's clean-ntdll-unhook technique therefore only addresses userland-hook-based telemetry; it does not defeat EDRs that operate at the kernel boundary. The vault should make this operational constraint explicit on T-016 so operators understand that unhooking is necessary but not sufficient for evasion against modern EDRs, and that combining T-016 unhooking with callback blocking (kernel-driver-based) is required for full telemetry suppression.\n",
+      "technical_anchor": "PsSetCreateProcessNotifyRoutine (kernel callback class ProcessCreate / ProcessExit) and PsSetLoadImageNotifyRoutine surviving ntdll userland unhook",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "high",
+      "priority_reason": "Singleton but operational constraint affecting existing T-016 card; high-value correction to vault"
+    },
+    {
+      "cluster_id": "c2-listener-host-rotation",
+      "canonical_name": "C2 Listener Host Round-Robin Rotation",
+      "proposed_category": "networking",
+      "proposed_tier": "B",
+      "rationale": "Singleton from CRTO documenting Cobalt Strike listener HA config; fills infrastructure-resilience gap in T-022.",
+      "member_note_ids": [
+        "lgtm:host-rotation-strategy-c2"
+      ],
+      "consolidated_description": "CRTO documents Cobalt Strike HTTP listener configuration with round-robin host rotation across multiple HTTP hosts on port 80, providing C2 infrastructure resilience against sinkhole, domain takedown, or single-host seizure. The listener definition accepts a comma-separated Host field and cycles through hosts at the HTTP transport layer, with the teamserver distributing Beacons across the listed hosts during profile generation. The vault's T-022 networking suite does not document this operational pattern for infrastructure redundancy; a card should cover listener HA configuration, the C2-Profile Malleable C2 host rotation syntax, and the operator-side Beacon retry logic that handles per-host failure.\n",
+      "technical_anchor": "Cobalt Strike listener 'Host' field accepting comma-separated HTTP[S] hosts for round-robin rotation on port 80 / 443, plus Malleable C2 profile http-get / http-post uri-append syntax",
+      "would_relate_to": [
+        "T-022"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton with concrete CRTO tradecraft; infrastructure-resilience gap in T-022"
+    },
+    {
+      "cluster_id": "reverse-shell-firewall-penetration",
+      "canonical_name": "Reverse Shell Firewall Penetration Tradecraft",
+      "proposed_category": "networking",
+      "proposed_tier": "B",
+      "rationale": "Singleton foundational note framing reverse-vs-bind shell tradeoffs that inform T-022 design.",
+      "member_note_ids": [
+        "lgtm:reverse-shell-vs-bind-shell-firewall-penetration"
+      ],
+      "consolidated_description": "SEC670 states that reverse shells are mostly preferred over bind shells because they can poke through outbound-permissive firewalls and connect back to the C2 listener. The trade-off: bind shells require inbound port exposure on the target (often blocked by host firewall or egress filtering), while reverse shells originate from inside the network and only need outbound 80 / 443 / 53 (HTTP / HTTPS / DNS). This foundational tradecraft informs the design of T-022's networking stack and the operator's choice between connect-back and bind-listener code paths in an implant; the vault should document the trade-off matrix on T-022 and explicitly call out the Windows Firewall (netsh advfirewall) inbound block behavior that makes reverse shells operationally preferred.\n",
+      "technical_anchor": "Outbound-only TCP connect-back from implant to C2 listener on port 80 / 443 / 53 (HTTP/S/DNS) vs bind-listen on arbitrary port requiring netsh advfirewall firewall add rule inbound ACL",
+      "would_relate_to": [
+        "T-019",
+        "T-022"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton with foundational tradecraft; informs T-022 design decisions"
+    },
+    {
+      "cluster_id": "uac-bypass-tradecraft",
+      "canonical_name": "UAC Bypass Discovery Methodology and Tradecraft",
+      "proposed_category": "privesc",
+      "proposed_tier": "A",
+      "rationale": "Three notes converge on UAC bypass methodology + tradecraft across SEC670 modules, UACMe reference, and existing vault cards.",
+      "member_note_ids": [
+        "lgtm:gap-uac-bypass-research-methodology",
+        "lgtm:cross-source-convergence-uac-tradecraft",
+        "lgtm:uac-bypass-research-methodology-convergence"
+      ],
+      "consolidated_description": "SEC670 Lab 3.7 documents a discovery methodology: enumerate System32 binaries, extract PE manifests via mt.exe or by parsing RT_MANIFEST resource (type 24), find autoElevate=\"true\" attribute, run under Process Monitor to capture COM handler loading, find an attacker-controllable handler path via registry hijack, then trigger the autoElevate binary to execute the COM handler at elevated integrity. UACMe (hfire_f0x) provides the canonical reference implementation index numbering 80+ bypasses. The vault's T-021 / T-023 document CMSTP bypass as a finished technique but lack the discovery methodology and the cross-source pattern of: autoElevate manifest + COM InprocServer32 / LocalServer32 registry value pointing to attacker DLL + triggering binary (computerdefaults.exe, sdclt.exe, fodhelper.exe, eventvwr.exe). A consolidated card should document the manifest parsing step (autoElevate attribute location), the COM hijack step (HKCU\\Software\\Classes\\CLSID\\{<GUID>}\\InprocServer32), and the trigger binaries.\n",
+      "technical_anchor": "autoElevate=\"true\" attribute in PE manifest XML (RT_MANIFEST resource type 24) + COM InprocServer32 registry hijack at HKCU\\Software\\Classes\\CLSID\\{<GUID>}\\InprocServer32 triggering via sdclt.exe / fodhelper.exe / computerdefaults.exe",
+      "would_relate_to": [
+        "T-021",
+        "T-023"
+      ],
+      "priority": "high",
+      "priority_reason": "Three member notes with cross-source convergence; adds methodology depth to existing T-021"
+    },
+    {
+      "cluster_id": "windows-privesc-primitives",
+      "canonical_name": "Windows Privilege Escalation Primitives (Admin to SYSTEM)",
+      "proposed_category": "privesc",
+      "proposed_tier": "A",
+      "rationale": "Two notes cross-source converge on the canonical admin-to-SYSTEM escalation privilege set and primitive catalog.",
+      "member_note_ids": [
+        "lgtm:cross-source-convergence-admin-to-system-privilege-set",
+        "lgtm:coverage-gap-windows-privesc-primitives"
+      ],
+      "consolidated_description": "SEC670, MalDev Academy, and CRTO converge on the same five-privilege set as the canonical admin-to-SYSTEM escalation paths: SeTakeOwnership (take ownership of a SYSTEM process binary or service path via SetSecurityInfo, replace with malicious payload, restart service), SeTcbPrivilege (call NtCreateThreadEx inside a SYSTEM process via ZwOpenProcess + thread creation), SeCreateTokenPrivilege (craft a SYSTEM token directly via NtCreateToken specifying SYSTEM SID in TOKEN_USER), SeLoadDriverPrivilege (load unsigned kernel driver via NtLoadDriver that performs PsSetCreateProcessNotifyRoutineEx manipulation or token theft), SeDebugPrivilege (OpenProcess(PROCESS_ALL_ACCESS) on winlogon.exe, DuplicateTokenEx with SecurityImpersonation level, CreateProcessWithTokenW). The vault documents LSASS credential harvest (T-023) and CMSTP UAC bypass (T-021) but has no card cataloging these privilege primitives — they are the building blocks for chaining admin -> SYSTEM -> kernel.\n",
+      "technical_anchor": "SeDebugPrivilege + OpenProcess(PROCESS_ALL_ACCESS) on winlogon.exe (PID 508 typical) + DuplicateTokenEx(SecurityImpersonation, TokenPrimary) + CreateProcessWithTokenW for SYSTEM-context execution",
+      "would_relate_to": [
+        "T-013",
+        "T-022",
+        "T-016",
+        "T-023",
+        "T-021"
+      ],
+      "priority": "high",
+      "priority_reason": "Three-source convergence (SEC670 / MalDev / CRTO) on canonical privilege set; fills a critical prerequisite gap for multiple privesc chains"
+    },
+    {
+      "cluster_id": "gpo-abuse-domain-tier-privesc",
+      "canonical_name": "GPO Abuse for Domain-Tier Privilege Escalation",
+      "proposed_category": "privesc",
+      "proposed_tier": "B",
+      "rationale": "Singleton emerging-tradecraft note; explicitly flagged as not fitting existing T-NNN scope but worth cataloging for future domain-tier expansion.",
+      "member_note_ids": [
+        "lgtm:gpo-abuse-domain-privesc-orphan"
+      ],
+      "consolidated_description": "CRTO covers SharpGPOabuse (Vincent Le Toux) for pushing SYSTEM-context scheduled task execution across GPO-scoped machines by writing malicious ScheduledTasks.xml into the SYSVOL GPO directory on a Domain Controller. The XML takes the form <ScheduledTasks><Task V2=\"1\"><Properties action=\"Create\" name=\"...\" .../> with cdata containing the command, and Group Policy Client (gpsvc.dll, hosted by svchost.exe -k netsvcs) pulls + executes it at next GPO refresh on each scoped host. The technique requires write access to the GPO (typically via Group Policy Creator Privilege delegation or write ACL on the GPO object). The vault's T-NNN scope is Windows-local offensive tradecraft; GPO abuse is domain-tier and currently sits as an orphan cluster without a parent card.\n",
+      "technical_anchor": "SharpGPOabuse writing ScheduledTasks.xml to \\\\<DC>\\SYSVOL\\<domain>\\Policies\\{<GPO-GUID>}\\Machine\\Preferences\\ScheduledTasks\\ScheduledTasks.xml with <Task V2=\"1\"> + command cdata",
+      "would_relate_to": [],
+      "priority": "medium",
+      "priority_reason": "Singleton but represents a distinct tradecraft surface; orphan but cataloged for future scope expansion"
+    },
+    {
+      "cluster_id": "domain-recon-standard-user-context",
+      "canonical_name": "Domain and Active Directory Recon from Standard User Context",
+      "proposed_category": "discovery",
+      "proposed_tier": "A",
+      "rationale": "Two notes address AD / domain recon from non-elevated context — CRTO surface missing from T-023.",
+      "member_note_ids": [
+        "lgtm:domain-recon-standard-user",
+        "lgtm:active-directory-recon-coverage-gap"
+      ],
+      "consolidated_description": "CRTO documents AD enumeration via PowerView (Get-DomainComputer, Get-DomainUser, Get-DomainGPO, Get-DomainController, Find-DomainUserLocation) and ADSearch with custom LDAP filters — all runnable from standard user context without elevation. Running domain recon from a high-integrity process is operationally detrimental because it conflates the recon footprint with the elevated token (token duplication context, EDR attention). The vault's T-023 covers 'recon' generically but does not document the standard-user AD enumeration layer that bridges initial access and lateral movement; the card should enumerate PowerView cmdlets, ADSearch LDAP filter syntax, and the operational guidance that recon must be performed in the initial standard-user context.\n",
+      "technical_anchor": "PowerView Get-DomainComputer -LDAPFilter '(operatingSystem=*Server*)' invoking System.DirectoryServices.DirectorySearcher against LDAP://CN=Configuration,DC=... rootDSE",
+      "would_relate_to": [
+        "T-023"
+      ],
+      "priority": "high",
+      "priority_reason": "Two member notes with cross-source convergence (CRTO); fills a critical gap between initial access and lateral movement"
+    },
+    {
+      "cluster_id": "anti-vm-detection-primitive-catalog",
+      "canonical_name": "Anti-VM Detection Primitive API Catalog",
+      "proposed_category": "anti-analysis",
+      "proposed_tier": "A",
+      "rationale": "Singleton coverage-gap note documenting the recon APIs that power T-020's 10 anti-VM checks.",
+      "member_note_ids": [
+        "lgtm:gap-anti-vm-detection-primitives"
+      ],
+      "consolidated_description": "The vault's T-020 lists 10 anti-VM checks but does not document the recon API primitives that power them. SEC670 shows that the same APIs used for survey (Program Files directory walk via FindFirstFile / FindNextFile, WTSEnumerateProcessesEx, NtQuerySystemInformation, GetAdaptersAddresses via iphlpapi, RegOpenKeyEx on HKLM\\SYSTEM\\CurrentControlSet\\Services\\Disk\\Enum for VM-aware driver names like VBOXBUS, pvscsi, vmci) also support anti-VM fingerprinting. The vault should document the API -> check mapping so an operator can construct custom anti-VM chains rather than hardcoded checks; the card should also cover the Hypervisor CPUID leaf 0x40000000 (returning 'MicrosoftHV' / 'KVMKVMKVM' / 'VMwareVMware' vendor signatures) and the RDTSC-based timing detection via __rdtsc / QueryPerformanceCounter.\n",
+      "technical_anchor": "RegOpenKeyEx(HKLM\\SYSTEM\\CurrentControlSet\\Services\\Disk\\Enum) returning Value '0' = 'PCI\\VEN_80EE&DEV_BEEF...' (VirtualBox) or '_VMBUS' (Hyper-V); CPUID leaf 0x40000000 vendor signature",
+      "would_relate_to": [
+        "T-020",
+        "T-023"
+      ],
+      "priority": "high",
+      "priority_reason": "Singleton but bridges existing T-020 anti-VM card with concrete API surface; critical prerequisite"
+    },
+    {
+      "cluster_id": "host-recon-surface-catalog",
+      "canonical_name": "Host Recon Surface Catalog (Registry, WMI, KUSER, SDDL, sc.exe)",
+      "proposed_category": "discovery",
+      "proposed_tier": "A",
+      "rationale": "Two notes describe the host recon surface catalog and recon API selection consensus across SEC670 / CRTO.",
+      "member_note_ids": [
+        "lgtm:host-recon-surface-catalog-gap",
+        "lgtm:cross-source-recon-api-selection-consensus"
+      ],
+      "consolidated_description": "SEC670 recon material forms a host recon surface catalog: registry hives (HKU ProfileList for user SID discovery via ProfileImagePath, HKLM SAM for local account hashes, HKLM SECURITY for cached domain creds under HKLM\\SECURITY\\Cache, HKLM SYSTEM CurrentControlSet for service / driver inventory, HKLM SOFTWARE Microsoft Windows CurrentVersion Uninstall for installed products, HKCU Software for user-installed apps), WMI Win32 provider classes (Win32_Process, Win32_Service, Win32_Registry, Win32_OperatingSystem, Win32_NetworkAdapterConfiguration), KUSER_SHARED_DATA direct read, ProfileList for SID enumeration, sc.exe security descriptors for service ACL mapping via sc.exe sdshow. The API selection consensus: GetAdapterAddresses vs GetNumberOfInterfaces vs GetIpStatistics distinction; CreateToolhelp32Snapshot vs WTSEnumerateProcesses vs WMI Win32_Process for process enumeration; each pair maps to a different signal / detail trade-off.\n",
+      "technical_anchor": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\Disk\\Enum key + WMI Win32_NetworkAdapterConfiguration (GetAdaptersAddresses) + HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\<GUID> subkey enumeration",
+      "would_relate_to": [
+        "T-023"
+      ],
+      "priority": "high",
+      "priority_reason": "Two member notes with cross-source consensus; consolidates 6+ recon surfaces into one navigable catalog"
+    },
+    {
+      "cluster_id": "wmi-dual-use-recon-persistence-convergence",
+      "canonical_name": "WMI as Dual-Use Recon and Persistence Channel",
+      "proposed_category": "discovery",
+      "proposed_tier": "A",
+      "rationale": "Two notes converge on WMI as a single substrate for both recon (Win32_*) and persistence (__EventFilter / __EventConsumer) — operationally distinct from a single-purpose WMI card.",
+      "member_note_ids": [
+        "lgtm:cross-source-wmi-convergence",
+        "lgtm:cross-source-wmi-recon-persistence-convergence"
+      ],
+      "consolidated_description": "SEC670 Book 4 (Persistence) and Book 2 (Recon) both use WMI — Book 4 for __EventFilter / __EventConsumer / __FilterToConsumerBinding persistence binding in root\\subscription namespace, Book 2 for Win32_Process / Win32_Service / Win32_Registry enumeration via Get-WmiObject or IWbemServices::ExecQuery. CRTO also surfaces WMI via Get-Domain / Get-DomainController PowerShell cmdlets. The convergence point: WMI is the single Windows management substrate that supports both recon (read via ExecQuery on standard namespaces root\\cimv2, root\\default) and persistence (write via permanent event subscription in root\\subscription) using the same COM interfaces (CoCreateInstance(CLSID_WbemLocator, IID_IWbemLocator) -> IWbemLocator::ConnectServer -> IWbemServices::ExecQuery / PutInstance). The vault's T-023 recon card and T-017 persistence card both miss the dual-use nature, which means the same COM channel can be used to enumerate the host and to establish persistence in a single IWbemServices session.\n",
+      "technical_anchor": "WMI permanent event subscription: __EventFilter (Query) + __EventConsumer (CommandLineEventConsumer) + __FilterToConsumerBinding in root\\subscription namespace, all written via IWbemServices::PutInstance",
+      "would_relate_to": [
+        "T-023",
+        "T-017"
+      ],
+      "priority": "high",
+      "priority_reason": "Two member notes with cross-source convergence; surfaces WMI dual-use nature absent from both T-017 and T-023"
+    },
+    {
+      "cluster_id": "wua-com-patch-enumeration",
+      "canonical_name": "Windows Update Agent COM API for Patch Enumeration",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Singleton coverage-gap note documenting a specific COM interface stack for patch enumeration missing from T-023.",
+      "member_note_ids": [
+        "lgtm:coverage-wua-com-patch-enum"
+      ],
+      "consolidated_description": "SEC670 documents the full Windows Update Agent (WUA) COM interface stack — CoCreateInstance(CLSID_UpdateSession) for IUpdateSession, IUpdateSession::CreateUpdateSearcher for IUpdateSearcher, IUpdateSearcher::Search(\"IsInstalled=1\") returning ISearchResult, ISearchResult::get_Updates for IUpdateCollection, and iterating IUpdate::get_KBArticleIDs — for enumerating installed hotfixes and identifying missing patches. The vault mentions patch enumeration only obliquely in T-023; this COM stack provides a structured, ETW-light alternative to wmic qfe list or Get-HotFix (which both surface in ETW Microsoft-Windows-WUAHandler logs and require WMI DCOM / RPC). The card should also cover the COM alternate IWindowsUpdateAgentInfo interface and the offline MSI / WIM enumeration variant using dism /Get-Packages.\n",
+      "technical_anchor": "CoCreateInstance(CLSID_UpdateSession, IID_IUpdateSession) -> IUpdateSession::CreateUpdateSearcher -> IUpdateSearcher::Search('IsInstalled=1') returning ISearchResult with IUpdateCollection of IUpdate interfaces",
+      "would_relate_to": [
+        "T-023",
+        "T-020"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton with concrete COM interface stack; alternative to known patch enumeration methods"
+    },
+    {
+      "cluster_id": "registry-hive-operational-map",
+      "canonical_name": "Registry Hive Operational Map",
+      "proposed_category": "discovery",
+      "proposed_tier": "A",
+      "rationale": "Singleton covering SEC670's 10-unit registry hive enumeration — too foundational to drop or split.",
+      "member_note_ids": [
+        "lgtm:coverage-registry-hive-operational-map"
+      ],
+      "consolidated_description": "SEC670 dedicates 10 units to enumerating the six registry hives with operational implications: HKU\\.DEFAULT and HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\<SID> for user SID discovery (ProfileImagePath value), HKLM\\SAM for local account hashes (encrypted, requires SYSTEM token to read via RegSaveKeyEx or RegReadValue; typically read offline via secretsdump.py after RegSaveKey), HKLM\\SECURITY for cached domain creds (NL$ keys under HKLM\\SECURITY\\Cache, 16-byte NLKM + cached domain hashes), HKLM\\SYSTEM\\CurrentControlSet\\Services for driver / service inventory, HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall for installed products (DisplayName, DisplayVersion, UninstallString), HKCU\\Software for user-installed apps and config. The vault lacks a navigable operational map tying each hive to specific recon / persistence primitives; a reference card should enumerate the hive paths, the SYSTEM-token requirement, and the typical secrets dump pipeline (reg save -> secretsdump.py -> Mimikatz).\n",
+      "technical_anchor": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\<SID> ProfileImagePath value + HKLM\\SECURITY\\Cache\\NL$ keys for cached domain credentials",
+      "would_relate_to": [
+        "T-017",
+        "T-023"
+      ],
+      "priority": "high",
+      "priority_reason": "Singleton but operationally foundational; 10 SEC670 units support this single reference card"
+    },
+    {
+      "cluster_id": "ntfs-directory-entry-table-tradecraft",
+      "canonical_name": "NTFS Directory Entry Table Tradecraft Beyond File Walks",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Singleton emerging-tradecraft note extending beyond documented directory walks into NTFS-specific primitives.",
+      "member_note_ids": [
+        "lgtm:emerging-ntfs-directory-entry-tradecraft"
+      ],
+      "consolidated_description": "SEC670 introduces the NTFS directory entry table ($I30 index) as the storage substrate behind directory walks (FindFirstFile / FindNextFile enumerate $I30 entries) but does not extend into NTFS-specific tradecraft. Adjacent primitives include MFT parsing via FSCTL_GET_NTFS_FILE_RECORD (0x9006B) on a volume handle returning MFT records via DeviceIoControl, USN journal enumeration via FSCTL_READ_USN_DATA (0x9006F) and FSCTL_QUERY_USN_JOURNAL (0x9006C), alternate data stream (ADS) access via the syntax \"<filename>:<streamname>:$DATA\", and NTFS Extended Attributes via NtQueryEaFile / NtSetEaFile. The vault's T-017 NTFS EA persistence layer only obliquely references the underlying primitives; a card should document the $I30 index attribute type 0x30 (FILE_NAME) and $ATTRIBUTE_LIST_ENTRY structure, plus the MFT record parsing approach for telemetry-light file enumeration.\n",
+      "technical_anchor": "FSCTL_GET_NTFS_FILE_RECORD (0x9006B) on volume handle returning MFT record via DeviceIoControl; $I30 index attribute type 0x30 (FILE_NAME) in MFT record",
+      "would_relate_to": [
+        "T-017",
+        "T-023",
+        "T-020"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but extends existing T-017 NTFS EA layer with concrete primitives; emerging tradecraft"
+    }
+  ],
+  "synthesis_notes": [],
+  "validation": {
+    "missing": [],
+    "extra": [],
+    "duplicates": []
+  }
+}

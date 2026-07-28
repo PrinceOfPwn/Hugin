@@ -1,0 +1,934 @@
+{
+  "generated_at": "2026-07-23 00:23:14",
+  "generator": "haiku-4.5-subagent",
+  "input_notes": 106,
+  "clusters": [
+    {
+      "cluster_id": "service-based-persistence",
+      "canonical_name": "Windows Service-Based Persistence via SCM",
+      "proposed_category": "persistence",
+      "proposed_tier": "A",
+      "rationale": "Five notes converge on SCM-driven service creation/modification as unified persistence mechanism with SYSTEM context and reboot survival.",
+      "member_note_ids": [
+        "lgtm:service-based-persistence-as-distinct-technique",
+        "lgtm:service-based-persistence-with-dacl-hiding",
+        "lgtm:proposed-service-modification-persistence",
+        "lgtm:service-persistence-card",
+        "lgtm:proposed-windows-services-persistence-card"
+      ],
+      "consolidated_description": "Windows Service-based persistence via OpenSCManager, CreateService, and ChangeServiceConfig. Services survive reboot and run in SYSTEM context via the SCM. Entry point is SCM interaction; tradecraft includes service hiding via SDDL DACL manipulation.",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "high",
+      "priority_reason": "5 member notes, SYSTEM persistence, distinct from T-017's existing five-layer suite."
+    },
+    {
+      "cluster_id": "port-monitor-addmonitor-persistence",
+      "canonical_name": "Port Monitor (AddMonitor) Persistence via Print Spooler",
+      "proposed_category": "persistence",
+      "proposed_tier": "A",
+      "rationale": "Five notes converge on AddMonitor as the API for registering malicious port monitor DLL into spoolsv.exe (SYSTEM context) on spooler restart.",
+      "member_note_ids": [
+        "lgtm:port-monitor-print-spooler-persistence",
+        "lgtm:proposed-port-monitor-persistence",
+        "lgtm:proposed-port-monitor-persistence-card",
+        "lgtm:port-monitor-addmonitor-persistence",
+        "lgtm:port-monitor-persistence",
+        "lgtm:port-monitor-persistence-card"
+      ],
+      "consolidated_description": "Port Monitor persistence via AddMonitor API and _MONITORINFO_2 structure. Malicious port monitor DLL loaded into spoolsv.exe with SYSTEM privileges on every spooler start. Survives reboot; distinct from service-based persistence and other T-017 layers.",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "high",
+      "priority_reason": "5 member notes, SYSTEM-context persistence, distinct print-spooler vector not covered in T-017."
+    },
+    {
+      "cluster_id": "appinit-dlls-persistence",
+      "canonical_name": "AppInit_DLLs Registry Persistence",
+      "proposed_category": "persistence",
+      "proposed_tier": "A",
+      "rationale": "Three notes describe AppInit_DLLs registry key as distinct user32-linked DLL injection persistence mechanism with LoadAppInit_DLLs gating.",
+      "member_note_ids": [
+        "lgtm:appinit-dlls-persistence-card",
+        "lgtm:proposed-appinit-dlls-persistence-card",
+        "lgtm:proposed-appinit-dlls-persistence"
+      ],
+      "consolidated_description": "AppInit_DLLs persistence via registry-resident HKCU/HKLM entry. DLLs loaded into all User32.dll-linked processes. Gated on LoadAppInit_DLLs registry value (admin required). Distinct from AppCert and RunOnce; user32-conditional loading profile differs from other registry persistence.",
+      "would_relate_to": [
+        "T-017",
+        "T-013"
+      ],
+      "priority": "medium",
+      "priority_reason": "3 member notes, clear user32-conditional tradecraft, registry-resident mechanism distinct from T-017 layers."
+    },
+    {
+      "cluster_id": "ifeo-silentprocessexit-persistence",
+      "canonical_name": "IFEO GlobalFlag and SilentProcessExit Registry Persistence",
+      "proposed_category": "persistence",
+      "proposed_tier": "A",
+      "rationale": "Eight notes converge on IFEO and GlobalFlag/SilentProcessExit as distinct persistence triggers: start-time redirect and exit-time recovery.",
+      "member_note_ids": [
+        "lgtm:ifeo-silent-process-exit-persistence",
+        "lgtm:ifeo-debugger-persistence",
+        "lgtm:proposed-ifeo-persistence",
+        "lgtm:ifeo-persistence-card",
+        "lgtm:proposed-ifeo-persistence-suite",
+        "lgtm:ifeo-silentprocessexit-persistence-card",
+        "lgtm:silentprocessexit-trigger-persistence",
+        "lgtm:proposed-silent-process-exit-persistence"
+      ],
+      "consolidated_description": "IFEO persistence via Debugger key (redirects launches to malicious binary) and GlobalFlag/SilentProcessExit (executes recovery command on exit). Registry-resident under HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\<binary>. Admin/SYSTEM required; survives reboot.",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "high",
+      "priority_reason": "8 member notes (strong cross-source signal), two distinct persistence triggers, clear operational value."
+    },
+    {
+      "cluster_id": "wmi-event-subscription-persistence",
+      "canonical_name": "WMI Permanent Event Subscription Persistence",
+      "proposed_category": "persistence",
+      "proposed_tier": "A",
+      "rationale": "Nine notes converge on WMI event subscriptions (__EventFilter + EventConsumer + FilterToConsumerBinding) as unified CIM-repository-resident persistence.",
+      "member_note_ids": [
+        "lgtm:wmi-event-subscription-persistence",
+        "lgtm:wmi-permanent-subscription-persistence-card",
+        "lgtm:wmi-event-subscription-persistence-card",
+        "lgtm:proposed-wmi-event-subscription-persistence",
+        "lgtm:proposed-wmi-persistence-suite",
+        "lgtm:wmi-permanent-subscription-card",
+        "lgtm:wmi-permanent-subscription-persistence"
+      ],
+      "consolidated_description": "WMI permanent event subscriptions via __EventFilter (event definition), CommandLineEventConsumer, and __FilterToConsumerBinding (association). Subscriptions survive reboots and execute within WmiPrvSE.exe context. Extrinsic events (polling) vs. intrinsic events (fire immediately) provide different triggering profiles.",
+      "would_relate_to": [
+        "T-017",
+        "T-018"
+      ],
+      "priority": "high",
+      "priority_reason": "9 member notes (strongest signal), distinct CIM-repository mechanism, multiple event-trigger variants."
+    },
+    {
+      "cluster_id": "service-failure-actions-persistence",
+      "canonical_name": "SERVICE_FAILURE_ACTIONS Crash-Triggered Persistence",
+      "proposed_category": "persistence",
+      "proposed_tier": "B",
+      "rationale": "Four notes converge on SERVICE_FAILURE_ACTIONS structure used with ChangeServiceConfig2 as distinct persistence executing on service failure.",
+      "member_note_ids": [
+        "lgtm:service-failure-actions-persistence",
+        "lgtm:service-failure-actions-card",
+        "lgtm:service-failure-actions-as-persistence",
+        "lgtm:proposed-service-failure-action-resilience"
+      ],
+      "consolidated_description": "SERVICE_FAILURE_ACTIONS persistence via ChangeServiceConfig2 to execute recovery command when service fails. Operators force service failure to trigger recovery action. Survives reboot; SCM-monitored. Distinct from service-binary-modification persistence; provides fail-safe resilience.",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "4 member notes, distinct SCM-native trigger mechanism, clear recovery/resilience purpose."
+    },
+    {
+      "cluster_id": "binary-patching-persistence",
+      "canonical_name": "On-Disk Binary Patching for Persistence and Evasion",
+      "proposed_category": "persistence",
+      "proposed_tier": "B",
+      "rationale": "Three notes converge on in-place binary modification (code caves, import table patching) as persistence mechanism surviving reboot.",
+      "member_note_ids": [
+        "lgtm:proposed-binary-patching-technique",
+        "lgtm:proposed-technique-binary-patching-persistence",
+        "lgtm:on-disk-patching-system-dlls"
+      ],
+      "consolidated_description": "Binary patching persistence via on-disk PE file modification: code-cave shellcode insertion, import-table patching, resource-section modification. Survives reboot (unlike in-memory unhooking); can target system DLLs. Persistence through modification of application logic at rest; evasion through modification of signature-scan targets.",
+      "would_relate_to": [
+        "T-017",
+        "T-006",
+        "T-021"
+      ],
+      "priority": "medium",
+      "priority_reason": "3 member notes, persistent (survives reboot), distinct from ImagePath-based service persistence."
+    },
+    {
+      "cluster_id": "sddl-persistence-acl-hardening",
+      "canonical_name": "SDDL/ACL Hardening for Persistence Resilience",
+      "proposed_category": "persistence",
+      "proposed_tier": "B",
+      "rationale": "Two notes describe SDDL strings and ACL manipulation to harden persistence objects against defender actions.",
+      "member_note_ids": [
+        "lgtm:sddl-acl-manipulation-proposed",
+        "lgtm:security-descriptor-acl-hardening"
+      ],
+      "consolidated_description": "SDDL and ACL hardening for persistence resilience via GetNamedSecurityInfo/SetNamedSecurityInfo/EXPLICIT_ACCESS_A. Operators deny stop and delete permissions to defenders, preventing removal of persistence objects. SDDL string format with ACE field decomposition provides the manipulation primitive.",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "low",
+      "priority_reason": "2 member notes, secondary persistence-hardening technique, overlaps with service hiding."
+    },
+    {
+      "cluster_id": "service-hiding-stealth",
+      "canonical_name": "Service Hiding from SCM Enumeration",
+      "proposed_category": "persistence",
+      "proposed_tier": "B",
+      "rationale": "Three notes converge on using SDDL strings to hide services from SCM enumeration while maintaining SYSTEM access.",
+      "member_note_ids": [
+        "lgtm:sddl-service-hiding-tradecraft",
+        "lgtm:hidden-service-technique",
+        "lgtm:service-hiding-coverage-gap"
+      ],
+      "consolidated_description": "Service hiding via SDDL string configuration that denies query rights to Interactive Users, Service Users, and Administrators while preserving SYSTEM access. Custom SDDL strings hide services from sc query and GUI enumeration. Complements service-based persistence by concealing the execution layer.",
+      "would_relate_to": [
+        "T-017",
+        "T-020"
+      ],
+      "priority": "medium",
+      "priority_reason": "3 member notes, distinct stealth mechanism complementing service persistence."
+    },
+    {
+      "cluster_id": "appcert-dll-injection-persistence",
+      "canonical_name": "AppCert DLL Injection Persistence",
+      "proposed_category": "persistence",
+      "proposed_tier": "B",
+      "rationale": "Single note documents AppCertDlls registry mechanism as distinct DLL injection persistence vector triggered on CreateProcess-family API calls.",
+      "member_note_ids": [
+        "lgtm:appcert-dll-persistence"
+      ],
+      "consolidated_description": "AppCertDlls registry persistence that injects DLL into any process calling CreateProcess-family APIs or WinExec. Registry key: HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\AppCertDlls. DLL loaded whenever process spawns via documented creation APIs; host-activity triggered persistence.",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton, distinct from other T-017 persistence layers, narrow host-activity-triggered profile."
+    },
+    {
+      "cluster_id": "heavens-gate-wow64-transition",
+      "canonical_name": "Heaven's Gate: 32-to-64-Bit Syscall Transition",
+      "proposed_category": "syscalls",
+      "proposed_tier": "A",
+      "rationale": "Three notes describe 32-bit processes transitioning to 64-bit code space via ntdll Wow64Transition to issue native 64-bit syscalls.",
+      "member_note_ids": [
+        "lgtm:heavens-gate-wow64-syscall-bridge",
+        "lgtm:heavens-gate-wow64-syscalls",
+        "lgtm:heavens-gate-wow64-bypass-as-standalone-technique"
+      ],
+      "consolidated_description": "Heaven's Gate is a 32-bit-to-64-bit transition mechanism Wow64 processes use to issue native 64-bit syscalls. Entry via segment 0x33 jump through ntdll.Wow64Transition to wow64cpu.dll, then to 64-bit ntdll syscall stub. Allows 32-bit implants to bypass 32-bit ntdll hooks entirely while executing kernel-mode operations in 64-bit context.",
+      "would_relate_to": [
+        "T-001",
+        "T-002",
+        "T-004",
+        "T-006"
+      ],
+      "priority": "high",
+      "priority_reason": "3 member notes, novel architecture bypass (32-bit implant issuing 64-bit syscalls), fills gap in T-001-T-006."
+    },
+    {
+      "cluster_id": "manual-getprocaddress-evasion",
+      "canonical_name": "Manual GetProcAddress Implementation via Export Table Walking",
+      "proposed_category": "syscalls",
+      "proposed_tier": "A",
+      "rationale": "Two notes converge on manually walking kernel32 IMAGE_EXPORT_DIRECTORY to implement GetProcAddress without userland API calls.",
+      "member_note_ids": [
+        "lgtm:manual-loader-api-reimplementation",
+        "lgtm:manual-getprocaddress-as-standalone-primitive"
+      ],
+      "consolidated_description": "Manual GetProcAddress implementation via direct export table walking using kernel32's IMAGE_EXPORT_DIRECTORY. Developers manually traverse AddressOfNames, AddressOfNameOrdinals, and AddressOfFunctions to resolve function addresses without calling Win32 API. Enables import-hiding and reduces EDR hook surface.",
+      "would_relate_to": [
+        "T-001",
+        "T-004",
+        "T-006"
+      ],
+      "priority": "medium",
+      "priority_reason": "2 member notes, distinct evasion primitive for import resolution, complements PEB-walker."
+    },
+    {
+      "cluster_id": "sywshipers3-random-syscall-dispatch",
+      "canonical_name": "Sywshipers3: Random Syscall Dispatch via EGH",
+      "proposed_category": "syscalls",
+      "proposed_tier": "B",
+      "rationale": "Single note describes Sywshipers3 as syscall-detection bypass using EGGs and random syscall jumps.",
+      "member_note_ids": [
+        "lgtm:sywshipers3-random-syscall-dispatch"
+      ],
+      "consolidated_description": "Sywshipers3 is a syscall-detection bypass tool using EGG-hunter style stubs and random syscall jumps in Wow64 and x64. Distinguishes itself from deterministic SSN-based dispatch by using randomization to evade signature-based detection of specific syscall numbers. Focuses on evasion through indirection rather than architecture manipulation.",
+      "would_relate_to": [
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-006"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton, narrow applicability (detection evasion), less-documented than SSN-based approaches."
+    },
+    {
+      "cluster_id": "cross-session-process-injection",
+      "canonical_name": "Cross-Session Process Injection via WTS Enumeration",
+      "proposed_category": "process-injection",
+      "proposed_tier": "A",
+      "rationale": "Three notes describe targeting variant using WTSEnumerateProcessesEx to identify and inject into processes in different logon sessions.",
+      "member_note_ids": [
+        "lgtm:cross-session-injection-primitive",
+        "lgtm:cross-session-injection-as-distinct-primitive",
+        "lgtm:cross-session-injection-variant"
+      ],
+      "consolidated_description": "Cross-session process injection via WTSEnumerateProcessesEx for identifying processes across multiple logon sessions. Operators enumerate session IDs and target high-value processes in other sessions (e.g., SYSTEM session from user session). Distinct operational variant from in-session injection; requires knowledge of session enumeration and cross-session process accessibility.",
+      "would_relate_to": [
+        "T-013",
+        "T-007",
+        "T-015",
+        "T-023"
+      ],
+      "priority": "medium",
+      "priority_reason": "3 member notes, distinct targeting criterion from core injection methods."
+    },
+    {
+      "cluster_id": "manual-pe-reflective-loader",
+      "canonical_name": "Manual PE Loader and Reflective DLL Injection (sRDI)",
+      "proposed_category": "process-injection",
+      "proposed_tier": "A",
+      "rationale": "Three notes converge on manual x64 PE loader implementation including sRDI as position-independent variant.",
+      "member_note_ids": [
+        "lgtm:srdi-as-distinct-technique",
+        "lgtm:proposed-manual-pe-loader-technique-card",
+        "lgtm:proposed-technique-manual-pe-loading"
+      ],
+      "consolidated_description": "Manual PE loader for x64 executables with MZ header validation, section traversal, data directory processing, import/export table construction, base relocations, and entry-point dispatch. sRDI (Shellcode Reflective DLL) is position-independent loader variant providing custom helpers (GetProcAddressR). Bypasses userland APIs entirely with fine-grained relocation control.",
+      "would_relate_to": [
+        "T-013",
+        "T-007"
+      ],
+      "priority": "high",
+      "priority_reason": "3 member notes, substantial SEC670 coverage, key infrastructure for manual code loading."
+    },
+    {
+      "cluster_id": "gui-hook-injection",
+      "canonical_name": "GUI Application Hook Injection via SetWindowsHookEx",
+      "proposed_category": "process-injection",
+      "proposed_tier": "B",
+      "rationale": "SetWindowsHookEx as distinct API for DLL injection into GUI applications using callback-based hook dispatch.",
+      "member_note_ids": [
+        "lgtm:gui-application-hook-injection-distinction"
+      ],
+      "consolidated_description": "GUI application hook injection via SetWindowsHookEx to inject DLLs into processes that message-pump. Distinct from CreateRemoteThread-based injection; callback-based hook dispatch provides dedicated API surface for GUI targets. Requires message-loop presence in target; conditional on GUI application characteristics.",
+      "would_relate_to": [
+        "T-013",
+        "T-007"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton with GUI-specific applicability; narrower operational window than core injection."
+    },
+    {
+      "cluster_id": "thread-context-hijack-primitive",
+      "canonical_name": "Thread Context Hijack via CONTEXT Structure Modification",
+      "proposed_category": "process-injection",
+      "proposed_tier": "B",
+      "rationale": "Single note establishes thread hijacking as distinct primitive focused on modifying thread's CONTEXT structure.",
+      "member_note_ids": [
+        "lgtm:proposed-thread-context-hijack-primitive"
+      ],
+      "consolidated_description": "Thread hijacking via direct CONTEXT structure modification using GetThreadContext/SetThreadContext. Operators modify Rip field to redirect thread execution to attacker code. Provides low-footprint code-execution primitive modifying running thread's execution flow. Requires appropriate handle access.",
+      "would_relate_to": [
+        "T-005",
+        "T-013",
+        "T-012"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton with focused applicability; overlaps with T-013 Remaining Methods."
+    },
+    {
+      "cluster_id": "hook-trampoline-infrastructure",
+      "canonical_name": "Hook Trampoline Infrastructure for Non-Reentrant Hooks",
+      "proposed_category": "process-injection",
+      "proposed_tier": "B",
+      "rationale": "Single note documents trampoline stub construction as infrastructure for making inline hooks non-reentrant.",
+      "member_note_ids": [
+        "lgtm:proposed-trampoline-infrastructure"
+      ],
+      "consolidated_description": "Hook trampoline infrastructure for implementing non-reentrant inline hooks. Trampolines preserve original function prologue bytes and jump back past the hook, preventing infinite loop. Distinguishes reentrancy handling from hook placement. Enables both offensive (implant hooks) and defensive (unhooking) operations.",
+      "would_relate_to": [
+        "T-016",
+        "T-013"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton infrastructure primitive; secondary to primary injection techniques."
+    },
+    {
+      "cluster_id": "pe-injection-additional-image",
+      "canonical_name": "PE Injection: Additional Image Loading (Non-Hollowing)",
+      "proposed_category": "process-injection",
+      "proposed_tier": "B",
+      "rationale": "Single note documents PE Injection as distinct technique: additional PE image loaded without removing original.",
+      "member_note_ids": [
+        "lgtm:pe-injection-additional-image-card"
+      ],
+      "consolidated_description": "PE Injection as distinct from process hollowing: an additional PE image loaded into target process without removing original executable. Preserves original process integrity while adding new code section. Distinct operational profile from hollowing; original binary still observable, different memory footprint.",
+      "would_relate_to": [
+        "T-013"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton variant of process injection, overlaps with T-013 injection methods."
+    },
+    {
+      "cluster_id": "custom-shell-loader-injection",
+      "canonical_name": "Custom Shell Loader as Distinct from Generic Injection",
+      "proposed_category": "process-injection",
+      "proposed_tier": "B",
+      "rationale": "Single note indicates custom shell construction as distinct offensive capability treated separately from injection method catalog.",
+      "member_note_ids": [
+        "lgtm:customshell-shellcode-loader-card"
+      ],
+      "consolidated_description": "Custom shell construction as distinct from process injection technique selection. Labs CustomShell, The Loader, and ShadowCraft indicate custom shell construction is treated as separate offensive capability. Involves developing standalone shellcode-based shell infrastructure (interactive session management, I/O handling, command execution).",
+      "would_relate_to": [
+        "T-007",
+        "T-022"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton, distinct from injection methods per SANS Lab structure, clear operational separation."
+    },
+    {
+      "cluster_id": "wldp-dynamic-code-trust-query",
+      "canonical_name": "WldpQueryDynamicCodeTrust: Device Guard Dynamic Code Trust Check",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Two notes converge on WldpQueryDynamicCodeTrust as pre-flight check for whether in-memory dynamic code is trusted by Device Guard policy.",
+      "member_note_ids": [
+        "lgtm:wldp-dynamic-code-trust-query",
+        "lgtm:wldp-dynamic-code-trust-edr-mechanism"
+      ],
+      "consolidated_description": "WldpQueryDynamicCodeTrust is a user-mode query API exposing Device Guard policy check for dynamically-generated or in-memory code. Implants use this as pre-flight check before executing injected code, hollowed modules, or manually-loaded binaries. Returns policy decision without triggering execution; enables adaptive technique selection.",
+      "would_relate_to": [
+        "T-016",
+        "T-013",
+        "T-006"
+      ],
+      "priority": "medium",
+      "priority_reason": "2 member notes, distinct policy-querying primitive, enables adaptive tradecraft selection."
+    },
+    {
+      "cluster_id": "undocumented-nt-enumeration-evasion",
+      "canonical_name": "Undocumented NT Enumeration as Syscall-Level Evasion Primitive",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Single note positions NtQuerySystemInformation as undocumented alternative for process enumeration bypassing Win32-layer hooks.",
+      "member_note_ids": [
+        "lgtm:undocumented-nt-enum-evasion-primitive"
+      ],
+      "consolidated_description": "Direct NT syscall enumeration via NtQuerySystemInformation as evasion primitive bypassing Win32-layer hooks on documented APIs. Requires knowledge of NT API semantics and response structure parsing; direct syscall usage avoids userland interception.",
+      "would_relate_to": [
+        "T-016",
+        "T-023",
+        "T-004"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton; overlaps with syscall-based discovery; mostly legacy (modern EDR hooks syscalls)."
+    },
+    {
+      "cluster_id": "registry-watchdog-detection-avoidance",
+      "canonical_name": "Registry Watchdog for Situational Awareness and AV Detection",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Single note documents RegNotifyChangeKey and REG_NOTIFY_CHANGE_* filter set as watchdog for real-time AV detection.",
+      "member_note_ids": [
+        "lgtm:registry-watchdog-situational-awareness"
+      ],
+      "consolidated_description": "Registry watchdog via RegNotifyChangeKey to monitor HKLM\\SOFTWARE\\Microsoft for AV product installation in real time. REG_NOTIFY_THREAD_AGNOSTIC enables thread-persistent notifications. Operators detect AV/EDR product installation without polling, informing technique escalation decisions.",
+      "would_relate_to": [
+        "T-017",
+        "T-020"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton situational-awareness technique; narrow applicability (AV/EDR detection)."
+    },
+    {
+      "cluster_id": "system32-blending-evasion",
+      "canonical_name": "System32 Folder Blending as File-Based Hiding Technique",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Single note documents strategy for placing payloads in System32 (4,200+ files), matching conventions, and aligning timestamps.",
+      "member_note_ids": [
+        "lgtm:system32-blending-evasion"
+      ],
+      "consolidated_description": "System32 blending via statistical hiding: place payloads among 4,200+ existing files, select middle-listing position, match filename conventions, align timestamps. Evasion through visual/statistical obscuration rather than technical hiding. Reliant on defender workflow (manual inspection) rather than technical controls.",
+      "would_relate_to": [
+        "T-017",
+        "T-020"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton with behavioral/statistical focus; low technical sophistication."
+    },
+    {
+      "cluster_id": "dkom-process-hiding",
+      "canonical_name": "DKOM Process Hiding via ActiveProcessLinks Unlinking",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Single note documents _EPROCESS structure and DKOM attacks unlinking process from ActiveProcessLinks doubly-linked list.",
+      "member_note_ids": [
+        "lgtm:dkom-process-hiding"
+      ],
+      "consolidated_description": "Direct Kernel Object Manipulation (DKOM) process hiding via unlinking process from _EPROCESS.ActiveProcessLinks. Unlinked process invisible to all documented enumeration APIs. Requires kernel-mode access or vulnerable driver; distinct from PEB unlink. Complex anti-detection technique with high privilege requirement.",
+      "would_relate_to": [
+        "T-016",
+        "T-013"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton, kernel-mode technique, high barrier to entry, deprecated due to EDR monitoring."
+    },
+    {
+      "cluster_id": "sddl-descriptor-evasion",
+      "canonical_name": "Security Descriptor Manipulation for Object Access Control",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Single note documents constructing security descriptors that grant GENERIC_ALL to NULL SID, loosening DACLs.",
+      "member_note_ids": [
+        "lgtm:sddl-security-descriptor-manipulation"
+      ],
+      "consolidated_description": "SDDL-based security descriptor manipulation to loosen object DACLs and bypass access restrictions. Example: granting GENERIC_ALL to S-1-0-0 permits anonymous access to protected objects. Entry point is SDDL string construction and SetNamedSecurityInfo application. Evasion by removing access-control barriers.",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton, secondary evasion mechanism; narrow applicability."
+    },
+    {
+      "cluster_id": "inline-hook-implementation",
+      "canonical_name": "Inline Hook Implementation: Red-Team Hooking Mechanics",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Single note covers inline hooking from implementer's perspective: patch bytes, construct trampolines, x64 hooks.",
+      "member_note_ids": [
+        "lgtm:inline-hook-implementation-side"
+      ],
+      "consolidated_description": "Red-team inline hook implementation covering byte-patching of prologue code, trampoline construction, and x64 hook stubs. Hooks intercept function calls for logging, credential theft, or behavior manipulation. Distinct from EDR-side hook interception; red-team hooks can be placed on any DLL or API. Requires knowledge of prologue, stub construction, and memory protection.",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton, foundational for API interception, enables post-exploitation capabilities."
+    },
+    {
+      "cluster_id": "named-pipe-c2-ipc",
+      "canonical_name": "Named Pipes for C2 Communication and Implant IPC",
+      "proposed_category": "networking",
+      "proposed_tier": "A",
+      "rationale": "Three notes converge on named pipes as duplex, network-capable IPC for staged implant communication.",
+      "member_note_ids": [
+        "lgtm:pipe-ipc-for-staged-implant-communication",
+        "lgtm:named-pipe-c2-transport",
+        "lgtm:named-pipe-ipc"
+      ],
+      "consolidated_description": "Windows named pipes as duplex IPC and C2 transport using CreateNamedPipe, ConnectNamedPipe, CreateFile, CallNamedPipe. Supports network accessibility via Server service (\\\\ComputerName\\pipe\\PipeName). Named pipes offer duplex, network-capable communication vs. anonymous pipes (local-only, one-way). Provides kernel-mode transport with implicit buffering.",
+      "would_relate_to": [
+        "T-022",
+        "T-007"
+      ],
+      "priority": "medium",
+      "priority_reason": "3 member notes, distinct duplex transport mechanism, clear operational value."
+    },
+    {
+      "cluster_id": "winsock-reverse-shell-primitive",
+      "canonical_name": "Winsock Reverse Shell via Handle Redirection",
+      "proposed_category": "networking",
+      "proposed_tier": "B",
+      "rationale": "Single note describes canonical Winsock reverse shell: WSAStartup, socket creation, STARTUPINFOA population with socket HANDLEs.",
+      "member_note_ids": [
+        "lgtm:winsock-reverse-shell-primitive"
+      ],
+      "consolidated_description": "Winsock reverse shell via WSAStartup(MAKEWORD(2,2)), socket creation, STARTUPINFOA population with hStdInput/hStdOutput/hStdError set to socket HANDLE, dwFlags=STARTF_USESTDHANDLES, and CreateProcessA execution. Standard pattern for early-stage interactive shell establishing persistent socket-based I/O stream.",
+      "would_relate_to": [
+        "T-022",
+        "T-023"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton, well-known pattern, basic tradecraft component."
+    },
+    {
+      "cluster_id": "certificate-pinning-c2-tls",
+      "canonical_name": "Certificate Pinning for C2 TLS Transport Validation",
+      "proposed_category": "networking",
+      "proposed_tier": "B",
+      "rationale": "Single note documents full certificate pinning workflow for validating C2 server identity.",
+      "member_note_ids": [
+        "lgtm:certificate-pinning-for-c2-transports"
+      ],
+      "consolidated_description": "Certificate pinning for C2 TLS transports using InternetQueryOption with INTERNET_OPTION_SERVER_CERT_CHAIN_CONTEXT, CertGetNameString, CertGetCertificateContextProperty with CERT_HASH_PROP_ID, hex-string comparison. Implants validate server certificate chain offline to prevent MITM attacks and network-level redirection.",
+      "would_relate_to": [
+        "T-022"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton, well-documented pattern; standard transport hardening."
+    },
+    {
+      "cluster_id": "c2-check-in-beaconing-pattern",
+      "canonical_name": "C2 Check-in and Beaconing Operational Pattern",
+      "proposed_category": "networking",
+      "proposed_tier": "B",
+      "rationale": "Single note covers complete C2 check-in/beaconing cycle: initial call-home, periodic check-ins with jitter, task execution with UUID-based IDs.",
+      "member_note_ids": [
+        "lgtm:c2-beaconing-operational-pattern"
+      ],
+      "consolidated_description": "C2 operational pattern for implant check-in and beaconing: initial call-home establishing presence, periodic check-ins with jitter (randomization to evade detection), missed-check-in handling, task-queue management with UUID-based task IDs (UuidCreateSequential), execution with per-task result staging. Encompasses full command-response loop; distinct from transport.",
+      "would_relate_to": [
+        "T-019",
+        "T-022"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton operational pattern, clear tradecraft value, covers full beaconing lifecycle."
+    },
+    {
+      "cluster_id": "token-theft-privilege-escalation",
+      "canonical_name": "Token Theft (TokenThief) via OpenProcessToken and Duplication",
+      "proposed_category": "privesc",
+      "proposed_tier": "A",
+      "rationale": "Six notes converge on OpenProcessToken → DuplicateTokenEx → CreateProcessWithTokenW as canonical token theft escalation pattern.",
+      "member_note_ids": [
+        "lgtm:token-theft-privilege-escalation",
+        "lgtm:token-impersonation-theft-card",
+        "lgtm:proposed-token-theft-technique",
+        "lgtm:proposed-token-stealing-lpe-card",
+        "lgtm:token-theft-and-impersonation-primitive",
+        "lgtm:proposed-token-theft-technique-card"
+      ],
+      "consolidated_description": "Token theft for privilege escalation via OpenProcessToken to obtain token from higher-integrity process, DuplicateTokenEx to create copy with MAXIMUM_ALLOWED rights, and CreateProcessWithTokenW to spawn child with stolen token's privilege level. Enables Admin-to-SYSTEM, High-IL-to-SYSTEM, and cross-privilege impersonation. SANS Lab 3.5 establishes as distinct offensive primitive.",
+      "would_relate_to": [
+        "T-021",
+        "T-023",
+        "T-015"
+      ],
+      "priority": "high",
+      "priority_reason": "6 member notes (strongest signal), explicit SANS Lab, distinct from T-021, clear operational value."
+    },
+    {
+      "cluster_id": "sebackup-serestore-acl-bypass",
+      "canonical_name": "SeBackupPrivilege / SeRestorePrivilege: ACL Bypass for File Access",
+      "proposed_category": "privesc",
+      "proposed_tier": "S",
+      "rationale": "Single note explicitly identifies SeBackupPrivilege and SeRestorePrivilege as privileges that bypass standard ACL checks entirely.",
+      "member_note_ids": [
+        "lgtm:proposed-acl-bypass-privilege-card"
+      ],
+      "consolidated_description": "SeBackupPrivilege and SeRestorePrivilege are special Windows privileges that bypass file DACL checks entirely, granting unrestricted read (Backup) or write (Restore) access. Any process with these privileges can access NTFS objects regardless of security descriptor. Operationally distinct from ACL manipulation; privilege-based bypasses. Often granted to backup operators, admins, or SYSTEM services; critical for sensitive file access (SAM, NTDS, DPAPI keys).",
+      "would_relate_to": [],
+      "priority": "high",
+      "priority_reason": "Novel capability, new territory for vault, critical for post-exploitation file access."
+    },
+    {
+      "cluster_id": "token-privilege-abuse",
+      "canonical_name": "Token Privilege Abuse: SeDebugPrivilege and Privilege Manipulation",
+      "proposed_category": "privesc",
+      "proposed_tier": "A",
+      "rationale": "Single note covers coherent privilege-abuse tradecraft block: AdjustTokenPrivileges, SeDebugPrivilege, SeBackup/SeRestore, token stealing.",
+      "member_note_ids": [
+        "lgtm:token-privilege-abuse-proposed-technique"
+      ],
+      "consolidated_description": "Token privilege abuse via AdjustTokenPrivileges to enable privileges in current token (SeDebugPrivilege, SeBackupPrivilege, SeRestorePrivilege, SeImpersonatePrivilege). SeDebugPrivilege enables OpenProcess with high-privilege access; SeBackup/SeRestore bypass ACL checks; SeImpersonate enables token stealing. Integrated tradecraft covering privilege escalation via both OS-granted and privilege rights.",
+      "would_relate_to": [
+        "T-016",
+        "T-023"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton, covers coherent privilege-abuse family, broader than token theft, distinct from UAC bypass."
+    },
+    {
+      "cluster_id": "service-based-lpe",
+      "canonical_name": "Service-Based Local Privilege Escalation via SCM Enumeration",
+      "proposed_category": "privesc",
+      "proposed_tier": "A",
+      "rationale": "Two notes converge on Windows services as privilege-escalation surface: SCM enumeration, weak binary permissions, unquoted path exploitation.",
+      "member_note_ids": [
+        "lgtm:proposed-technique-service-lpe-enumeration",
+        "lgtm:service-based-lpe-proposed-technique"
+      ],
+      "consolidated_description": "Service-based LPE via enumeration and permission weakness exploitation. Operators enumerate with OpenSCManager/EnumServicesStatus, identify services running as SYSTEM or with weak binary permissions, and exploit unquoted service paths or weak DACL/ACL. Distinct from service persistence (T-017); focuses on privilege-escalation leverage of service architecture.",
+      "would_relate_to": [
+        "T-017",
+        "T-020",
+        "T-023"
+      ],
+      "priority": "medium",
+      "priority_reason": "2 member notes, distinct from service persistence, covers full enumeration-to-exploitation flow."
+    },
+    {
+      "cluster_id": "host-survey-situational-awareness",
+      "canonical_name": "Host Survey and Situational Awareness: Unified Reconnaissance",
+      "proposed_category": "discovery",
+      "proposed_tier": "A",
+      "rationale": "Five notes describe unified host survey covering OS info, patch status, process enumeration, services, network, registry, users.",
+      "member_note_ids": [
+        "lgtm:host-survey-script-primitive",
+        "lgtm:proposed-recon-survey-card",
+        "lgtm:proposed-host-survey-card",
+        "lgtm:proposed-host-survey-recon-card",
+        "lgtm:recon-enumeration-api-surface"
+      ],
+      "consolidated_description": "Unified host survey encompassing OS version/build, service pack/patch status, process enumeration (WTSEnumerateProcessesEx, NtQuerySystemInformation), installed software discovery, services and scheduled tasks, network adapters and IP configuration, registry hive structure, user account enumeration across four domains (network adapters, registry, processes, services) with documented operational trade-offs. Aggregates tactical reconnaissance data for target assessment and technique selection.",
+      "would_relate_to": [
+        "T-023",
+        "T-020",
+        "T-016",
+        "T-022",
+        "T-007"
+      ],
+      "priority": "high",
+      "priority_reason": "5 member notes, explicit SEC670 Book 2 module, foundational post-exploitation reconnaissance."
+    },
+    {
+      "cluster_id": "patch-hotfix-reconnaissance",
+      "canonical_name": "Patch and Hotfix Status Enumeration",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Two notes describe hotfix enumeration via Get-HotFix, wmic qfe list, WUA APIs as precondition for exploit selection.",
+      "member_note_ids": [
+        "lgtm:patch-recon-for-exploit-selection",
+        "lgtm:patch-status-inventory-card"
+      ],
+      "consolidated_description": "Patch status reconnaissance via hotfix enumeration through Get-HotFix PowerShell, WMI qfe list, or Windows Update Agent APIs. Results inform exploit viability (which kernel vulnerabilities remain unpatched) and guide technique escalation. Determines whether specific kernel-mode exploits or ETW bypasses are available; directly informs operational planning.",
+      "would_relate_to": [
+        "T-020",
+        "T-023"
+      ],
+      "priority": "medium",
+      "priority_reason": "2 member notes, distinct from general host survey, tactical value for exploit planning."
+    },
+    {
+      "cluster_id": "kuser-shared-data-sysinfo",
+      "canonical_name": "KUSER_SHARED_DATA: Direct-Read System Information Primitive",
+      "proposed_category": "discovery",
+      "proposed_tier": "A",
+      "rationale": "Two notes converge on KUSER_SHARED_DATA at VA 0x7FFE0000 as fixed-VA kernel-mapped page for detection-free system info.",
+      "member_note_ids": [
+        "lgtm:kuser-shared-data-info-source",
+        "lgtm:kuser-shared-data-sysinfo-primitive"
+      ],
+      "consolidated_description": "KUSER_SHARED_DATA is a fixed-VA kernel-mapped page (0x7FFE0000 on x64) readable without API calls, providing NT runtime information (OS version, NtSystemRoot, NtTimerResolution, TickCount, InterruptTime). Bypasses userland hooks and syscall monitoring. Direct-page-read approach used as bonus sysinfo target alongside documented APIs; reduces EDR hook surface.",
+      "would_relate_to": [
+        "T-023",
+        "T-016",
+        "T-020"
+      ],
+      "priority": "medium",
+      "priority_reason": "2 member notes, detection-free enumeration primitive, bypasses syscall-based EDR hooks."
+    },
+    {
+      "cluster_id": "registry-enumeration-fingerprint",
+      "canonical_name": "Registry Enumeration Pattern: COM Hijack Discovery and Autostart Targeting",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Single note documents canonical three-call registry enumeration pattern as operational basis for COM-hijack discovery.",
+      "member_note_ids": [
+        "lgtm:registry-enumeration-fingerprint"
+      ],
+      "consolidated_description": "Standard registry enumeration pattern for vulnerability discovery: RegOpenKeyExW opens key, RegQueryInfoKey retrieves metadata, RegEnumValue iterates through values with LSTATUS checking and ERROR_NO_MORE_ITEMS termination. Pattern foundational for COM-hijack target discovery (T-017), autostart location enumeration, and registry-based inventory. Distinct from single-key lookups.",
+      "would_relate_to": [
+        "T-017",
+        "T-023",
+        "T-020"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton pattern, foundational but not standalone offensive capability."
+    },
+    {
+      "cluster_id": "security-descriptor-reconnaissance",
+      "canonical_name": "Security Descriptor and SDDL Reconnaissance for Privilege-Escalation Planning",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Single note documents structured tradecraft workflow for security descriptor enumeration: sc.exe sdshow, SDDL parsing, GetNamedSecurityInfo.",
+      "member_note_ids": [
+        "lgtm:proposed-technique-security-descriptor-reconnaissance"
+      ],
+      "consolidated_description": "Security descriptor reconnaissance workflow: sc.exe sdshow reveals service DACLs; manual SDDL parsing decodes ACE types, rights, and SIDs; GetNamedSecurityInfo retrieves descriptors for services, registry keys, shares, file-mapping objects. Enables identification of weak DACLs and privilege-escalation targets. Complements service-based LPE and ACL-bypass exploitation.",
+      "would_relate_to": [
+        "T-023"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton reconnaissance methodology, clear tradecraft value for privilege-escalation planning."
+    },
+    {
+      "cluster_id": "dpapi-master-key-extraction",
+      "canonical_name": "DPAPI Master Key Extraction for Credential Decryption",
+      "proposed_category": "discovery",
+      "proposed_tier": "A",
+      "rationale": "Single note identifies DPAPI master key access as critical step for accessing Chrome and Credential Manager secrets.",
+      "member_note_ids": [
+        "lgtm:dpapi-master-key-extraction"
+      ],
+      "consolidated_description": "DPAPI master key extraction for credential harvesting: locate user's master key in %APPDATA%\\Microsoft\\Protect\\<SID>, decrypt using LogonUser/CryptUnprotectData or offline tools, use master key to decrypt user credential caches (Chrome login database, Credential Manager vault). Master key encrypted with user's logon password or system DPAPI key. Prerequisite for accessing browser and OS credential stores; operationally critical.",
+      "would_relate_to": [
+        "T-023"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton, focused credential-harvesting primitive, clear operational value."
+    },
+    {
+      "cluster_id": "custom-recon-lotl-tools",
+      "canonical_name": "Custom Recon Tooling via LotL API Reimplementation",
+      "proposed_category": "discovery",
+      "proposed_tier": "A",
+      "rationale": "Single note describes reimplementing system recon tools (ipconfig, arp, netstat) using Win32 APIs, creating LotL evasion.",
+      "member_note_ids": [
+        "lgtm:custom-recon-tooling-lotl-reimplementation"
+      ],
+      "consolidated_description": "Custom reconnaissance tooling via Win32 API reimplementation: ipconfig via GetAdaptersInfo/GetAdaptersAddresses, arp via GetIpNetTable, netstat via GetTcpTable/GetUdpTable. Produces identical output without shelling out to cmd.exe/PowerShell, evading command-line monitoring. API-based approach provides functional equivalence and EDR evasion; reduces operational footprint.",
+      "would_relate_to": [
+        "T-023",
+        "T-020"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton, clear LotL evasion value, reimplementation of common tools."
+    },
+    {
+      "cluster_id": "advanced-capability-selection-framework",
+      "canonical_name": "Advanced Capability Escalation Decision Framework",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Single note provides structured framework for when to escalate from basic to advanced techniques.",
+      "member_note_ids": [
+        "lgtm:advanced-capability-selection-framework"
+      ],
+      "consolidated_description": "Operational decision framework for technique escalation: triggers include (1) defender match (EDR detected), (2) tech-savvy admin (strong defenses), (3) stealth requirement (mission constraint), (4) basic technique failure. Escalation options include manual image loading, API hook reimplementation, direct syscalls, custom tooling. Provides structured methodology for technique selection based on operational context. Methodological rather than discrete technique.",
+      "would_relate_to": [
+        "T-007",
+        "T-016",
+        "T-022"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton operational framework, conceptual rather than discrete technique."
+    },
+    {
+      "cluster_id": "versioninfo-resource-impersonation",
+      "canonical_name": "VERSIONINFO Resource Impersonation for Binary Spoofing",
+      "proposed_category": "anti-analysis",
+      "proposed_tier": "B",
+      "rationale": "Single note describes embedding spoofed VERSIONINFO resource blocks impersonating legitimate applications.",
+      "member_note_ids": [
+        "lgtm:binary-versioninfo-impersonation"
+      ],
+      "consolidated_description": "VERSIONINFO resource impersonation via binary resources: CompanyName, FileDescription, OriginalFilename, ProductVersion set to mimic legitimate applications (Google Chrome, Windows components). Static analysis tools display spoofed metadata, deceiving manual inspection and heuristic analysis. Resource-based impersonation survives compilation and binary modification.",
+      "would_relate_to": [
+        "T-020"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton anti-analysis technique, basic metadata spoofing, limited detection evasion value."
+    },
+    {
+      "cluster_id": "native-application-entry-bypass",
+      "canonical_name": "Native Application Development: Bypassing Win32 Subsystem",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Single note identifies NTSTATUS NtProcessStartup(PPEB peb) as signature for native applications bypassing Win32.",
+      "member_note_ids": [
+        "lgtm:native-application-development"
+      ],
+      "consolidated_description": "Native application development for Win32-subsystem bypass. Native applications receive PEB directly via NtProcessStartup entry point rather than through Win32 initialization (CreateProcessA/W, main). Enables direct NT syscall usage without Win32 runtime overhead. NtCreateUserProcess can spawn native apps; native entry point provides direct kernel interaction and minimal detectable footprint.",
+      "would_relate_to": [
+        "T-014",
+        "T-004"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton, specialized process creation pattern, low operational differentiation."
+    },
+    {
+      "cluster_id": "createprocess-vs-ntcreateuserprocess-boundary",
+      "canonical_name": "CreateProcess vs NtCreateUserProcess Policy Boundary",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Single note documents CreateProcess as Win32 wrapper vs NtCreateUserProcess as direct NT path, with policy and capability differences.",
+      "member_note_ids": [
+        "lgtm:createprocess-vs-ntcreateuserprocess-policy-boundary"
+      ],
+      "consolidated_description": "CreateProcess is Win32 wrapper including STARTUPINFOEX + PROC_THREAD_ATTRIBUTE_PARENT_PROCESS for PPID spoofing. NtCreateUserProcess is direct NT path with different policy boundaries. Understanding both paths informs process creation strategy and policy interactions.",
+      "would_relate_to": [
+        "T-014",
+        "T-015",
+        "T-013",
+        "T-016"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton methodology note, policy comparison rather than discrete offensive technique."
+    },
+    {
+      "cluster_id": "dll-export-mechanics-injection",
+      "canonical_name": "DLL Export Mechanics as Injection Prerequisite",
+      "proposed_category": "process-injection",
+      "proposed_tier": "C",
+      "rationale": "Single note documents DLL construction with exported functions as direct enabler of process injection methods.",
+      "member_note_ids": [
+        "lgtm:dll-export-for-injection-surface"
+      ],
+      "consolidated_description": "DLL construction with exported functions is a direct enabler of process injection. Export table construction is prerequisite knowledge for callback injection and other T-013 methods but not a standalone technique.",
+      "would_relate_to": [
+        "T-013"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton prerequisite knowledge, foundational but not standalone offensive capability."
+    },
+    {
+      "cluster_id": "executive-object-types-telemetry",
+      "canonical_name": "Executive Object Types as Telemetry Taxonomy",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Single note tabulates executive object types and per-type auditing gating.",
+      "member_note_ids": [
+        "lgtm:executive-object-types-as-telemetry-surface"
+      ],
+      "consolidated_description": "Executive object types (Process, Thread, Section, Token, Mutex, Key, Desktop) with per-type auditing enable understanding of detection surface. Structural knowledge underpinning detection mechanics rather than offensive technique.",
+      "would_relate_to": [
+        "T-007",
+        "T-016",
+        "T-015"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton structural knowledge, pure conceptual rather than offensive capability."
+    },
+    {
+      "cluster_id": "pe-sieve-detection-mechanics",
+      "canonical_name": "PE-sieve Detection Mechanics Against Injection Techniques",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Two notes identify PE-sieve as detection tool for identifying process injection, hollowing, and manual loading.",
+      "member_note_ids": [
+        "lgtm:pe-sieve-detection-coverage",
+        "lgtm:pe-sieve-detection-tool-card"
+      ],
+      "consolidated_description": "PE-sieve is a state-of-the-art community-driven tool for identifying malicious activity against T-007 (reflective injection), T-013 (process hollowing, manual mapping, stomped modules). Defensive knowledge documenting detection mechanisms against vault techniques.",
+      "would_relate_to": [
+        "T-007",
+        "T-008",
+        "T-013"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton defensive knowledge, complements offensive techniques with detection insights."
+    },
+    {
+      "cluster_id": "svchost-target-selection-injection",
+      "canonical_name": "svchost Shared vs Isolated Service Hosting as Injection Target Selection",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Single note distinguishes shared services from isolated services as operational criterion for injection target selection.",
+      "member_note_ids": [
+        "lgtm:svchost-hosting-model-target-selection"
+      ],
+      "consolidated_description": "svchost shared vs isolated service hosting distinction is operationally relevant for injection target selection. Shared services share address space and crash fate; isolated services have dedicated svchost. Targeting shared svchost risks collateral damage. Operational guidance for technique selection rather than standalone technique.",
+      "would_relate_to": [
+        "T-007",
+        "T-013"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton targeting guidance, operational methodology rather than discrete technique."
+    },
+    {
+      "cluster_id": "windows-registry-structure",
+      "canonical_name": "Windows Registry Internal Structure and Link Semantics",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Single note documents merged-view and link semantics of HKCR, HKCU, HKCC.",
+      "member_note_ids": [
+        "lgtm:windows-registry-internals-deep-dive"
+      ],
+      "consolidated_description": "Windows registry merged-view and link semantics: per-user classes override machine-wide ones; HKCC entirely linked to HKLM. Structural knowledge underpinning COM hijack persistence (T-017) but not a discrete offensive technique.",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton structural knowledge, foundational but pure conceptual rather than technique."
+    }
+  ]
+}

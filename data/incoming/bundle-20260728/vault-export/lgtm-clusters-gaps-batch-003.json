@@ -1,0 +1,677 @@
+{
+  "generated_at": "2026-07-23 19:14:58",
+  "batch": 3,
+  "total_batches": 5,
+  "input_notes": 50,
+  "clusters": [
+    {
+      "cluster_id": "pe-format-and-eat-parsing-foundations",
+      "canonical_name": "PE Format and EAT Parsing Foundations",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Three coverage-gap notes from different SEC670 batches repeatedly surface PE format anatomy (IMAGE_DOS_HEADER, e_lfanew, IMAGE_EXPORT_DIRECTORY, IMAGE_IMPORT_DESCRIPTOR) as the prerequisite for loaders, API resolution, and WinDbg introspection.",
+      "member_note_ids": [
+        "lgtm:coverage-gap-pe-format-foundations",
+        "lgtm:pe-format-parser-coverage",
+        "lgtm:windbg-pe-structure-introspection"
+      ],
+      "consolidated_description": "The vault lacks a reference card documenting the PE binary format as a navigable\nconcept layer, despite T-004 (PEB Walker), T-007, T-008, and T-013 all depending\non PE anatomy. Required coverage spans IMAGE_DOS_HEADER.e_lfanew at offset 0x3C\n→ IMAGE_NT_HEADERS → IMAGE_FILE_HEADER → IMAGE_OPTIONAL_HEADER64 →\nIMAGE_DATA_DIRECTORY[16] (EXPORT=0, IMPORT=1, RESOURCE=2, RELOC=5). Specific\ntraversal targets include IMAGE_EXPORT_DIRECTORY (NumberOfNames /\nAddressOfNames / AddressOfNameOrdinals triple-pointer walk for\nGetProcAddress-equivalent resolution) and IMAGE_IMPORT_DESCRIPTOR's\nOriginalFirstThunk / FirstThunk IAT/INT double-chain. The card should also\ndocument WinDbg dx and dt commands against live modules for RVA-to-VA\narithmetic and dumpbin /exports as a static-analysis counterpart.\n",
+      "technical_anchor": "IMAGE_DOS_HEADER.e_lfanew at offset 0x3C → IMAGE_NT_HEADERS → IMAGE_EXPORT_DIRECTORY NumberOfNames/AddressOfNames/AddressOfNameOrdinals triple-pointer walk",
+      "would_relate_to": [
+        "T-004",
+        "T-007",
+        "T-008",
+        "T-013"
+      ],
+      "priority": "high",
+      "priority_reason": "3+ member notes spanning multiple atlas batches all flag the same foundational prerequisite gap; concept card that unblocks four existing T-NNN cards."
+    },
+    {
+      "cluster_id": "evasion-stack-sequence-convergence",
+      "canonical_name": "Evasion Stack Sequence Convergence",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Singleton cross-source convergence: SEC670's evasion roadmap (UnhookTheHook → No Caller ID → AMSI No More) mirrors T-016's evasion suite ordering exactly, validating the vault's structural choices.",
+      "member_note_ids": [
+        "lgtm:cross-source-convergence-evasion-roadmap"
+      ],
+      "consolidated_description": "SEC670 Section 5's pedagogic evasion sequence — NTDLL unhook → caller/stack\nspoofing → AMSI bypass — converges precisely with T-016's EDR evasion suite\nimplementation order. The convergence validates both the technical sequencing\n(EDR hook removal must precede stack-spoofing because spoofed calls re-enter\nhooked NTDLL paths) and the pedagogic scaffolding. The card should document why\nthis order is mandatory: AMSI bypasses executed before unhooking NTDLL's\nAmsiScanBuffer trampoline re-enter attacker code via the still-hooked\nindirection, leaking the patch itself to the EDR's hook-side telemetry.\n",
+      "technical_anchor": "NTDLL unhook → stack/arg spoofing → AMSI bypass execution-order dependency (AmsiScanBuffer trampoline re-entry hazard)",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but high-signal cross-source convergence validating existing card structure."
+    },
+    {
+      "cluster_id": "windows-api-fundamentals-prerequisite-layer",
+      "canonical_name": "Windows API Fundamentals as Prerequisite Layer",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Two coverage-gap notes flag missing prerequisite material on calling conventions, WinDef.h macros, Windows data type aliases, and SAL annotations across SEC670 batches.",
+      "member_note_ids": [
+        "lgtm:foundational-windows-programming-concepts-coverage-gap",
+        "lgtm:coverage-gap-windows-fundamentals-prerequisite"
+      ],
+      "consolidated_description": "SEC670 devotes an entire module to Win32 programming prerequisites that the\nvault assumes but does not document: x64 calling convention (RCX/RDX/R8/R9 +\nshadow space 0x20 bytes), WinDef.h macros (DECLARE_HANDLE, MAKEINTRESOURCE,\nHIWORD/LOWORD), Windows data type aliases (DWORD=uint32_t, LPVOID=void*,\nHANDLE=PVOID), and the Win32 → NTAPI translation layer (OpenProcess →\nNtOpenProcess, CreateFile → NtCreateFile). This material directly gates\nT-001/T-002 (syscalls), T-003 (API hashing), T-004 (PEB walk), T-013 (PE\nloader), and T-016 (evasion suite). A standalone reference card with the\ntypedef chain and the user32→ntdll call-down diagram would make those cards\nnavigable without prior Windows programming background.\n",
+      "technical_anchor": "x64 calling convention RCX/RDX/R8/R9 + 0x20 shadow space; Win32→NTAPI translation (OpenProcess→NtOpenProcess, CreateFile→NtCreateFile)",
+      "would_relate_to": [
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-004",
+        "T-006",
+        "T-013",
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "2 member notes spanning multiple batches; unblocks multiple operational cards."
+    },
+    {
+      "cluster_id": "win32-error-handling-model",
+      "canonical_name": "Win32 Error Handling Model (HRESULT/LSTATUS/BOOL + GetLastError)",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Singleton coverage-gap: the HRESULT/LSTATUS/BOOL tristate error model recurs across SEC670 units but is not documented as a reference concept in the vault.",
+      "member_note_ids": [
+        "lgtm:windows-api-error-handling-foundation"
+      ],
+      "consolidated_description": "SEC670 devotes substantial material to the Win32 error model: BOOL returns +\nGetLastError (DWORD thread-local via TEB->LastErrorValue at offset 0x34),\nHRESULT (SUCCEEDED/FAILED macros against the SEVERITY bit at 0x80000000),\nLSTATUS for registry APIs (ERROR_SUCCESS=0), and FormatMessageW with\nFORMAT_MESSAGE_FROM_SYSTEM for symbolic lookup. Implant code should call\nGetLastError immediately after a failed Win32 call because the per-thread\nvalue is overwritten by subsequent calls. The card should document the TEB\nLastErrorValue field, the HRESULT facility/code split (Facility at bits\n16-30, Code at bits 0-15), and the FORMAT_MESSAGE_ALLOCATE_BUFFER pattern.\n",
+      "technical_anchor": "TEB->LastErrorValue at offset 0x34 (per-thread GetLastError storage); HRESULT SEVERITY bit at 0x80000000; FormatMessageW FORMAT_MESSAGE_FROM_SYSTEM",
+      "would_relate_to": [],
+      "priority": "low",
+      "priority_reason": "Singleton foundational concept; not directly mapped to existing T-NNN."
+    },
+    {
+      "cluster_id": "rust-as-offensive-language-trend",
+      "canonical_name": "Rust as Offensive and Defensive Language Trend",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Singleton emerging note on Rust adoption in Windows kernel and offensive tooling; HUGIN vault itself is implemented in Rust.",
+      "member_note_ids": [
+        "lgtm:rust-as-offensive-language-trend"
+      ],
+      "consolidated_description": "SEC670 Unit 33 flags Rust as a transformative language for both offensive and\ndefensive tooling, citing Windows kernel components being rewritten in Rust\n(win32kbase GDI region, kernel sample components). The HUGIN vault itself is\nimplemented in Rust, and several modern red-team tools follow the same pattern.\nThe card should document the specific Rust features that matter offensively:\nzero-cost abstractions for position-independent shellcode generators, cargo's\ndeterministic build graph (single reproducible binary), the unsafe{} escape\nhatch for raw pointer derefs equivalent to C void*, and the borrow checker's\nelimination of use-after-free bugs that plague C implants. Detection\nimplications: Rust binaries have distinctive panic_str and core::panicking\nsymbols that EDR vendors are beginning to signature.\n",
+      "technical_anchor": "Rust unsafe{} block for raw pointer derefs; cargo deterministic build graph; panic_str/core::panicking symbol artifacts in release binaries",
+      "would_relate_to": [],
+      "priority": "low",
+      "priority_reason": "Singleton trend observation; not directly mappable to existing T-NNN."
+    },
+    {
+      "cluster_id": "binary-patching-as-evasion-primitive",
+      "canonical_name": "Binary Patching as Cross-Cutting Evasion Primitive",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Singleton coverage-gap: SEC670 introduces binary patching as a foundational module distinct from hooking; T-016 lists adjacent primitives but not patching itself.",
+      "member_note_ids": [
+        "lgtm:gap-binary-patching-primitive-coverage"
+      ],
+      "consolidated_description": "SEC670 Unit 24 treats binary patching as its own evasion primitive distinct\nfrom API hooking: in-place modification of instruction bytes at the function\nprologue (jmp/call trampoline) or within a code cave (overwritten with NOPs +\nret 0x12 for AMSI). T-016 currently lists AMSI, ETW, stack spoofing, PEB unlink,\nNTDLL unhook, and handle blocking but omits the underlying byte-patching\nprimitive. The card should distinguish patching (write to .text at VA) from\nhooking (write a jmp indirection through Detours-style trampoline) — patching\nis one-shot and persistent across process lifetime, while hooking requires\nruntime indirection per call. Specific examples: AmsiScanBuffer prologue\npatched with mov eax, AMSI_RESULT_CLEAN; ret; EtwEventWrite patched with ret\n0x00 (NtTraceEvent returns STATUS_SUCCESS on 0).\n",
+      "technical_anchor": "In-place prologue patch of AmsiScanBuffer with mov eax, AMSI_RESULT_CLEAN; ret (or xor eax,eax; ret); EtwEventWrite patched to ret returning STATUS_SUCCESS",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but fills gap in flagship T-016 evasion suite."
+    },
+    {
+      "cluster_id": "shellcode-authoring-in-c-with-compiler-flag-control",
+      "canonical_name": "Shellcode Authoring in C with Compiler/Linker Flag Mastery",
+      "proposed_category": "exploit-primitive",
+      "proposed_tier": "A",
+      "rationale": "Singleton cross-source convergence on SEC670's shellcode-in-C module emphasizing flag overrides to suppress CRT emissions; aligns with Rust PIC shellcode approach.",
+      "member_note_ids": [
+        "lgtm:convergence-shellcode-in-c-compiler-flag-control"
+      ],
+      "consolidated_description": "SEC670 Units 28-30 frame shellcode creation in C as a discipline of compiler\nand linker flag overrides to suppress CRT initialization, exception tables,\nand relocation fixups that would emit position-dependent code. Required flag\nmatrix: /MT (static CRT, but strip later with /NODEFAULTLIB), /GS- (disable\nstack cookies/__security_init_cookie), /Zi (debug info, PDB stripped\npost-link), /ENTRY:main (override CRT default entry), /ALIGN:16 (shellcode\nsection alignment), /EMITPOGPHASEINFO- (no profile-guided data),\n/SUBSYSTEM:NATIVE (skip Win32 loader). Post-link processing via sgn.exe or\ndonut pattern_loader shellcode transformer. The card should document the\nresulting x64 position-independent shellcode layout: base address obtained\nvia call/pop pattern, no .rdata relocations (string literals emitted inline\nin .text), no IAT (all APIs resolved via PEB walk).\n",
+      "technical_anchor": "/MT /GS- /Zi /ENTRY:main /ALIGN:16 /SUBSYSTEM:NATIVE linker flag matrix; post-link sgn.exe shellcode transformation; call/pop pattern for base-address recovery",
+      "would_relate_to": [
+        "T-007",
+        "T-021"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but converges with T-021 shellcode generator implementation."
+    },
+    {
+      "cluster_id": "native-subsystem-implant-entry-points",
+      "canonical_name": "Native Subsystem (IMAGE_SUBSYSTEM_NATIVE) Implant Entry Points",
+      "proposed_category": "exploit-primitive",
+      "proposed_tier": "S",
+      "rationale": "Singleton emerging-tradecraft note: native subsystem executables bypass Win32 loader, receiving PEB directly at entry; not documented in T-001..T-074.",
+      "member_note_ids": [
+        "lgtm:native-subsystem-implant-entry-point"
+      ],
+      "consolidated_description": "Native-subsystem executables (IMAGE_SUBSYSTEM_NATIVE in\nIMAGE_OPTIONAL_HEADER.Subsystem) receive the PEB pointer directly as\nNtProcessStartup's first parameter — no CRT, no Win32 loader, no\nkernel32!CreateProcess call path. Entry signature is\nNTSTATUS NtProcessStartup(PPEB peb). This pattern lets implants skip the\nstandard Win32 module-load telemetry (Sysmon EID 1 with ImageLoad events\nfor kernel32/user32/gdi32), presenting as a standalone native image.\nTrade-offs: must hand-resolve all imports via PEB->Ldr->InLoadOrderModuleList\nwalk (smss.exe / csrss.exe / wininit.exe are the only legitimate native\nbinaries, so process name selection matters). The card should document the\nSUBSYSTEM field location at IMAGE_OPTIONAL_HEADER offset 0x44 (PE32) / 0x5C\n(PE32+) and the /SUBSYSTEM:NATIVE linker flag equivalent.\n",
+      "technical_anchor": "IMAGE_SUBSYSTEM_NATIVE (0x03) at IMAGE_OPTIONAL_HEADER.Subsystem; entry point NTSTATUS NtProcessStartup(PPEB peb) bypasses Win32 loader",
+      "would_relate_to": [
+        "T-004",
+        "T-022"
+      ],
+      "priority": "high",
+      "priority_reason": "Novel capability not in T-001..T-074; bypasses Win32 loader telemetry; rare legitimate usage makes it high-signal."
+    },
+    {
+      "cluster_id": "reflective-dll-injection-elevated",
+      "canonical_name": "Reflective DLL Injection as Elevated T-013 Family Member",
+      "proposed_category": "process-injection",
+      "proposed_tier": "A",
+      "rationale": "Singleton coverage-gap: SEC670 documents RDI mechanics in depth but T-013 only lists 'PE Loader' as one of 14 references; no dedicated RDI card.",
+      "member_note_ids": [
+        "lgtm:reflective-dll-injection-as-elevated-technique"
+      ],
+      "consolidated_description": "SEC670 Units 19 and 20 cover RDI mechanics in detail: a\nposition-independent ReflectiveLoader() function bootstraps itself by\nwalking PEB->Ldr to find ntdll/kernel32, manually parsing the embedded PE\nheaders (IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_SECTION_HEADER array),\nVirtualAlloc'ing RWX target memory, copying headers + sections, processing\nIMAGE_BASE_RELOCATION blocks (applying delta to IMAGE_REL_BASED_DIR64\nentries), walking IMAGE_IMPORT_DESCRIPTOR chain with\nLoadLibraryA/GetProcAddress, calling DllMain(DLL_PROCESS_ATTACH). The card\nshould document the bootstrapping problem: the loader itself runs before\nits own imports are resolved, so the first PEB walk uses only intrinsic\npointer arithmetic — no libc, no Win32 calls until after LoadLibraryA is\nresolved. T-013 mentions RDI as one of 14 references but a dedicated card\nwith the bootstrap order would close the gap.\n",
+      "technical_anchor": "Position-independent ReflectiveLoader() with PEB->Ldr walk to resolve ntdll/kernel32; IMAGE_BASE_RELOCATION block processing with IMAGE_REL_BASED_DIR64 delta fixups",
+      "would_relate_to": [
+        "T-013",
+        "T-007"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but fills dedicated card slot in T-013 PE loader family."
+    },
+    {
+      "cluster_id": "uac-bypass-research-via-uacme-corpus",
+      "canonical_name": "UAC Bypass Research via UACMe Project Corpus",
+      "proposed_category": "privesc",
+      "proposed_tier": "A",
+      "rationale": "Singleton cross-source convergence: SEC670 references UACMe's FusionScanDirectory primitive; vault mentions CMSTP bypass in T-023 but lacks the UACMe corpus as a research reference.",
+      "member_note_ids": [
+        "lgtm:uac-bypass-research-via-uacme-corpus"
+      ],
+      "consolidated_description": "SEC670 Unit 4 references the UACMe project's FusionScanDirectory function as\na UAC-bypass research primitive for enumerating auto-elevated binaries. The\nvault's T-021 mentions UAC bypass and T-023 covers UAC bypass via CMSTP,\nbut neither documents the broader UACMe methodology catalog (70+ numbered\ntechniques indexed by method: IFileOperation COM elevation, ICMLuaUtil\nShellExecute, IDispatch auto-elevation, sdclt.exe registry hijack,\nfodhelper.exe DLL load). The card should document the auto-elevated binary\ndiscovery workflow: enumerate IMAGE_OPTIONAL_HEADER for\nSubsystem=IMAGE_SUBSYSTEM_WINDOWS_GUI + the\nHKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Fusion\\AutoElevate=1 binaries,\nidentify each binary's missing DLL/progID/registry gaps, and craft a bypass\nper gap. Specific UACMe techniques worth indexing as sub-techniques: method\n55 (fodhelper.exe + HKCU\\Environment\\windir), method 56 (sdclt.exe +\nHKCU\\...\\Shell\\open\\command).\n",
+      "technical_anchor": "UACMe FusionScanDirectory enumerating AutoElevate=1 binaries; fodhelper.exe + HKCU\\Environment\\windir overwrite (UACMe method 55)",
+      "would_relate_to": [
+        "T-021",
+        "T-023"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but references public tooling (UACMe) with 70+ enumerated techniques."
+    },
+    {
+      "cluster_id": "cng-bcrypt-shellcode-crypto-api",
+      "canonical_name": "CNG/BCrypt as Modern Shellcode Crypto API",
+      "proposed_category": "crypto",
+      "proposed_tier": "A",
+      "rationale": "Singleton coverage-gap: SEC670 documents full BCrypt AES sequence; vault's T-021 uses Rust crypto crate instead, leaving shellcode-scoped crypto undocumented.",
+      "member_note_ids": [
+        "lgtm:cng-bcrypt-shellcode-crypto-coverage"
+      ],
+      "consolidated_description": "SEC670's AES walkthrough uses the full BCrypt API sequence:\nBCryptOpenAlgorithmProvider(BCRYPT_AES_ALGORITHM) →\nBCryptSetProperty(BCRYPT_CHAINING_MODE=BCRYPT_CHAIN_MODE_GCM) →\nBCryptGenerateSymmetricKey(hKey) → BCryptDecrypt(hKey, pbIV, pbAuthData,\npbCipherText). The vault's T-021 documents AES-256-GCM via a Rust crypto\ncrate (presumably aes-gcm), which is unavailable to position-independent\nshellcode or pre-IAT-resolution code. The card should document the BCrypt\nAPI call sequence, the BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO struct\ninitialization (pbNonce, pbAuthData, pbTag, cbTag=16), and the alternative\npathway via CNG: NCryptOpenStorageProvider + NCryptOpenKey for\nDPAPI-equivalent key isolation. Shellcode-specific guidance: bcrypt.dll is\nloaded early by wininit.exe so PEB-walk resolution is reliable.\n",
+      "technical_anchor": "BCryptOpenAlgorithmProvider(BCRYPT_AES_ALGORITHM) → BCryptSetProperty(BCRYPT_CHAIN_MODE_GCM) → BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO struct with pbNonce/pbTag (cbTag=16)",
+      "would_relate_to": [
+        "T-021"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but covers shellcode-scoped crypto alternative to Rust crypto crate."
+    },
+    {
+      "cluster_id": "sal-annotation-literacy",
+      "canonical_name": "SAL Annotation Literacy as API-Contract Reading Skill",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Two coverage-gap notes from different atlas batches surface SAL annotations as the missing reading skill for hand-binding NT APIs.",
+      "member_note_ids": [
+        "lgtm:sal-annotations-as-graph-concept",
+        "lgtm:sal-annotation-literacy-coverage-gap"
+      ],
+      "consolidated_description": "SEC670 dedicates a section to Microsoft's Source Annotation Language as the\ncanonical method for reading Windows SDK header signatures when hand-binding\nNT APIs (vs FFI declarations or dumpbin /exports). The annotation set\nincludes _In_, _Out_, _Inout_, _In_opt_, _In_reads_(N), _Out_writes_(N),\n_In_bytecount_(cb), _deref_out_. The card should document each annotation's\ncaller obligation: _In_ = caller provides initialized buffer; _Out_ = callee\nwrites, caller allocates; _Inout_ = callee may read+write; _In_reads_(N) =\ncaller-provided buffer of N elements; _In_opt_ = NULL permitted. Specific\nexamples from T-004/T-013/T-016 hand-bound APIs:\nNtQueryInformationProcess(ProcessBasicInformation) expects _In_ HANDLE\nProcessHandle, _In_ PROCESSINFOCLASS ProcessInformationClass,\n_Out_writes_bytes_(ProcessInformationLength) PVOID ProcessInformation,\n_In_ ULONG ProcessInformationLength, _Out_opt_ PULONG ReturnLength.\nMisreading these contracts causes silent truncation or buffer overflow.\n",
+      "technical_anchor": "_In_/_Out_/_Inout_/_In_reads_(N)/_Out_writes_(N) annotations on NtQueryInformationProcess signature (_In_ HANDLE, _In_ PROCESSINFOCLASS, _Out_writes_bytes_ PVOID, _In_ ULONG, _Out_opt_ PULONG)",
+      "would_relate_to": [
+        "T-002",
+        "T-004",
+        "T-013",
+        "T-014",
+        "T-015",
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "2 member notes from different atlas batches; unblocks multiple syscall/API hand-binding cards."
+    },
+    {
+      "cluster_id": "amsi-bypass-via-code-caves-and-function-hooking",
+      "canonical_name": "AMSI Bypass via Code Caves and Function Hooking",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "A",
+      "rationale": "Singleton cross-source convergence: SEC670 lists 'AMSI No More' using code caves/function hooking, distinct from hardware breakpoint and PAGE_GUARD bypass pathways in vault.",
+      "member_note_ids": [
+        "lgtm:amsi-bypass-via-code-caves-and-function-hooking"
+      ],
+      "consolidated_description": "SEC670's 'AMSI No More' bootcamp exercise uses code caves and function\nhooking to disable AMSI in a PowerShell process — distinct from the vault's\namsi_hbp.rs (hardware breakpoint) and PAGE_GUARD-based pathways. The\ncode-cave variant overwrites bytes within AmsiScanBuffer's prologue\n(typically the 5-byte mov instruction fetching AmsiContextHeader) with a\njmp rel32 to a cave in unused .text padding that returns\nAMSI_RESULT_CLEAN (forcing 0x80070057 → S_OK). Function-hooking variant\ninstalls a trampoline at AmsiScanBuffer via detours-style jmp [ptr],\nredirecting to a stub that returns S_OK + zeroed scan buffer. The card\nshould document detection surfaces: hardware breakpoints leave\nPROCESS_HARDWARE_INFORMATION_DR7/DR8 set in TEB, while code caves leave\n.text section RWX permissions and byte-diff hash mismatches against clean\namsi.dll.\n",
+      "technical_anchor": "Code-cave patch of AmsiScanBuffer prologue (5-byte mov instruction) → jmp rel32 to cave returning AMSI_RESULT_CLEAN (E_INVALIDARG)",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but documents a distinct AMSI bypass mechanism not covered by existing amsi_hbp.rs."
+    },
+    {
+      "cluster_id": "advanced-capability-as-last-resort-tradecraft",
+      "canonical_name": "Advanced Capability as Last-Resort Tradecraft",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Singleton cross-source convergence: SEC670 frames manual image loading + API hook re-implementation + C2 callbacks + shellcode execution as last-resort capabilities for hardened targets.",
+      "member_note_ids": [
+        "lgtm:cross-source-convergence-advanced-capability-escalation"
+      ],
+      "consolidated_description": "SEC670 Unit 31 frames a tier of capabilities as last-resort tradecraft\nreserved for hardened targets where standard injection fails: manual image\nloading (T-013 PE loader family), API hook re-implementation (inline detours\non NTDLL exports), C2 callback dispatch from within hooked API returns, and\nshellcode execution via APC queueing (T-007). The convergence with the\nvault's broader 'last-resort' framing (T-007/T-013/T-016/T-022) suggests\nthe card should document the decision tree: when does an operator escalate\nfrom CreateRemoteThread+LoadLibrary (loud, EDR-detected) to RDI (medium,\nPE-sieve detected) to threadless export overwrite (quiet, requires shared\nmodule presence). The escalation matrix maps detection surfaces to\ntechnique selection.\n",
+      "technical_anchor": "Escalation matrix: CreateRemoteThread+LoadLibrary → RDI → threadless export overwrite; detection surface to technique selection mapping",
+      "would_relate_to": [
+        "T-007",
+        "T-013",
+        "T-016",
+        "T-022"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton decision-tree card; lower operational specificity than implementation cards."
+    },
+    {
+      "cluster_id": "handle-leak-discipline-after-createprocess",
+      "canonical_name": "Handle Leak Discipline After CreateProcess",
+      "proposed_category": "anti-analysis",
+      "proposed_tier": "B",
+      "rationale": "Singleton coverage-gap: PROCESS_INFORMATION returns hProcess and hThread kernel handles that leak in caller's handle table; not documented in injection cards.",
+      "member_note_ids": [
+        "lgtm:createprocess-handle-table-leak-discipline"
+      ],
+      "consolidated_description": "SEC670 Units 39-40 emphasize that CreateProcess returns a\nPROCESS_INFORMATION struct with two kernel handles — hProcess and hThread\n— that must be closed via CloseHandle when no longer required, or they\nleak in the caller's handle table indefinitely. Handle leaks are an\noperational opsec hazard: EDR vendors querying\nNtQuerySystemInformation(SystemHandleInformation) on a long-lived process\nwill see accumulating handles to spawned children, revealing injection\nancestry. The vault's T-013/T-014/T-015 injection cards create processes\nvia CREATE_SUSPENDED for hollowing/thread-hijacking patterns but do not\ndocument the cleanup discipline. Specific guidance: after NtResumeProcess,\nwait for child exit (WaitForSingleObject(hThread, INFINITE)) THEN\nCloseHandle(hThread); CloseHandle(hProcess);. Failure to wait before\nclose leaves zombie threads.\n",
+      "technical_anchor": "CloseHandle on PROCESS_INFORMATION.hProcess and PROCESS_INFORMATION.hThread after NtResumeProcess + WaitForSingleObject(INFINITE)",
+      "would_relate_to": [
+        "T-013",
+        "T-014",
+        "T-015"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but applies to 3 flagship injection cards; opsec hazard if ignored."
+    },
+    {
+      "cluster_id": "create-suspended-cross-source-primitive",
+      "canonical_name": "CREATE_SUSPENDED as Cross-Source Foundational Primitive",
+      "proposed_category": "process-injection",
+      "proposed_tier": "A",
+      "rationale": "Singleton cross-source convergence: CREATE_SUSPENDED appears as primary CreateProcess flag, foundational to T-012 (Early Cascade) and T-013 (hollow process) injection.",
+      "member_note_ids": [
+        "lgtm:cross-source-convergence-create-suspended"
+      ],
+      "consolidated_description": "CREATE_SUSPENDED (0x00000004) appears as the primary creation flag on\nCreateProcess across SEC670 material, foundational to T-012 (Early Cascade\nInjection) and T-013 (process hollowing). The flag causes the kernel to\ninitialize the new process and its main thread but suspend at the\nLdrpInitialize process-launch APC dispatch — before any user-mode code in\nthe new process executes. The vault uses this primitive implicitly in\nhollow.rs but does not document the suspension point. The card should\ndocument the suspension mechanics: NtCreateProcessEx returns\nSTATUS_SUCCESS with the thread in a Waiting state (THREAD_STATE=5);\nNtQuerySystemInformation(SystemProcessInformation) shows the new process\nwith no loaded modules beyond ntdll.dll; LdrpInitialize's APC is queued but\nnot dispatched until NtResumeProcess triggers KiUserApcDispatcher.\nOperator consequence: between CREATE_SUSPENDED and NtResumeProcess, the\nprocess is in a deterministic uninitialized state ideal for image-base\nreplacement, PEB unlinking, and module-list hollowing.\n",
+      "technical_anchor": "CREATE_SUSPENDED=0x00000004 suspends new process at LdrpInitialize APC dispatch; thread in Waiting state (THREAD_STATE=5); NtResumeProcess triggers KiUserApcDispatcher",
+      "would_relate_to": [
+        "T-012",
+        "T-013"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but cross-source convergence on a primitive underlying 2 flagship injection cards."
+    },
+    {
+      "cluster_id": "com-instantiation-baseline",
+      "canonical_name": "COM CoInitialize/CoCreateInstance Baseline Knowledge",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Singleton coverage-gap: SEC670 documents the canonical COM instantiation flow that T-017 (COM hijack) and T-008 (threadless export) depend on but assume.",
+      "member_note_ids": [
+        "lgtm:com-instantiation-baseline-coverage-gap"
+      ],
+      "consolidated_description": "SEC670's WUA UpdateSession material documents the canonical COM instantiation\nflow: CoInitializeEx(NULL, COINIT_APARTMENTTHREADED) →\nCoCreateInstance(CLSID_UpdateSession, pUnkOuter=NULL, CLSCTX_LOCAL_SERVER,\nIID_IUpdateSession, &pSession) → pSession->CreateUpdateSearcher() via\nvtable[N] dispatch. The vault's T-017 COM hijack persistence and T-008\nthreadless export overwrite both assume this flow without documenting it.\nThe card should cover the vtable layout (QueryInterface at offset 0, AddRef\nat 8, Release at 16, then custom methods from 24), the CLSCTX flag\nsemantics (CLSCTX_INPROC_SERVER=0x1 vs CLSCTX_LOCAL_SERVER=0x4 → surrogate\nprocess selection), and the registry backing store at\nHKCR\\CLSID\\{CLSID}\\InprocServer32 (default value = absolute DLL path,\nThreadingModel = Apartment/Free/Both). Hijack primitive: write a DLL path\nto InprocServer32\\Default that supersedes the legitimate one in HKLM with\nHKCU precedence.\n",
+      "technical_anchor": "CoCreateInstance(CLSID, NULL, CLSCTX, IID, &pInterface) vtable dispatch (QueryInterface/AddRef/Release at offsets 0/8/16); HKCR\\CLSID\\{CLSID}\\InprocServer32\\ThreadingModel",
+      "would_relate_to": [
+        "T-008",
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but unblocks 2 existing cards (T-008, T-017)."
+    },
+    {
+      "cluster_id": "pe-sieve-defensive-scanner",
+      "canonical_name": "PE-sieve as Defensive Validation Scanner",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Two coverage-gap notes flag PE-sieve as the missing defensive validation tool; T-007/T-013/T-016 document offensive techniques without the corresponding detection tooling.",
+      "member_note_ids": [
+        "lgtm:pe-sieve-and-memory-scanner-coverage-gap",
+        "lgtm:pe-sieve-defensive-validation"
+      ],
+      "consolidated_description": "SEC670 Lab 1.1 dedicates a unit to PE-sieve (hasherezade's open-source memory\nscanner) as the canonical defensive validation tool for injection detection.\nPE-sieve walks the loaded module list via\nNtQueryInformationProcess(ProcessMappedInformation), then for each module\ncompares the in-memory image against the on-disk PE file (byte-diff hash\nover .text section, IAT mismatch detection, hollowed process detection via\nPEB->Ldr entry mismatch against actual loaded base). Detection surfaces:\nclassic DLL injection (extra module in PEB but not on disk), process\nhollowing (PEB->Ldr entry matches on-disk file but in-memory image differs),\nreflective DLL injection (no PEB entry but executable memory region with PE\nheaders). Operators should run PE-sieve /imp /hooks /threads against their\nown implants during testing to verify evasion claims. The card should\ndocument the specific PE-sieve command-line matrix and the resulting report\nsections.\n",
+      "technical_anchor": "PE-sieve: NtQueryInformationProcess(ProcessMappedInformation) + on-disk PE byte-diff hash over .text section + PEB->Ldr vs actual loaded base mismatch",
+      "would_relate_to": [
+        "T-007",
+        "T-008",
+        "T-013",
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "2 member notes from different batches; closes validation-tooling gap for 4 injection/evasion cards."
+    },
+    {
+      "cluster_id": "sec670-injection-evasion-convergence",
+      "canonical_name": "SEC670 Convergence on Injection and Evasion Tradecraft",
+      "proposed_category": "process-injection",
+      "proposed_tier": "A",
+      "rationale": "Singleton cross-source convergence: SEC670 labs (Call_DirectInjection, APCInjection, ThreadHijacker, ClassicDLLInjection, UnhookTheHook, AMSI No More) cover same technique space as T-007/T-013/T-016.",
+      "member_note_ids": [
+        "lgtm:sec670-cross-source-convergence"
+      ],
+      "consolidated_description": "Multiple SEC670 labs converge on the same injection and evasion technique\nspace as the vault's T-007/T-013/T-016: Call_DirectInjection (direct syscall\ninjection, mirrors T-001/T-007), APCInjection (APC queue injection, mirrors\nT-007 APC variant), ThreadHijacker (thread context RIP overwrite, mirrors\nT-014), ClassicDLLInjection (LoadLibrary via CreateRemoteThread, mirrors\nT-007 baseline), The Loader (manual PE loader, mirrors T-013 RDI),\nUnhookTheHook (NTDLL .text section overwrite from clean on-disk copy,\nmirrors T-016), AMSI No More (AmsiScanBuffer patching, mirrors T-016). The\nconvergence validates the vault's technique categorization but suggests the\nvault could document lab-to-technique mapping as a pedagogic bridge. The\ncard should be a cross-reference table linking each SEC670 lab exercise to\nits corresponding T-NNN card.\n",
+      "technical_anchor": "Lab-to-technique mapping: Call_DirectInjection↔T-001/T-007, APCInjection↔T-007 APC variant, ThreadHijacker↔T-014, UnhookTheHook↔T-016 (NTDLL .text overwrite from on-disk clean copy)",
+      "would_relate_to": [
+        "T-007",
+        "T-013",
+        "T-016"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton cross-reference card; lower operational specificity than implementation cards."
+    },
+    {
+      "cluster_id": "scm-service-persistence-layer",
+      "canonical_name": "Windows Service (SCM) Persistence as Distinct Layer",
+      "proposed_category": "persistence",
+      "proposed_tier": "A",
+      "rationale": "Four coverage-gap notes from different batches flag service persistence as missing from T-017's five-layer suite; SEC670 dedicates multiple units to SCM programming.",
+      "member_note_ids": [
+        "lgtm:scm-service-persistence-layer",
+        "lgtm:service-based-persistence-gap",
+        "lgtm:services-and-binary-patching-persistence-gap",
+        "lgtm:services-persistence-gap"
+      ],
+      "consolidated_description": "SEC670 dedicates multiple units to the Windows Service Control Manager\nprogramming model: ServiceMain entry point,\nStartServiceControlDispatcher (binding SERVICE_TABLE_ENTRY array),\nRegisterServiceCtrlHandlerEx (registering HandlerFunction callback),\nSetServiceStatus (SERVICE_RUNNING/SERVICE_STOPPED state machine), and the\nSCM-RPC protocol. Service persistence variants include: (1) classic —\nregister a binary at\nHKLM\\SYSTEM\\CurrentControlSet\\Services\\{svc}\\ImagePath, Start=2\n(SERVICE_AUTO_START), Type=0x10 (SERVICE_WIN32_OWN_PROCESS); (2) shared\nprocess — Type=0x20 (SERVICE_WIN32_SHARE_PROCESS) for blending with\nsvchost; (3) service-binary patching — modify an existing service's\nImagePath to point at attacker-controlled binary preserving the original\nservice name for cover. The vault's T-017 covers COM hijack, NTFS EA,\nschtask, TLS callback, and PhantomPersist but omits services. Card should\ndocument detection: Sysmon EID 1 + EID 3 + ImagePath mismatch against\nsigned service binary inventory.\n",
+      "technical_anchor": "HKLM\\SYSTEM\\CurrentControlSet\\Services\\{svc}\\ImagePath (Start=2 SERVICE_AUTO_START, Type=0x10 SERVICE_WIN32_OWN_PROCESS); ServiceMain/StartServiceControlDispatcher/RegisterServiceCtrlHandlerEx API sequence",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "high",
+      "priority_reason": "4 member notes from different batches; flagship persistence card T-017 has explicit gap for this category."
+    },
+    {
+      "cluster_id": "appinit-dlls-persistence",
+      "canonical_name": "AppInit_DLLs Persistence",
+      "proposed_category": "persistence",
+      "proposed_tier": "B",
+      "rationale": "Singleton coverage-gap: SEC670 lists AppInit_DLLs across multiple units (InitToWinit bootcamp challenge, Units 6/16/33); T-017 covers COM hijack/NTFS EA/schtask/TLS/Phantom but not AppInit_DLLs.",
+      "member_note_ids": [
+        "lgtm:appinit-dlls-persistence-coverage"
+      ],
+      "consolidated_description": "SEC670 Units 1, 6, 16, and 33 list AppInit_DLLs as a persistence and\nDLL-execution foothold, with the InitToWinit bootcamp challenge centering on\nthe technique. The vault's T-017 Five-Layer Persistence card covers COM\nhijack, NTFS EA, schtask, TLS callback, and PhantomPersist but omits\nAppInit_DLLs. The card should document:\nHKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Windows\\AppInit_DLLs\n(REG_SZ space-separated DLL paths) + AppInit_DLLs\\RequireSignedDlls\n(REG_DWORD 0/1) + LoadAppInit_DLLs (REG_DWORD 0/1). Mechanism:\nuser32.dll!_LoadAppInitDlls on process map, walks AppInit_DLLs in any\nprocess that links user32.dll (i.e., most GUI processes). Modern\nconstraint: Win10 1709+ restricts AppInit_DLLs to LoadAppInit_DLLs=1 in the\nsame HKLM key, and only loads in processes with matching bitness.\nDetection: Sysmon EID 7 (ImageLoaded) for AppInit_DLLs-listed binaries +\nregistry monitor on the AppInit_DLLs value.\n",
+      "technical_anchor": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Windows\\AppInit_DLLs (REG_SZ space-separated paths) + LoadAppInit_DLLs/RequireSignedDlls REG_DWORD; user32.dll!_LoadAppInitDlls loads at user32 map",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but documented across multiple SEC670 units including a dedicated bootcamp challenge."
+    },
+    {
+      "cluster_id": "wmi-execution-and-lateral-movement",
+      "canonical_name": "WMI Execution and Lateral Movement",
+      "proposed_category": "networking",
+      "proposed_tier": "A",
+      "rationale": "Singleton coverage-gap: SEC670 Lab 4.6 OhMyWMI covers WMI execution/lateral-movement; vault has wmi_exec.rs mapped to T-023 but lacks the WMI tradecraft card.",
+      "member_note_ids": [
+        "lgtm:wmi-execution-coverage-gap"
+      ],
+      "consolidated_description": "SEC670 Lab 4.6 'OhMyWMI' covers WMI as an execution and lateral-movement\nvector distinct from WMI event subscription persistence. The vault has\nwmi_exec.rs mapped to T-023 but does not surface WMI tradecraft as a card.\nThe card should document the Win32_Process::Create method invocation flow:\nconnect to \\\\{target}\\root\\cimv2 namespace via IWbemLocator::ConnectServer\n(RPC over port 135, then dynamic high-port via endpoint mapper) →\nCoSetProxyBlanket for RPC_C_AUTHN_LEVEL_PKT_PRIVACY →\nIWbemServices::GetObject(L\"Win32_Process\") →\nIWbemClassObject::GetMethod(L\"Create\") → spawn IWbemClassObject for the\ninput parameters → IWbemClassObject::Put(L\"CommandLine\", bstrCmd) →\nIWbemServices::ExecMethod(L\"Win32_Process.Create\", pInParams). Lateral-\nmovement opsec: no new process on the operator's host (all COM calls\noutbound to target), no SMB named pipe telemetry (unlike psexec), and WMI\nactivity is logged to Microsoft-Windows-WMI-Activity/Operational but rarely\nforwarded to SIEM.\n",
+      "technical_anchor": "IWbemServices::ExecMethod(L\"Win32_Process.Create\", pInParams) via \\\\{target}\\root\\cimv2 namespace; RPC over port 135",
+      "would_relate_to": [
+        "T-017",
+        "T-023"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but maps to existing T-023 implementation; lateral-movement tradecraft high operational value."
+    },
+    {
+      "cluster_id": "windows-object-manager-foundations",
+      "canonical_name": "Windows Object Manager as Foundational Reference Card",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Three coverage-gap notes across atlas batches flag Object Manager as missing foundational concept that gates T-004/T-007/T-013/T-014/T-015/T-016.",
+      "member_note_ids": [
+        "lgtm:windows-object-manager-foundational-concept",
+        "lgtm:windows-object-manager-foundation",
+        "lgtm:windows-object-manager-foundations-card"
+      ],
+      "consolidated_description": "SEC670 Book 1 devotes multiple units to the Windows Object Manager — the\nexecutive subsystem standardizing object headers, bodies, handle tables,\nand ACL-gated access for 4000+ object types (Process, Thread, File, Token,\nEvent, Mutant, Section, Key, etc.). The vault's T-016 (handle blocking),\nT-014/T-015 (PPID spoof + handle manipulation), T-007 (process injection\nvia handle ops), T-013 (PE loader using Section objects), and T-004 (PEB\nwalk relies on object-manager-backed handle) all assume this knowledge. The\ncard should document: executive objects vs kernel objects (USER-objects vs\nGDI-objects are non-executive), the OBJECT_HEADER structure (with Type\nindex, NameInfoOffset, SecurityDescriptorOffset, QuotaInfoOffset fields\npreceding the body), the per-process handle table (PspCidTable via\nEPROCESS->HandleTable → PHANDLE_TABLE), and the ObpCreateHandle flow\n(ExCreateHandle → OBJECT_HEADER->SecurityDescriptor check →\nObpIncrementHandleCount). Reference: NtQueryObject/ObjectAllInformation\nreturns the entire OM view.\n",
+      "technical_anchor": "OBJECT_HEADER structure (Type index, NameInfoOffset, SecurityDescriptorOffset); PspCidTable via EPROCESS->HandleTable; ObpCreateHandle→ExCreateHandle→ObpIncrementHandleCount flow",
+      "would_relate_to": [
+        "T-004",
+        "T-007",
+        "T-013",
+        "T-014",
+        "T-015",
+        "T-016"
+      ],
+      "priority": "high",
+      "priority_reason": "3 member notes; concept card that unblocks 6 existing T-NNN cards."
+    },
+    {
+      "cluster_id": "dll-search-order-tradecraft",
+      "canonical_name": "DLL Search Order as Standalone Tradecraft",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Singleton coverage-gap: SEC670 documents 5-step DLL search order underpinning proxy DLL loading (T-016) and DLL hijacking broadly; vault lacks the search-order mechanism card.",
+      "member_note_ids": [
+        "lgtm:dll-search-order-and-hijack-primitives"
+      ],
+      "consolidated_description": "SEC670 Unit 34 documents the 5-step DLL search order that underpins proxy\nDLL loading (T-016 proxy_dll.rs) and DLL hijacking broadly: (1) directory\nof the calling process (EXE directory); (2) SystemDirectory\n(C:\\Windows\\System32); (3) Windows directory (C:\\Windows); (4) current\nworking directory; (5) PATH. Modifiers: SafeDllSearchMode\n(HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session\nManager\\SafeDllSearchMode=1 by default since XP SP2 — moves CWD to\nposition 5, after PATH) and KnownDlls\n(HKLM\\SYSTEM\\...\\KnownDlls list of forcibly shared DLLs, bypasses search\nentirely by mapping from KnownDlls\\*.dl_ section objects). The vault's\nproxy_dll.rs implements the technique but lacks the search-order mechanism\ndocumentation. The card should also cover\nSetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_USER_DIRS) for runtime\noverride, AddDllDirectory, and the LOAD_LIBRARY_SEARCH_* flag matrix on\nLoadLibraryEx.\n",
+      "technical_anchor": "5-step DLL search order; SafeDllSearchMode registry value (HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager); KnownDlls section object mapping bypass",
+      "would_relate_to": [
+        "T-013",
+        "T-016"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but underpins flagship T-016 proxy_dll.rs implementation."
+    },
+    {
+      "cluster_id": "process-enumeration-method-comparison",
+      "canonical_name": "Process Enumeration Method Comparison (Toolhelp vs WTS vs NT)",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Singleton cross-source convergence: SEC670 compares CreateToolhelp32Snapshot vs WTSEnumerateProcesses vs NtQuerySystemInformation enumeration methods.",
+      "member_note_ids": [
+        "lgtm:process-enumeration-method-comparison"
+      ],
+      "consolidated_description": "SEC670 compares three process-enumeration APIs with different detection\nsurfaces and outputs. CreateToolhelp32Snapshot (kernel32) — wraps\nNtQuerySystemInformation(SystemProcessInformation), returns\nPROCESSENTRY32W (szExeFile, th32ProcessID, th32ParentProcessID,\ncntThreads, pcPriClassBase); calls NtClose on the snapshot handle\n(must-close or handle leak). WTSEnumerateProcesses(WTS_CURRENT_SERVER) —\nserver-side RPC via TermSrv, returns WTS_PROCESS_INFO array with SID,\nSessionId; useful for terminal-services hosts where\nCreateToolhelp32Snapshot is filtered. NtQuerySystemInformation\n(SystemProcessInformation) — direct syscall, returns\nSYSTEM_PROCESS_INFORMATION array with NextEntryOffset relative\ntraversal, NumberOfThreads, HandleCount, ImageName (UNICODE_STRING may\nbe empty for System/Idle processes). The card should document the\ntrade-off matrix: toolhelp = most common but observable via\nNtQuerySystemInformation hook; WTS = quietest but requires RpcRt4.dll\nbind; native syscall = fastest but no parent/SID resolution.\n",
+      "technical_anchor": "CreateToolhelp32Snapshot (kernel32 wraps NtQuerySystemInformation); WTSEnumerateProcesses (TermSrv RPC); NtQuerySystemInformation(SystemProcessInformation) with SYSTEM_PROCESS_INFORMATION NextEntryOffset relative traversal",
+      "would_relate_to": [
+        "T-016",
+        "T-023"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but compares 3 enumeration methods with distinct detection surfaces."
+    },
+    {
+      "cluster_id": "registry-watchdog-detection-primitive",
+      "canonical_name": "Registry Watchdog Detection via RegNotifyChangeKeyValue",
+      "proposed_category": "persistence",
+      "proposed_tier": "B",
+      "rationale": "Singleton coverage-gap: SEC670 documents RegNotifyChangeKeyValue as defensive primitive for registry change notification; vault's T-017 persistence lacks detection counterpart.",
+      "member_note_ids": [
+        "lgtm:registry-watchdog-detection-primitive"
+      ],
+      "consolidated_description": "SEC670 documents RegNotifyChangeKeyValue as a defensive primitive for\nreceiving notifications on registry key changes. Signature:\nRegNotifyChangeKeyValue(hKey, bWatchSubtree=TRUE,\ndwNotifyFilter=REG_NOTIFY_CHANGE_NAME|REG_NOTIFY_CHANGE_ATTRIBUTES|\nREG_NOTIFY_CHANGE_LAST_SET|REG_NOTIFY_CHANGE_SECURITY, hEvent=NULL,\nfAsynchronous=FALSE). When synchronous, the call blocks the calling\nthread until a matching change occurs. For asynchronous mode, pass an\nevent handle (CreateEvent + SetEvent on change) and fAsynchronous=TRUE.\nDetection surface: the watchdog sees the persistence mechanism's registry\nwrite, including value name, before/after content, and timestamp. The\nvault's T-017 covers persistence mechanisms (COM hijack, NTFS EA,\nschtask, TLS callback, PhantomPersist) but lacks the corresponding\ndetection primitive. Operators can use the same API on the operator side\nto monitor for defender blue-team registry queries against persistence\nkeys. Card should document the per-key filter mask matrix and the\nper-key root handles (HKLM\\SOFTWARE\\...\\Run vs HKCU\\...\\RunOnce).\n",
+      "technical_anchor": "RegNotifyChangeKeyValue(hKey, bWatchSubtree=TRUE, dwNotifyFilter=REG_NOTIFY_CHANGE_LAST_SET|REG_NOTIFY_CHANGE_NAME, hEvent, fAsynchronous)",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but provides detection counterpart to flagship T-017 persistence card."
+    },
+    {
+      "cluster_id": "windows-dispatcher-quantum-model",
+      "canonical_name": "Windows Dispatcher Quantum and Priority Model",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Singleton coverage-gap: SEC670 documents Windows dispatcher preemptive priority-based scheduling and quantum allocation; foundational to T-007/T-012/T-013 thread timing.",
+      "member_note_ids": [
+        "lgtm:windows-dispatcher-quantum-model"
+      ],
+      "consolidated_description": "SEC670 devotes multiple units to the Windows dispatcher's preemptive\npriority-based scheduling, quantum allocation in clock cycles, and\npreemption events. The vault's thread-pool and APC techniques (T-007,\nT-012, T-013) all depend on dispatcher behavior for timing but do not\ndocument it. The card should cover: 32 priority levels (0-31, with 16-31\nrealtime, 1-15 variable, 0 reserved for System), quantum target = clock\nticks (default ~12 ticks on workstation, ~36 on server, ~6 on background,\ncontrolled via\nHKLM\\SYSTEM\\CurrentControlSet\\Control\\PriorityControl\\Win32PrioritySeparation),\nthe KPRCB DispatcherReadyQueueHead[32] array, and the KiDispatcherLock\nacquisition before a context switch. Operator implication: APC injection is\ndispatched during the target thread's next quantum at PASSIVE_LEVEL when in\na wait state; boosting thread priority via\nNtSetInformationProcess(ProcessBasePriority) lets an APC fire faster but\nincreases dispatcher observability.\n",
+      "technical_anchor": "KPRCB DispatcherReadyQueueHead[32] array; quantum target via Win32PrioritySeparation (default 12 ticks workstation); KiDispatcherLock acquisition before context switch",
+      "would_relate_to": [
+        "T-007",
+        "T-012",
+        "T-013"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton foundational concept card; lower operational specificity."
+    },
+    {
+      "cluster_id": "heavens-gate-wow64-syscall-transition",
+      "canonical_name": "Heaven's Gate (Wow64 32-to-64-bit Syscall Transition)",
+      "proposed_category": "syscalls",
+      "proposed_tier": "A",
+      "rationale": "Singleton emerging-tradecraft note: SEC670 documents Heaven's Gate as Wow64-mediated 0x33 segment transition for 32-to-64 syscall dispatch; distinct from T-002 Hell's/Halo's/Tartarus Gate SSN resolution.",
+      "member_note_ids": [
+        "lgtm:heavens-gate-wow64-syscall-transition"
+      ],
+      "consolidated_description": "SEC670 Unit 34 documents Heaven's Gate as the Wow64-mediated transition from\n32-bit code to 64-bit syscall dispatch via the 0x33 segment selector in the\n32-bit TEB. The 32-bit TEB has two code-segment selectors (Teb32 and Teb64\nselectors in TEB fields at offsets 0xC0/0xE0); jumping to a far32 ptr with\nselector 0x33 switches CS to the 64-bit segment, allowing execution of\nnative 64-bit syscall instructions (mov eax, SS; syscall) bypassing the\n32-bit Wow64 thunk layer (ntdll!Nt* stub → wow64!Nt* thunk →\nwow64cpu!TurboDispatch → 64-bit ntdll). The vault's T-002\n(Hell's/Halo's/Tartarus Gate) addresses SSN resolution via unhooked Nt*\nstub hashing, which is a different problem (resolving syscall numbers\nwithout Nt* stubs in memory) vs Heaven's Gate (bypassing Wow64 layer for\ndirect 64-bit syscall dispatch from 32-bit shellcode). The card should\ndocument the 0x33 selector jump pattern, the 0x23 reverse transition, and\nmodern Win10+ mitigations.\n",
+      "technical_anchor": "0x33 segment selector in 32-bit TEB; far jump with CS=0x33 switches to 64-bit segment for direct syscall dispatch bypassing Wow64 thunk layer",
+      "would_relate_to": [
+        "T-001",
+        "T-002"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but distinct from T-002 (resolves Wow64 layer bypass vs SSN resolution); named technique with public tooling."
+    },
+    {
+      "cluster_id": "object-access-audit-detection-surface",
+      "canonical_name": "Object Access Audit Detection Surface for Handle Operations",
+      "proposed_category": "edr-evasion",
+      "proposed_tier": "B",
+      "rationale": "Singleton coverage-gap: SEC670 frames Object Manager as ACL gatekeeper on every handle negotiation; vault's T-016 documents offensive side, lacks defensive audit surface.",
+      "member_note_ids": [
+        "lgtm:object-access-audit-detection-surface"
+      ],
+      "consolidated_description": "SEC670 frames the Object Manager as an explicit gatekeeper performing ACL\nchecks on every handle negotiation. The vault's T-016 handle-blocking entry\ndocuments the offensive side\n(NtSetInformationObject(ObjectHandleFlagInformation) to clear\nProtectFromClose); the corresponding defensive surface —\naudit-policy-gated Object Access events — is undocumented. Card should\ncover: SACL (System ACL) audit ACE on securable objects\n(SACL_AUDIT_ACE with ACCESS_MASK for success/failure audits), the\nSeAuditPrivilege requirement for log writes, and EventLog 4663 (\"An\nattempt was made to access an object\") with SubjectUserName,\nObjectServer=\"Security\", ObjectType=\"Process\" or \"Token\" or \"File\",\nAccessMask=0x1000 (PROCESS_VM_READ) etc. Detection surface for handle\nops: opening lsass.exe with PROCESS_VM_READ | PROCESS_QUERY_INFORMATION\ntriggers 4663 if SACL set on lsass.exe via\nauditpol /set /subcategory:\"Process Creation\" /success:enable. EDR\nvendors tap the same EventLog channel via ETW\nMicrosoft-Windows-Kernel-Audit-API.\n",
+      "technical_anchor": "SACL_AUDIT_ACE on securable objects triggers EventLog 4663 (\"An attempt was made to access an object\"); auditpol subcategory Process Creation; SeAuditPrivilege for log writes",
+      "would_relate_to": [
+        "T-016"
+      ],
+      "priority": "low",
+      "priority_reason": "Singleton defensive-surface card; complementary to T-016 offensive handle blocking."
+    },
+    {
+      "cluster_id": "sparse-course-meta-content-filter",
+      "canonical_name": "Sparse Course Meta-Content Filter",
+      "proposed_category": "discovery",
+      "proposed_tier": "C",
+      "rationale": "Multiple coverage-gap notes across methodology batches flag course roadmaps, ToCs, and bootcamp slide titles as low-yield meta-content not actionable for the vault.",
+      "member_note_ids": [
+        "lgtm:sec670-bootcamp-slide-titles-low-yield",
+        "lgtm:sec670-book1-introductory-tier-filter",
+        "lgtm:crto-methodology-tier-offtheme",
+        "lgtm:sec670-methodology-batch-sparse-content",
+        "lgtm:sparse-methodology-batch"
+      ],
+      "consolidated_description": "Multiple coverage-gap notes flag methodology batches (atlas-methodology-\npart5/6/7, atlas-labs-part1) as containing predominantly low-yield\nmeta-content: course roadmaps, tables of contents, slide titles, and CRTO\nKerberos material off-theme for HUGIN's syscall/injection/evasion focus.\nSpecific patterns: SEC670 Book 1 introductory tier (units 1-34 of\nmethodology-part5) covers foundational Windows programming already\ncaptured in cluster windows-api-fundamentals-prerequisite-layer; CRTO\nmethodology units 5-13 cover MITRE ATT&CK threat profiling and Kerberos\nAS-REQ/TGS-REQ authentication — orthogonal to implant tradecraft;\nmethodology-part6 units are predominantly course navigation; SEC670\nbootcamp challenge titles (NotInService, InitToWinit, OhMyWMI,\nCustomShell, ShadowCraft, AMSI No More) appear without extractable\ntechnique content. The vault's gap-resolution pass should flag these\nbatches as processed-but-excluded with the rationale captured here.\n",
+      "technical_anchor": "Course ToC + roadmap + bootcamp slide-title-only content; CRTO Kerberos AS-REQ/TGS-REQ orthogonal to HUGIN syscall/injection/evasion focus",
+      "would_relate_to": [],
+      "priority": "low",
+      "priority_reason": "5 member notes but all meta-content/processing-decision, not operational tradecraft."
+    },
+    {
+      "cluster_id": "thread-creation-internals",
+      "canonical_name": "SEC670 Thread Creation Internals as Cross-Reference",
+      "proposed_category": "process-injection",
+      "proposed_tier": "B",
+      "rationale": "Singleton cross-source convergence: SEC670 Books 1+3 document NtCreateThreadEx → PspCreateThread creation flow with suspended/resumed APC dispatch; cross-reference for T-007/T-012/T-013/T-014.",
+      "member_note_ids": [
+        "lgtm:sec670-thread-creation-internals-coverage"
+      ],
+      "consolidated_description": "SEC670 Books 1 and 3 document the NtCreateThreadEx → PspCreateThread\ncreation flow with suspended-then-resumed semantics and the APC-queue\ndispatch mechanism during thread quantum. The flow:\nNtCreateThreadEx(ThreadHandle, DesiredAccess, ObjectAttributes,\nProcessHandle, StartAddress, Argument, CreateFlags, ZeroBits,\nStackSize, MaxStackSize, AttributeList) → NtCreateThreadEx calls\nPspCreateThread → PspCreateThread allocates ETHREAD, initializes Tcb\n(KTHREAD), sets StartAddress, queues a user-mode APC\n(PspUserThreadStartup) that runs LdrpInitialize for module load before\nStartAddress. If CreateFlags has CREATE_SUSPENDED (bit 0), thread enters\nWaiting state and APC is not dispatched until NtResumeThread →\nKiUserApcDispatcher pulls the queued APC. This flow is foundational to\nT-007 (APC injection), T-012 (Early Cascade — queue user APC before\nthread runs), T-013 (hollowing on suspended initial thread), T-014 (RIP\noverwrite on suspended thread via SetThreadContext). The card should\ndocument the APC queue location\n(KTHREAD->ApcState.ApcListHead[UserMode]) and the CreateFlags bit\nlayout.\n",
+      "technical_anchor": "NtCreateThreadEx → PspCreateThread → PspUserThreadStartup APC queued at KTHREAD->ApcState.ApcListHead[UserMode]; CREATE_SUSPENDED bit 0 of CreateFlags holds APC dispatch",
+      "would_relate_to": [
+        "T-007",
+        "T-012",
+        "T-013",
+        "T-014"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton cross-reference for 4 injection cards; documents the suspended-APC mechanism."
+    },
+    {
+      "cluster_id": "wmi-event-subscription-persistence",
+      "canonical_name": "WMI Event Subscription Persistence",
+      "proposed_category": "persistence",
+      "proposed_tier": "A",
+      "rationale": "Singleton coverage-gap: SEC670 dedicates Section 4 module to WMI Event Subscriptions with canonical filter/consumer/binding triad; T-017 lacks WMI persistence.",
+      "member_note_ids": [
+        "lgtm:wmi-event-subscription-persistence-gap"
+      ],
+      "consolidated_description": "SEC670 dedicates a Section 4 module to WMI Event Subscriptions as a\npersistence vector with the canonical filter/consumer/binding triad. The\nvault's T-017 (Five-Layer Persistence) covers COM hijack, NTFS EA,\nschtask, TLS callback, and PhantomPersist but not WMI event\nsubscription. The card should document: __EventFilter instance in\nroot\\subscription namespace (QueryLanguage=WQL, Query=\"SELECT * FROM\n__InstanceCreationEvent WITHIN 60 WHERE TargetInstance ISA\n'Win32_Process'\"), __EventConsumer subclass\n(CommandLineEventConsumer with CommandLineTemplate,\nActiveScriptEventConsumer with ScriptText, NTEventLogEventConsumer), and\n__FilterToConsumerBinding linking the two by references. Mechanism: WMI\nservice (wmiprvse.exe) polls the filter query at WITHIN interval, fires\nthe consumer when matched. Persistence: the filter/consumer/binding\ninstances survive reboots in\n%SystemRoot%\\System32\\wbem\\Repository\\. Detection: Sysmon EID 19\n(WmiFilter), EID 20 (WmiConsumer), EID 21 (WmiBinding); defender can\nalso enumerate via Get-WMIObject -Namespace root\\subscription -Class\n__FilterToConsumerBinding.\n",
+      "technical_anchor": "__EventFilter + CommandLineEventConsumer + __FilterToConsumerBinding triad in root\\subscription namespace; WQL WITHIN polling interval; Sysmon EID 19/20/21",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but flagship T-017 has explicit gap; classic ATT&CK T1546.003."
+    },
+    {
+      "cluster_id": "ifeo-persistence",
+      "canonical_name": "Image File Execution Options (IFEO) Persistence",
+      "proposed_category": "persistence",
+      "proposed_tier": "A",
+      "rationale": "Singleton coverage-gap: SEC670 covers IFEO persistence with dedicated Lab 4.3 IFEOPersist; T-017 lacks IFEO entry.",
+      "member_note_ids": [
+        "lgtm:ifeo-persistence-gap"
+      ],
+      "consolidated_description": "SEC670 covers IFEO persistence with a dedicated lab (Lab 4.3: IFEOPersist)\nand lists IFEO alongside services, port monitors, and WMI event\nsubscriptions as a peer persistence mechanism. The vault's T-017 suite\ndoes not include IFEO. The card should document:\nHKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution\nOptions\\{target.exe}\\Debugger (REG_SZ path to attacker binary) — when\nCreateProcess(target.exe) is called, the kernel reads the IFEO key and\nsubstitutes the Debugger value as the actual process launched, with\ntarget.exe as argv[1]. Variant: GlobalFlag with\nFLG_MONITOR_SILENT_PROCESS_EXIT (0x200) triggers Silent Process Exit\nmonitoring and can chain via\nHKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SilentProcessExit\\\n{target.exe}\\ReportingMode=LocalDump + MonitorProcess. Detection: Sysmon\nEID 7 (ImageLoaded) shows Debugger binary loaded in place of target;\nregistry monitor on the IFEO key path catches the Debugger value write.\n",
+      "technical_anchor": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\{target.exe}\\Debugger (REG_SZ); GlobalFlag FLG_MONITOR_SILENT_PROCESS_EXIT (0x200) SilentProcessExit chain",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but flagship T-017 has explicit gap; well-known persistence vector."
+    },
+    {
+      "cluster_id": "registry-run-keys-persistence",
+      "canonical_name": "Registry Run Keys Persistence",
+      "proposed_category": "persistence",
+      "proposed_tier": "A",
+      "rationale": "Singleton coverage-gap: SEC670 lists Registry Keys as opening Section 4 persistence module; T-017 covers registry-adjacent (NTFS EA, COM hijack) but not Run/RunOnce/Winlogon.",
+      "member_note_ids": [
+        "lgtm:registry-run-keys-persistence-gap"
+      ],
+      "consolidated_description": "SEC670 lists 'Registry Keys' as the opening Section 4 persistence module.\nThe vault's T-017 covers registry-adjacent persistence (NTFS EA, COM\nhijack) but does not include Run/RunOnce keys, Winlogon shell, Userinit,\nor Explorer Run. The card should document the canonical Run key paths:\nHKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run,\nHKLM\\...\\Run, HKCU\\...\\RunOnce, HKLM\\...\\RunOnce, HKLM\\...\\RunOnceEx,\nHKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\Shell (REG_SZ\ndefaulting to explorer.exe), Userinit (REG_SZ defaulting to\nuserinit.exe, comma-separated for chaining),\nHKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders and\nUser Shell Folders. The registry value type for Run/RunOnce is REG_SZ\n(string) where the entire value is the command line (file path +\narguments). Detection: Sysmon EID 4608/4657 (registry value set), autoruns\ntool enumeration, EDR registry-write monitoring on these paths.\n",
+      "technical_anchor": "HKCU/HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run (REG_SZ command line); HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\Userinit (comma-separated chaining)",
+      "would_relate_to": [
+        "T-017"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but flagship T-017 has explicit gap; classic ATT&CK T1060/T1547.001."
+    },
+    {
+      "cluster_id": "implementation-language-diversity-opsec",
+      "canonical_name": "Implementation Language Diversity as Signature Opsec",
+      "proposed_category": "anti-analysis",
+      "proposed_tier": "B",
+      "rationale": "Singleton cross-source convergence: SEC670 recommends building offensive toolsets across multiple languages (C, C++, Rust, C#, Go) and multiple compilers for diverse static signatures.",
+      "member_note_ids": [
+        "lgtm:language-diversity-opsec-principle"
+      ],
+      "consolidated_description": "SEC670 explicitly recommends building offensive toolsets across multiple\nlanguages (C, C++, Rust, C#, Go) and even multiple compilers to produce\ndiverse static signatures, calling out Rust as increasingly critical for\nevading C/C++-focused AV/EDR signatures. The card should document the\nstatic signature surface for each language: C/C++ binaries leak CRT\nsymbols (memset, _security_init_cookie), compiler-specific stubs\n(__main, ___main), and runtime library string literals; C# binaries emit\nmetadata tokens and System.Reflection usage (high entropy\ndistinguishable from native code); Go binaries carry runtime strings\n(runtime.main, goroutine scheduling, reflect.Value); Rust binaries emit\npanic_str, core::panicking, and unique cargo build-graph signatures.\nDiverse languages reduce the AV signature overlap: an EDR with a strong\nRust heuristic may miss a Go implant while a C# heuristic may miss a\nRust implant. Implementation: build a single technique (e.g., process\nhollowing) in C++ + Rust + Nim + C# as separate tooling paths and\nrotate.\n",
+      "technical_anchor": "Per-language static signature surface: C/C++ CRT symbols (memset, _security_init_cookie), Rust panic_str/core::panicking, Go runtime.main/goroutine strings, C# System.Reflection metadata tokens",
+      "would_relate_to": [],
+      "priority": "low",
+      "priority_reason": "Singleton opsec-principle card; lower operational specificity."
+    },
+    {
+      "cluster_id": "host-survey-api-primitives",
+      "canonical_name": "Host Survey Primitive API Families",
+      "proposed_category": "discovery",
+      "proposed_tier": "B",
+      "rationale": "Singleton coverage-gap: SEC670 documents specific API families for host survey (filesystem, registry, process, service enumeration); foundational to T-017/T-023 ops planning.",
+      "member_note_ids": [
+        "lgtm:host-survey-api-primitives-coverage"
+      ],
+      "consolidated_description": "SEC670 documents specific API families for host survey: filesystem\n(FindFirstFileW/FindNextFileW/FindClose with WIN32_FIND_DATAW cFileName,\ndwFileAttributes; GetFileAttributesEx for FileBasicInfo), registry\n(RegOpenKeyExW/RegQueryValueExW/RegEnumKeyExW/RegCloseKey with FILETIME\nLastWriteTime, RegQueryInfoKey for SubKeys/Values counts), process\n(CreateToolhelp32Snapshot/Process32FirstW/Process32NextW with\nPROCESSENTRY32W), service (OpenSCManagerW with\nSC_MANAGER_ENUMERATE_SERVICE, EnumServicesStatusExW with\nSERVICE_ENUM_STATE_ACTIVE), and environment (GetEnvironmentStringsW with\nvoluntary block walk, RegOpenCurrentUser for HKCU resolution under SYSTEM\ncontext). The vault's T-017 and T-023 cards assume this survey output but\ndo not document the API families. The card should enumerate the canonical\nAPI family per survey target with the key structure sizes and the cleanup\ncall (FindClose, RegCloseKey, CloseServiceHandle).\n",
+      "technical_anchor": "FindFirstFileW/FindNextFileW + RegOpenKeyExW/RegQueryValueExW + CreateToolhelp32Snapshot + OpenSCManagerW/EnumServicesStatusExW host-survey API families",
+      "would_relate_to": [
+        "T-017",
+        "T-023"
+      ],
+      "priority": "medium",
+      "priority_reason": "Singleton but unblocks 2 flagship cards (T-017, T-023) with host-survey prerequisites."
+    }
+  ],
+  "synthesis_notes": [],
+  "validation": {
+    "missing": [],
+    "extra": [],
+    "duplicates": []
+  }
+}

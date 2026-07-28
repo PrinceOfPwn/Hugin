@@ -1,0 +1,928 @@
+```yaml
+clusters:
+  - cluster_id: "av-detection-engine-lifecycle-bypass"
+    canonical_name: "AV Static/Dynamic Detection Engine Bypass Lifecycle"
+    proposed_category: edr-evasion
+    proposed_tier: B
+    rationale: "Singleton convergence note documenting the shared static-vs-dynamic detection engine decomposition across SEC670 and MalDev Academy."
+    member_note_ids:
+      - "lgtm:av-detection-engine-lifecycle-convergence"
+    consolidated_description: |
+      SEC670 and MalDev Academy converge on the same lifecycle decomposition of AV detection
+      engines: static engines (signature/YARA-based, bypassable by changing the code base via
+      encoding, encryption, or metamorphism) versus dynamic engines (sandboxed execution,
+      bypassable by delaying execution, encrypting payloads, or triggering environment-gated
+      behavior). The vault's T-016 (NTAPI Hook Evasion) and T-020 (Anti-Analysis) implicitly
+      target these two layers but do not explicitly frame the dual-engine model as a
+      prerequisite concept. Documenting the lifecycle enables operators to map each evasion
+      primitive to the specific engine stage it defeats, producing a decision tree rather than
+      a flat technique list.
+    technical_anchor: "Static signature engine (YARA rule matching) vs. dynamic sandbox execution engine — bypassed by code-base mutation vs. execution delay/encryption respectively"
+    would_relate_to: [T-016, T-020]
+    priority: low
+    priority_reason: "Singleton, conceptual framing rather than a new technique; overlaps existing T-016 and T-020 scope."
+
+  - cluster_id: "win32-enumeration-api-taxonomy"
+    canonical_name: "Win32 Enumeration API Taxonomy and Primitive Selection"
+    proposed_category: discovery
+    proposed_tier: A
+    rationale: "Four notes from three atlas batches all describe the same gap: the vault lacks a dedicated enumeration-primitives card covering the Win32 API taxonomy and its tradeoffs."
+    member_note_ids:
+      - "lgtm:recon-api-taxonomy-coverage"
+      - "lgtm:sec670-maldev-recon-convergence"
+      - "lgtm:enumeration-primitives-coverage"
+      - "lgtm:toolhelp-vs-peb-walker-divergence"
+    consolidated_description: |
+      SEC670 systematically compares CreateToolhelp32Snapshot (Process32First/Next, rich
+      metadata via PROCESSENTRY32), EnumProcesses (PID-only array, simplest), and
+      WTSEnumerateProcessesEx (session-aware, WTSEnumerateProcessesEx level info class) as
+      process-enumeration primitives with explicit tradeoffs: metadata depth vs. simplicity
+      vs. EDR visibility. The vault's T-004 (PEB Walker) deliberately avoids all three Win32
+      patterns, walking the PEB via gs:[0x60] → Ldr → InLoadOrderModuleList instead. A dedicated
+      card should document the full taxonomy across processes, users, groups, services,
+      scheduled tasks (ITaskScheduler COM), and network interfaces, with each primitive's
+      detection surface and the PEB-walker alternative positioned as the evasion path. The
+      cross-source convergence between SEC670 and MalDev Academy on this taxonomy elevates
+      its priority as a foundational discovery card.
+    technical_anchor: "CreateToolhelp32Snapshot + Process32First/Next (PROCESSENTRY32W) vs. EnumProcesses (DWORD PID array) vs. WTSEnumerateProcessesEx — PEB walker via gs:[0x60] → PEB → Ldr → InLoadOrderModuleList as evasion alternative"
+    would_relate_to: [T-023, T-017, T-007, T-004]
+    priority: high
+    priority_reason: "Four member notes from three atlas batches; fills a critical foundational gap; cross-source convergence between SEC670 and MalDev Academy."
+
+  - cluster_id: "nt-direct-enumeration-edr-resistance"
+    canonical_name: "NtQuerySystemInformation as EDR-Resistant Enumeration Path"
+    proposed_category: discovery
+    proposed_tier: A
+    rationale: "Singleton emerging-tradecraft note about using the undocumented NT direct path for process enumeration to reduce EDR visibility."
+    member_note_ids:
+      - "lgtm:nt-direct-enumeration-as-evasion"
+    consolidated_description: |
+      SEC670 explicitly classifies NtQuerySystemInformation (with
+      SystemProcessInformation, class 5) as an 'undocumented' enumeration primitive alongside
+      the Win32 EnumProcesses and WTSEnumerateProcessesEx wrappers, signaling reduced EDR
+      visibility for direct NT API usage. The NT path returns a linked list of
+      SYSTEM_PROCESS_INFORMATION structures — each containing ProcessName, NumberOfThreads,
+      ThreadListHead, and HandleCount — without invoking the userland hooks that wrap the
+      Win32 equivalents. This positions NtQuerySystemInformation as an EDR-resistant
+      enumeration path distinct from both the PEB walker (T-004, self-only) and the Win32
+      taxonomy (T-023, system-wide but hooked). The vault should document the specific
+      information class, the linked-list traversal pattern (NextEntryOffset field), and the
+      detection-surface differential versus Win32 wrappers.
+    technical_anchor: "NtQuerySystemInformation with SystemProcessInformation (class 5) — SYSTEM_PROCESS_INFORMATION structure with NextEntryOffset for linked-list traversal"
+    would_relate_to: [T-002, T-023, T-007]
+    priority: medium
+    priority_reason: "Singleton but names a specific NT direct technique with clear EDR-evasion value and a concrete information class."
+
+  - cluster_id: "netapi-rpc-detection-surface"
+    canonical_name: "Net* API Family as RPC-Derived Detection Surface"
+    proposed_category: discovery
+    proposed_tier: B
+    rationale: "Singleton convergence note identifying the Net* API family and its underlying SAMRPC interfaces as a detection surface not currently addressed by the vault."
+    member_note_ids:
+      - "lgtm:netapi-rpc-telemetry-detection"
+    consolidated_description: |
+      SEC670 covers NetUserEnum, NetGroupGetUsers, NetLocalGroupGetMembers, and NetUseEnum
+      as enumeration primitives that surface a detection surface the vault does not currently
+      address. These Net* APIs are thin wrappers over the SAMRPC interface — specifically the
+      Netr* RPC methods exposed by lsass.exe (e.g., NetrUserEnum, NetrGroupGetUsers,
+      NetrLocalGroupGetMembers via the samrpc pipe \PIPE\samr). EDRs that monitor RPC
+      dispatch at the lsass boundary can correlate these calls to reconnaissance activity,
+      making the Net* family operationally distinct from the Win32 process enumeration
+      primitives despite producing similar outputs. A card should document the API-to-RPC
+      mapping and the lsass.exe detection surface for each Net* function.
+    technical_anchor: "NetUserEnum/NetGroupGetUsers/NetLocalGroupGetMembers → SAMRPC Netr* methods via \PIPE\samr in lsass.exe"
+    would_relate_to: [T-016, T-023]
+    priority: medium
+    priority_reason: "Singleton but identifies a distinct detection surface (SAMRPC) not covered by existing cards; clear operational relevance for recon tradecraft."
+
+  - cluster_id: "creative-api-selection-evasion-philosophy"
+    canonical_name: "Creative API Selection as Cross-Cutting Evasion Philosophy"
+    proposed_category: edr-evasion
+    proposed_tier: A
+    rationale: "Singleton convergence note articulating a cross-cutting philosophy — using less-common APIs to perform standard tasks in non-traditional ways — that underpins multiple existing T-NNN cards."
+    member_note_ids:
+      - "lgtm:creative-api-selection-as-evasion-philosophy"
+    consolidated_description: |
+      SEC670 units 39-40 articulate the philosophy that 'using less common APIs can bypass
+      EDR detection by performing standard tasks in non-traditional ways,' citing x86matthew
+      as a reference for creative API usage. This is not a single technique but a cross-cutting
+      design principle that underpins the vault's T-001 (RecycledGate, which reuses an existing
+      hooked function's syscall stub rather than fabricating one), T-004 (PEB Walker, which
+      resolves modules via PEB traversal instead of GetModuleHandle), T-014/T-016 (direct NT
+      API usage vs. Win32 wrappers), and T-022 (WinHTTP transport selection). A concept card
+      should frame this as a decision pattern: for each standard task (memory allocation,
+      process enumeration, module resolution, network transport), identify the canonical Win32
+      API, the less-common alternative, and the detection-surface differential.
+    technical_anchor: "x86matthew creative API usage as reference — principle of performing standard tasks via non-traditional API paths to bypass EDR hooks"
+    would_relate_to: [T-001, T-004, T-014, T-016, T-022]
+    priority: medium
+    priority_reason: "Singleton but articulates a cross-cutting design philosophy that enriches five existing cards; high conceptual value."
+
+  - cluster_id: "pic-c-shellcode-build-pipeline"
+    canonical_name: "Position-Independent C Shellcode Build Pipeline and Discipline"
+    proposed_category: exploit-primitive
+    proposed_tier: A
+    rationale: "Four notes from three atlas batches all describe the same methodology: producing PIC shellcode from C with specific compiler settings and position-independence discipline."
+    member_note_ids:
+      - "lgtm:pic-shellcode-build-config-coverage"
+      - "lgtm:pic-c-shellcode-build-pipeline"
+      - "lgtm:pic-c-shellcode-tradecraft"
+      - "lgtm:gap-shellcode-position-independence-discipline"
+    consolidated_description: |
+      SEC670 documents a complete methodology for producing position-independent shellcode
+      from C using Visual Studio compiler/linker settings: /GS- (no stack canary), /NODEFAULTLIB
+      (no CRT), /SUBSYSTEM:NATIVE, /NOENTRY (no default entry), custom entry point via
+      /ENTRY: flag, /SDL- (no security checks), and no C++ exceptions. The discipline requires
+      avoiding the heap (no malloc/new), avoiding external references (no imports resolved by
+      the loader), and avoiding the .data section (use stack-allocated constants or
+      runtime-resolved strings). Compiler intrinsics (__readgsqword, __readmsr) replace their
+      CRT-wrapped equivalents. The vault's T-020 (Anti-Analysis) and T-021 (Crypto &
+      Obfuscation) cover shellcode encoding formats (IPv4/IPv6/MAC/UUID/words) but do not
+      document the build pipeline that produces the raw shellcode bytes in the first place.
+      This card should be the prerequisite reference for all shellcode-emitting techniques.
+    technical_anchor: "Visual Studio linker flags /GS- /NODEFAULTLIB /SUBSYSTEM:NATIVE /NOENTRY /ENTRY:ShellcodeBegin /SDL- — gs:[0x60] PEB access via __readgsqword intrinsic"
+    would_relate_to: [T-013, T-020, T-021, T-016]
+    priority: high
+    priority_reason: "Four member notes from three atlas batches; fills a critical prerequisite gap for all shellcode-producing techniques."
+
+  - cluster_id: "thread-creation-internals-prerequisite"
+    canonical_name: "Thread Creation Internals (NtCreateThreadEx / PspCreateThread)"
+    proposed_category: discovery
+    proposed_tier: B
+    rationale: "Singleton coverage-gap note identifying the kernel-side thread creation path as a prerequisite concept for all thread-based injection techniques."
+    member_note_ids:
+      - "lgtm:thread-creation-internals-as-prerequisite"
+    consolidated_description: |
+      SEC670 unit 10 explains the kernel-side thread creation path that all thread-based
+      injection techniques ultimately invoke: NtCreateThreadEx → PspCreateThread, including
+      parameter-to-flag conversion, Client ID and TEB insertion into an attribute list, and
+      the local vs. remote dispatch fork (PspCreateThread for current process vs. remote
+      process via the ThreadContext parameter). The vault's T-007 (NtCreateThreadEx Remote
+      Thread), T-008 (Thread Hijacking), T-012 (APC Injection), and T-013 (Shellcode Runner)
+      all terminate at this path but do not document the kernel internals as a shared
+      prerequisite. A concept card should map the CreateThread → NtCreateThreadEx →
+      PspCreateThread dispatch chain, the ETHREAD/InitialTeb fields populated, and how each
+      injection technique (remote thread, APC, thread hijack) diverges at the point of
+      thread-context construction.
+    technical_anchor: "NtCreateThreadEx → PspCreateThread — Client ID and TEB insertion into thread attribute list; local vs. remote dispatch via ThreadContext parameter"
+    would_relate_to: [T-007, T-008, T-012, T-013]
+    priority: medium
+    priority_reason: "Singleton but documents a kernel internals prerequisite shared by four existing injection cards."
+
+  - cluster_id: "ifeo-silentprocessexit-persistence"
+    canonical_name: "IFEO GlobalFlag + SilentProcessExit Persistence"
+    proposed_category: persistence
+    proposed_tier: A
+    rationale: "Singleton coverage-gap note for a registry-driven persistence mechanism triggered on target process exit, not currently in T-017."
+    member_note_ids:
+      - "lgtm:ifeo-silentprocess-exit-persistence-gap"
+    consolidated_description: |
+      SEC670 documents IFEO (Image File Execution Options) GlobalFlag set to value 512
+      (FLG_ENABLE_SYSTEM_DISABLE_KEY) combined with SilentProcessExit registry settings —
+      specifically ReportingMode and MonitorProcess under
+      HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit — as a registry-driven
+      persistence mechanism triggered when the target process exits. The Windows Error
+      Reporting service (WerFault.exe) reads these keys and launches the MonitorProcess
+      executable on target exit, providing an event-driven persistence trigger distinct from
+      boot-time or logon-time mechanisms. T-017 (Five-Layer Persistence) covers COM hijack,
+      NTFS EA, schtask, TLS callback, and PhantomPersist but does not include IFEO +
+      SilentProcessExit. The mechanism is particularly valuable because it executes under
+      WER's privilege context and triggers on an abnormal exit event, blending with legitimate
+      crash-reporting telemetry.
+    technical_anchor: "IFEO GlobalFlag = 512 (FLG_ENABLE_SYSTEM_DISABLE_KEY) + SilentProcessExit ReportingMode/MonitorProcess under HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit — WerFault.exe launches MonitorProcess on target exit"
+    would_relate_to: [T-017]
+    priority: medium
+    priority_reason: "Singleton but documents a distinct persistence entry point not in T-017; event-driven trigger adds operational value."
+
+  - cluster_id: "port-monitor-dll-persistence"
+    canonical_name: "Port Monitor DLL Persistence via AddMonitor"
+    proposed_category: persistence
+    proposed_tier: A
+    rationale: "Two coverage-gap notes from different atlas batches describe the same AddMonitor-based persistence mechanism absent from T-017."
+    member_note_ids:
+      - "lgtm:port-monitor-persistence-gap"
+      - "lgtm:port-monitor-persistence-coverage"
+    consolidated_description: |
+      SEC670 covers abusing the AddMonitor API (winspool.drv) to register a custom DLL as a
+      port monitor for persistence via the print spooler service (spoolsv.exe). The registered
+      DLL is loaded by spoolsv.exe at service startup, executing in SYSTEM privilege context.
+      The monitor entry persists in the registry under
+      HKLM\SYSTEM\CurrentControlSet\Control\Print\Monitors with the DLL path, and the spooler
+      service loads it on every restart. T-017's persistence suite (COM hijack, NTFS EA,
+      schtask, TLS callback, PhantomPersist) does not include this mechanism. Port monitor
+      persistence is distinct because it executes under the print spooler's SYSTEM context,
+      triggers on service start rather than user logon, and blends with legitimate printer
+      driver installation activity. The AddMonitor call itself is a privileged operation
+      requiring SeLoadDriverPrivilege.
+    technical_anchor: "AddMonitor API (winspool.drv) registering DLL under HKLM\SYSTEM\CurrentControlSet\Control\Print\Monitors — loaded by spoolsv.exe at SYSTEM privilege"
+    would_relate_to: [T-017]
+    priority: high
+    priority_reason: "Two member notes from different batches; documents a SYSTEM-privilege persistence mechanism absent from T-017."
+
+  - cluster_id: "appinit-dlls-persistence"
+    canonical_name: "AppInit_DLLs Persistence and DLL Injection"
+    proposed_category: persistence
+    proposed_tier: A
+    rationale: "Singleton coverage-gap note for AppInit_DLLs as a DLL injection and persistence mechanism not in T-017."
+    member_note_ids:
+      - "lgtm:appinit-dlls-persistence-gap"
+    consolidated_description: |
+      SEC670's InitToWinInit lab covers AppInit_DLLs as a DLL injection and persistence
+      mechanism where any DLL path listed in the registry value
+      HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows\AppInit_DLLs is loaded into
+      every process that loads user32.dll. The machine-wide RequireSignedAppInit_DLLs value
+      controls whether only signed DLLs are loaded (set to 1 on modern Windows). T-017 does
+      not include this technique. The mechanism is particularly relevant for its broad
+      injection surface — affecting all user32.dll-loading processes — but is diminishing in
+      effectiveness due to the signing requirement on Windows 10+ and the introduction of
+      AppInit_DLLs exclusions for certain system processes. A card should document the
+      registry path, the RequireSignedAppInit_DLLs gate, the user32.dll load-order dependency,
+      and the diminishing operational window on modern Windows.
+    technical_anchor: "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows\AppInit_DLLs (semicolon-delimited DLL paths) + RequireSignedAppInit_DLLs gate — injected into all user32.dll-loading processes"
+    would_relate_to: [T-017]
+    priority: medium
+    priority_reason: "Singleton but documents a classic persistence/DLL-injection mechanism absent from T-017; diminishing but still operational."
+
+  - cluster_id: "reflective-dll-loading"
+    canonical_name: "Reflective DLL Injection and Manual PE Mapping"
+    proposed_category: process-injection
+    proposed_tier: A
+    rationale: "Singleton convergence note on reflective DLL loading as a technique covered across multiple SEC670 units and converging with the vault's T-013."
+    member_note_ids:
+      - "lgtm:cross-source-convergence-reflective-loading"
+    consolidated_description: |
+      SEC670 dedicates multiple units (35-40) to Reflective DLL Injection, covering Stephen
+      Fewer's original technique and the manual mapping process: CreateFileA to read the DLL
+      from disk, ReadFile into a buffer, VirtualAlloc with PAGE_READWRITE for the mapped image,
+      PE header parsing (IMAGE_DOS_HEADER → IMAGE_NT_HEADERS → SectionHeader array), section
+      relocations (relocation table traversal via IMAGE_DIRECTORY_ENTRY_BASERELOC), import
+      resolution (IAT via IMAGE_DIRECTORY_ENTRY_IMPORT → LoadLibrary/GetProcAddress), and
+      final DLL_PROCESS_ATTACH call to DllMain. The vault's T-013 (Shellcode Runner) covers
+      shellcode execution but not the full reflective DLL loading pipeline. The cross-source
+      convergence elevates this as a well-documented mainstream technique that should be
+      represented as a dedicated card distinct from simple shellcode execution, covering the
+      PE mapping sequence, relocation table processing, and IAT resolution as distinct phases.
+    technical_anchor: "Stephen Fewer reflective loading — VirtualAlloc + IMAGE_DOS_HEADER.e_lfanew → IMAGE_NT_HEADERS → SectionHeader relocations via IMAGE_DIRECTORY_ENTRY_BASERELOC + IAT via IMAGE_DIRECTORY_ENTRY_IMPORT → DllMain(DLL_PROCESS_ATTACH)"
+    would_relate_to: [T-013]
+    priority: medium
+    priority_reason: "Singleton but covers a named mainstream technique (Stephen Fewer) across 6 SEC670 units; fills a gap adjacent to T-013."
+
+  - cluster_id: "win32k-gui-syscall-surface"
+    canonical_name: "GUI Syscall Surface via win32u.dll / win32k.sys"
+    proposed_category: syscalls
+    proposed_tier: S
+    rationale: "Singleton coverage-gap note identifying a distinct syscall dispatch path (win32u.dll → win32k.sys) not documented in the vault's syscall suite."
+    member_note_ids:
+      - "lgtm:win32k-gui-syscall-surface"
+    consolidated_description: |
+      SEC670 units 30-31 distinguish native syscalls (ntdll.dll → kernel/executive via the
+      syscall instruction) from GUI syscalls (win32u.dll → win32k.sys via the same syscall
+      instruction but a different dispatch table). Examples include NtUserOpenClipboard,
+      NtUserCloseClipboard, NtUserGetMessage, NtUserFindWindowEx, and NtUserSetWindowsHookEx
+      — all routed through win32u.dll rather than ntdll.dll. The vault's syscall dispatch
+      suite (T-001 through T-006) documents only the native ntdll path. The GUI syscall path
+      is operationally distinct because win32k.sys has its own syscall table (a separate
+      region of the SSDT), its own SSN numbering, and its own hook surface — EDRs that
+      instrument only ntdll stubs miss GUI syscalls entirely. A card should document the
+      win32u.dll stub structure, the win32k.sys SSDT region, SSN resolution for GUI functions,
+      and the detection-surface differential versus native syscalls.
+    technical_anchor: "win32u.dll syscall stubs → win32k.sys SSDT — NtUserOpenClipboard/NtUserCloseClipboard/NtUserGetMessage dispatched via separate GUI syscall table, not ntdll"
+    would_relate_to: [T-001, T-002, T-016, T-023]
+    priority: medium
+    priority_reason: "Singleton but identifies a novel syscall dispatch path with distinct detection surface; S-tier for novelty and operational value."
+
+  - cluster_id: "kuser-shared-data-syscall-dispatch-flag"
+    canonical_name: "KUSER_SHARED_DATA Syscall Dispatch Flag in Stub Replication"
+    proposed_category: syscalls
+    proposed_tier: A
+    rationale: "Singleton coverage-gap note about the KUSER_SHARED_DATA flag at 0x7FFE0308 that every ntdll syscall stub checks, relevant to stub fabrication techniques."
+    member_note_ids:
+      - "lgtm:kuser-shared-data-flag-handling"
+    consolidated_description: |
+      SEC670 unit 32 documents the 'test byte ptr [7FFE0308h],1' check inside every ntdll
+      syscall stub, which selects between the 'syscall' instruction (modern path) and legacy
+      'int 2Eh' dispatch. The byte at 0x7FFE0308 is within the KUSER_SHARED_DATA structure
+      (SystemCallPad field at offset 0x308). Techniques that fabricate or copy syscall stubs
+      (T-001 RecycledGate, T-006 Picusstons) must replicate this check correctly or risk
+      dispatching via the legacy interrupt path on systems where the flag is clear. The vault's
+      stub implementations use hardcoded 'mov eax, SSN; syscall' sequences that omit this
+      check. A card should document the KUSER_SHARED_DATA layout (shared at 0x7FFE0000,
+      user-mode mapped), the specific offset 0x308, the flag semantics, and the implications
+      for stub fabrication — including whether the omission produces detectable anomalies.
+    technical_anchor: "KUSER_SHARED_DATA at 0x7FFE0000 — SystemCallPad byte at offset 0x308 ('test byte ptr [7FFE0308h],1') in ntdll syscall stubs selecting syscall vs. int 2Eh dispatch"
+    would_relate_to: [T-001, T-006]
+    priority: medium
+    priority_reason: "Singleton but documents a specific KUSER_SHARED_DATA field that affects stub fabrication correctness across T-001 and T-006."
+
+  - cluster_id: "foundational-syscall-mechanics-convergence"
+    canonical_name: "Foundational Syscall Mechanics (Stub Structure, SSN Variance, Routing)"
+    proposed_category: syscalls
+    proposed_tier: A
+    rationale: "Singleton convergence note identifying the shared syscall-stub foundation (stub structure, SSN variance, native-vs-GUI routing) that motivates the entire vault syscall suite."
+    member_note_ids:
+      - "lgtm:cross-source-syscall-foundations-convergence"
+    consolidated_description: |
+      SEC670 units 24-34 cover the syscall stub structure (mov eax, SSN; test byte ptr
+      [7FFE0308h],1; syscall; ret), SSN version-variance across Windows builds (SSNs are
+      unstable across versions but stable within a build), and the native-vs-GUI routing
+      that motivates the entire HUGIN syscall-dispatch suite (T-001 through T-006). The
+      convergence across SEC670, MalDev Academy, and the vault's own implementation confirms
+      these as foundational prerequisites. A concept card should document the stub byte
+      sequence, the SSN assignment pattern (Nt* functions assigned sequential SSNs in
+      alphabetical order within each build), the SSN-without-hardcoding approaches (hell's
+      gate, halos gate, tartarus gate), and the relationship between direct syscall dispatch
+      and EDR hook evasion. This card would serve as the navigation hub for T-001 through
+      T-006.
+    technical_anchor: "ntdll syscall stub byte pattern: mov eax, SSN (4-byte immediate) + 'test byte ptr [7FFE0308h],1' + syscall + ret — SSNs assigned alphabetically per build"
+    would_relate_to: [T-001, T-002, T-003, T-004, T-006]
+    priority: medium
+    priority_reason: "Singleton but documents the foundational prerequisite for the entire syscall suite (T-001-T-006); high navigational value."
+
+  - cluster_id: "edr-hooking-mechanisms-background"
+    canonical_name: "IAT and Inline Hooking as EDR Userland Mechanisms"
+    proposed_category: edr-evasion
+    proposed_tier: B
+    rationale: "Singleton coverage-gap note about the two primary userland hooking mechanisms EDRs employ, which T-016 evades but does not document as background."
+    member_note_ids:
+      - "lgtm:hooking-as-edr-mechanism-background"
+    consolidated_description: |
+      SEC670 units 35-40 document the two primary userland hooking mechanisms EDRs employ:
+      IAT pointer overwrite (flipping the IAT entry's memory protection to PAGE_READWRITE via
+      VirtualProtect, replacing the function pointer with a detour, restoring protection) and
+      inline prologue patching (overwriting the first 5-7 bytes of the function prologue with
+      a jmp to the detour, saving the original bytes for pass-through). The vault's T-016
+      (NTAPI Hook Evasion) evades these hooks by using direct syscalls but does not document
+      the hook mechanisms themselves as background. A prerequisite card should describe both
+      hook types, the VirtualProtect-based IAT flip, the inline prologue patch with trampoline
+      construction, the saved-byte restoration pattern, and how each hook type is detected
+      (scanning IAT for non-module-range pointers; scanning prologue for jmp opcodes). This
+      background makes T-016's evasion approach comprehensible to readers without prior EDR
+      internals knowledge.
+    technical_anchor: "IAT hook: VirtualProtect PAGE_READWRITE → overwrite function pointer → restore protection; Inline hook: prologue byte patch with jmp rel32 (0xE8/E9) + trampoline with saved original bytes"
+    would_relate_to: [T-016]
+    priority: medium
+    priority_reason: "Singleton but documents the EDR hook mechanisms that T-016 evades; high prerequisite value for understanding T-016."
+
+  - cluster_id: "syswhispers3-stub-generation"
+    canonical_name: "SysWhispers3 Syscall Stub Code Generation"
+    proposed_category: syscalls
+    proposed_tier: A
+    rationale: "Singleton convergence note comparing SysWhispers3 as the standard external stub-generation tool against the vault's hand-rolled stubs."
+    member_note_ids:
+      - "lgtm:syswhispers3-vs-vault-stubs"
+    consolidated_description: |
+      SEC670 units 15-16 cover SysWhispers3 as the standard external tool for generating
+      syscall stubs, including the egg-hunter variant (searching ntdll memory for a known
+      byte pattern to locate a legitimate stub) and the random-jump variant (jumping into
+      the middle of a legitimate stub to avoid prologue-based detection). The vault implements
+      its own stubs (T-001 RecycledGate, which borrows a hooked function's stub; T-006
+      Picusstons, hand-rolled PIC stubs) rather than using SysWhispers3. A card should
+      document SysWhispers3's code-generation model (Python templates producing C/H files
+      with stub definitions), the egg-hunter pattern (scanning for {4C 8B D1 B8 ... 00 00 07
+      00} byte signature in ntdll), the random-jump approach (jumping to offset N within a
+      legitimate stub), and how these compare to the vault's T-001 and T-006 approaches in
+      terms of detection surface and maintainability.
+    technical_anchor: "SysWhispers3 egg-hunter: scan ntdll for byte signature {4C 8B D1 B8 ?? ?? ?? 00 F6 04 25 08 03 FE 7F 01 75 03 0F 05 C3} — random-jump: JMP to offset within legitimate stub"
+    would_relate_to: [T-001, T-002, T-006]
+    priority: medium
+    priority_reason: "Singleton but documents the standard external tooling (SysWhispers3) against which the vault's hand-rolled stubs should be compared."
+
+  - cluster_id: "wininet-vs-winhttp-c2-transport"
+    canonical_name: "WinINet vs WinHTTP for C2 Transport"
+    proposed_category: networking
+    proposed_tier: A
+    rationale: "Two notes from different atlas batches (one gap, one convergence) both identify the WinINet API family as an alternative C2 transport not documented in T-022."
+    member_note_ids:
+      - "lgtm:wininet-vs-winhttp-c2"
+      - "lgtm:wininet-vs-winhttp-transport-choice"
+    consolidated_description: |
+      SEC670 documents InternetConnect + HttpOpenRequest (WinINet, wininet.dll) as the
+      canonical HTTP C2 session API sequence, covering InternetOpen (session handle),
+      InternetConnect (server handle with port), HttpOpenRequest (request handle with method
+      and path), HttpSendRequest (transmit), and InternetReadFile (response body). The vault's
+      T-022 networking suite currently lists WinHTTP-based download (winhttp_dl.rs using
+      WinHttpOpen/WinHttpConnect/WinHttpOpenRequest/WinHttpSendRequest) as the staged download
+      mechanism. WinINet and WinHTTP are distinct API families: WinINet (wininet.dll) is the
+      higher-level API with built-in IE cache, cookie, and proxy support, historically used
+      by web browsers; WinHTTP (winhttp.dll) is the lighter API designed for server-side and
+      non-interactive HTTP. A card should document both API sequences side-by-side, the
+      detection-surface differential (WinINet hooks are common in EDRs; WinHTTP hooks less
+      so but increasing), and the operational tradeoffs (cache artifacts vs. stealth, cookie
+      persistence vs. statelessness, proxy behavior).
+    technical_anchor: "WinINet: InternetOpen → InternetConnect → HttpOpenRequest → HttpSendRequest → InternetReadFile (wininet.dll) vs. WinHTTP: WinHttpOpen → WinHttpConnect → WinHttpOpenRequest → WinHttpSendRequest → WinHttpReadData (winhttp.dll)"
+    would_relate_to: [T-022]
+    priority: high
+    priority_reason: "Two member notes from different batches; documents an alternative C2 transport API family with distinct detection surface."
+
+  - cluster_id: "socket-handle-reverse-shell-startupinfo"
+    canonical_name: "Socket-Handle Reverse Shell via STARTUPINFO Inheritance"
+    proposed_category: client
+    proposed_tier: B
+    rationale: "Singleton emerging-tradecraft note about the classic reverse-shell construction via STARTUPINFO handle inheritance."
+    member_note_ids:
+      - "lgtm:reverse-shell-startupinfo-inheritance"
+    consolidated_description: |
+      SEC670 units 25-26 cover the classic reverse-shell construction where a socket handle
+      (WSASocket/WSAStartup) is placed in STARTUPINFO's hStdInput, hStdOutput, and hStdError
+      fields (STARTF_USESTDHANDLES flag in dwFlags), and cmd.exe is spawned with CreateProcessA
+      using the inherited handle table. This redirects the child process's stdin/stdout/stderr
+      to the network socket, producing an interactive shell over TCP without allocating a
+      console window (CREATE_NO_WINDOW flag). The vault's T-022 (networking) and T-023 (not
+      present — gap) do not document this construction. The technique is foundational for
+      client-side post-exploitation and is the basis for more elaborate shells (e.g., named
+      pipe relay, PTY emulation). A card should document the STARTUPINFO field layout, the
+      handle-inheritance requirement (bInheritHandles = TRUE in SECURITY_ATTRIBUTES), the
+      CREATE_NO_WINDOW / STARTF_USESTDHANDLES flag combination, and the detection surface
+      (CreateProcess with cmd.exe + socket handle is a well-known IoC).
+    technical_anchor: "STARTUPINFO.hStdInput/hStdOutput/hStdError = socket handle (WSASocket) + dwFlags STARTF_USESTDHANDLES + CreateProcessA(cmd.exe, bInheritHandles=TRUE, CREATE_NO_WINDOW)"
+    would_relate_to: [T-023, T-022]
+    priority: medium
+    priority_reason: "Singleton but documents a classic reverse-shell primitive foundational to client-side post-exploitation."
+
+  - cluster_id: "c2-tasking-loop-jittered-sleep"
+    canonical_name: "C2 Check-in Loop with Jittered Sleep and JSON Tasking"
+    proposed_category: networking
+    proposed_tier: A
+    rationale: "Singleton coverage-gap note about the implant check-in loop and JSON tasking protocol, which T-022 does not document."
+    member_note_ids:
+      - "lgtm:c2-tasking-loop-and-jitter-tradecraft"
+    consolidated_description: |
+      SEC670 units 12-14 document the implant check-in loop (while/try/catch/sleep with
+      jittered interval) and the JSON tasking protocol: UUID-based task IDs, CheckTasks
+      request parsing, RunTask execution dispatch, and result reporting back to the C2. The
+      jitter pattern adds ±N% randomness to the base sleep interval to defeat beacon-
+      timing analysis. The vault's T-022 documents HTTP transport (WinHTTP-based download)
+      but does not document the tasking loop, the jitter algorithm, or the JSON protocol
+      structure. A card should document the check-in state machine (initial check-in → task
+      poll → task execute → result report → sleep(jitter) → repeat), the jitter calculation
+      (base_interval * (1 ± random(0, jitter_pct))), the JSON schema for task requests and
+      responses, and the relationship to T-005 (Sleep Obfuscation), which must integrate with
+      the jittered sleep interval.
+    technical_anchor: "Check-in loop: while(true) { CheckTasks(UUID) → RunTask → ReportResult → Sleep(base_interval ± jitter_pct) } — JSON task schema with UUID task IDs"
+    would_relate_to: [T-022, T-005]
+    priority: medium
+    priority_reason: "Singleton but documents the C2 tasking loop and jitter algorithm that integrates T-022 transport with T-005 sleep obfuscation."
+
+  - cluster_id: "cng-cryptography-migration"
+    canonical_name: "CNG (BCrypt*) over Legacy CryptoAPI (Crypt*) Migration"
+    proposed_category: crypto
+    proposed_tier: A
+    rationale: "Three convergence notes from three atlas batches all recommend CNG BCrypt* APIs over legacy CryptoAPI Crypt* functions for shellcode encryption."
+    member_note_ids:
+      - "lgtm:cng-vs-cryptoapi-modernization-signal"
+      - "lgtm:cryptoapi-to-cng-migration-guidance"
+      - "lgtm:cng-api-crypto-coverage"
+    consolidated_description: |
+      SEC670 explicitly frames the deprecated Crypt* family (CryptAcquireContextA with
+      PROV_RSA_AES, CryptDeriveKey, CryptEncrypt) versus the recommended CNG BCrypt* family
+      (bcrypt.h: BCryptOpenAlgorithmProvider, BCryptSetProperty, BCryptGenerateSymmetricKey,
+      BCryptEncrypt) as a tradecraft decision. CNG is positioned as 'more advanced and
+      extensible' than CryptoAPI, with support for authenticated encryption modes (GCM,
+      CCM) that the legacy API lacks. The vault's T-021 uses Rust's aes-gcm crate rather
+      than either Windows API family, which is appropriate for the Rust-based dark_crystal
+      crate but leaves CNG and CryptoAPI paths undocumented for operators working in C/C++.
+      A card should document the CNG API sequence for AES-GCM (BCryptOpenAlgorithmProvider
+      with BCRYPT_AES_ALGORITHM → BCryptSetProperty with BCRYPT_CHAINING_MODE_GCM →
+      BCryptGenerateSymmetricKey → BCryptEncrypt with BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO),
+      the deprecation timeline of CryptoAPI, and the operational tradeoff versus using a
+      language-native crypto crate.
+    technical_anchor: "CNG AES-GCM: BCryptOpenAlgorithmProvider(BCRYPT_AES_ALGORITHM) → BCryptSetProperty(BCRYPT_CHAINING_MODE, BCRYPT_CHAIN_MODE_GCM) → BCryptGenerateSymmetricKey → BCryptEncrypt with BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO — vs. deprecated CryptAcquireContextA(PROV_RSA_AES)"
+    would_relate_to: [T-021]
+    priority: high
+    priority_reason: "Three member notes from three atlas batches; cross-source convergence on CNG as the recommended Windows-native crypto API."
+
+  - cluster_id: "xor-encoding-vs-encryption-classification"
+    canonical_name: "XOR with Key — Encoding or Encryption Classification"
+    proposed_category: crypto
+    proposed_tier: C
+    rationale: "Singleton coverage-gap note about the classification debate for XOR-with-key, which the vault's T-021 treats as encoding."
+    member_note_ids:
+      - "lgtm:xor-encoding-vs-encryption-semantic-debate"
+    consolidated_description: |
+      SEC670 surfaces the long-standing debate over whether XOR with a key constitutes
+      encoding or encryption, noting that the presence of a key supports the encryption
+      classification. The vault's T-021 treats shellcode encoding formats (IPv4/IPv6/MAC/
+      UUID/words) as encoding — which is correct for format-only transforms — but does not
+      address the XOR-with-key semantic boundary. The distinction matters operationally
+      because some EDR/AV vendors classify XOR-with-key as encryption (triggering
+      entropy-based detection) while others classify it as encoding (triggering no
+      detection). A concept card should document the XOR operation (plaintext[i] ^ key[i %
+      key_len]), the entropy profile of XOR output (preserves byte-frequency distribution of
+      the key, not the plaintext), the detection differential (high-entropy keys produce
+      high-entropy output detectable by Shannon entropy analysis), and the classification
+      rationale (presence of a key → encryption; absence of a key → encoding).
+    technical_anchor: "XOR operation: plaintext[i] ^ key[i % key_len] — Shannon entropy of output depends on key entropy, not plaintext entropy; presence of key → encryption classification per some EDR vendors"
+    would_relate_to: [T-021]
+    priority: low
+    priority_reason: "Singleton, conceptual classification debate rather than a new technique; limited operational impact."
+
+  - cluster_id: "windows-data-type-portability-rationale"
+    canonical_name: "Windows Data Type System as Architecture Portability Rationale"
+    proposed_category: discovery
+    proposed_tier: C
+    rationale: "Singleton concept note about the Windows data type system (DWORD, BOOL, BOOLEAN) as an architecture-insulation layer; concept node, not a technique."
+    member_note_ids:
+      - "lgtm:windows-data-type-portability-rationale"
+    consolidated_description: |
+      SEC670 explains that Windows data types (DWORD, BOOL, BOOLEAN, HANDLE, LPVOID) were
+      created to insulate source code from 16-bit to 32-bit to 64-bit architecture
+      transitions. BOOL is a 32-bit int (typedef int BOOL), BOOLEAN is a BYTE (typedef
+      unsigned char BOOLEAN), DWORD is a 32-bit unsigned long (typedef unsigned long DWORD),
+      and HANDLE is a void* (sizeof varies by architecture). This matters for FFI bindings
+      (Rust extern "C", Go cgo) where using the wrong native type produces ABI mismatches
+      that are silent on one architecture but corrupt data on another. A concept card should
+      document the type hierarchy (Win32 typedefs → C base types → actual sizes by
+      architecture), the BOOL vs BOOLEAN distinction (4 bytes vs 1 byte — a common source
+      of FFI bugs), the pointer-size types (HANDLE, LPVOID, PSTR), and how the vault's Rust
+      bindings map these types (e.g., BOOL → i32, HANDLE → isize, DWORD → u32).
+    technical_anchor: "BOOL = typedef int (4 bytes, i32 in Rust) vs BOOLEAN = typedef unsigned char (1 byte, u8 in Rust) vs DWORD = typedef unsigned long (4 bytes, u32) vs HANDLE = void* (pointer-sized, isize)"
+    would_relate_to: []
+    priority: low
+    priority_reason: "Singleton concept node; educational completeness value, no direct operational impact."
+
+  - cluster_id: "certutil-base64-lolbin"
+    canonical_name: "Certutil as Base64 LOLBin for Shellcode Transformation"
+    proposed_category: crypto
+    proposed_tier: B
+    rationale: "Singleton emerging-tradecraft note about certutil.exe -encode as a native OS utility for Base64-transforming shellcode."
+    member_note_ids:
+      - "lgtm:certutil-base64-lolbin"
+    consolidated_description: |
+      SEC670 references certutil.exe -encode (and -decode) as a native OS utility for
+      Base64-transforming shellcode, alongside the API-based CryptStringToBinaryA (decode) and
+      CryptBinaryToStringA (encode) approach. The vault's T-020 (Anti-Analysis) covers
+      KnownDlls and parent-process checks but does not document LOLBin (Living Off the Land
+      Binary) usage for shellcode transformation. certutil.exe is a signed Microsoft binary
+      that can decode Base64 files to binary, making it useful for writing raw shellcode to
+      disk without introducing custom tooling. The command 'certutil -decode input.b64
+      output.bin' produces the raw binary from a Base64-encoded input file. A card should
+      document the certutil -encode/-decode syntax, the CryptStringToBinaryA/
+      CryptBinaryToStringA API equivalents (CRYPT_STRING_BASE64 flag), the detection surface
+      (certutil with -decode is a well-known LOLBin IoC), and the operational tradeoff
+      (signed-binary stealth vs. behavioral detection).
+    technical_anchor: "certutil.exe -decode <input.b64> <output.bin> (Base64 → binary) + CryptStringToBinaryA with CRYPT_STRING_BASE64 flag (API equivalent)"
+    would_relate_to: [T-020, T-021]
+    priority: medium
+    priority_reason: "Singleton but documents a named LOLBin (certutil) with a concrete command and API equivalent; operational tradecraft value."
+
+  - cluster_id: "sal-annotation-coverage"
+    canonical_name: "SAL Annotations (_In_, _Out_, _Inout_) for Win32 API Bindings"
+    proposed_category: discovery
+    proposed_tier: C
+    rationale: "Singleton concept note about SAL annotations as a compiler-checked safety mechanism for Win32 API usage; concept node."
+    member_note_ids:
+      - "lgtm:sal-annotation-coverage-gap"
+    consolidated_description: |
+      SANS SEC670 emphasizes SAL annotations (_In_, _Out_, _Inout_, _In_opt_, _Out_opt_,
+      _In_reads_, _Out_writes_) as a compiler-checked safety mechanism for Win32 API usage
+      and notes that most online documentation omits them, requiring direct header inspection
+      (windows.h, winternl.h, ntifs.h). The vault's syscall stubs (T-001, T-004) and FFI
+      bindings do not currently include SAL annotations in their function signatures. A
+      concept card should document the SAL annotation hierarchy (directional: _In_/_Out_/
+      _Inout_; optional: _opt_ suffix; buffer-size: _In_reads_(n)/_Out_writes_(n); pointer
+      validity: _Maybenull_), how the /analyze compiler flag enables static SAL checking,
+      and the specific annotations for the NT functions the vault uses
+      (e.g., NtQuerySystemInformation is _In_ SYSTEM_INFORMATION_CLASS, _Inout_ PVOID, _In_
+      ULONG, _Out_opt_ PULONG). This improves the correctness of FFI bindings in Rust and
+      C/C++ alike.
+    technical_anchor: "SAL annotations: _In_ (input, must be valid), _Out_ (output, must be writable), _Inout_ (both), _In_reads_(n) (buffer of n elements), _opt_ suffix (optional/can be NULL) — enforced by /analyze compiler flag"
+    would_relate_to: [T-001, T-004]
+    priority: low
+    priority_reason: "Singleton concept node; educational/completeness value, no direct operational impact."
+
+  - cluster_id: "calling-convention-documentation"
+    canonical_name: "Windows Calling Conventions for Syscall Stubs and FFI"
+    proposed_category: discovery
+    proposed_tier: C
+    rationale: "Singleton concept note about Windows calling conventions (__stdcall, __cdecl, __fastcall, __thiscall) as a prerequisite for syscall stub and FFI implementation."
+    member_note_ids:
+      - "lgtm:calling-convention-documentation-gap"
+    consolidated_description: |
+      SEC670 dedicates an entire module to Windows calling conventions: __stdcall
+      (Win32 API default, callee cleans stack, arguments pushed right-to-left), __cdecl
+      (C runtime default, caller cleans stack, variadic-compatible), __fastcall
+      (first 2 args in ECX/EDX on x86, rest on stack; on x64 superseded by the unified
+      ABI), __thiscall (C++ member functions, this in ECX on x86). The x64 unified calling
+      convention (RCX/RDX/R8/R9 for first 4 integer args, XMM0-3 for floats, shadow space
+      allocation by caller) is the one that actually matters for the vault's syscall stubs
+      and NT API FFI on x64 Windows. The vault's T-001 through T-006 all assume this
+      convention but do not document it. A concept card should document each convention's
+      stack-cleanup responsibility, argument-passing registers, name mangling, and the
+      x64 unified ABI shadow space (32 bytes) — particularly relevant for hand-rolled
+      syscall stubs where the shadow space must be allocated or the return address
+      clobbers the first 8 bytes of where RCX was expected to persist.
+    technical_anchor: "x64 unified ABI: RCX/RDX/R8/R9 for first 4 integer args, 32-byte shadow space (_RSP+0..0x20) allocated by caller, return value in RAX, stack 16-byte aligned pre-call"
+    would_relate_to: [T-001, T-002, T-003, T-004, T-006]
+    priority: medium
+    priority_reason: "Singleton concept but foundational for understanding all syscall stub implementations (T-001-T-006); high prerequisite value."
+
+  - cluster_id: "windows-api-foundations"
+    canonical_name: "Windows API Foundations — Create* Kernel Objects, Handles, SAL"
+    proposed_category: discovery
+    proposed_tier: B
+    rationale: "Singleton coverage-gap note about the foundational Windows API patterns (kernel objects, handles, SAL) that T-014/T-015/T-016 assume."
+    member_note_ids:
+      - "lgtm:windows-api-foundation-coverage-gap"
+    consolidated_description: |
+      SEC670 Book 1 dedicates substantial material to SAL annotations, the Create* kernel-
+      object/handle pattern (CreateFile/CreateProcess/CreateThread/CreateEvent returning a
+      HANDLE with ref-count semantics), the CloseHandle/GetLastError error model, and the
+      WaitFor* synchronization family (WaitForSingleObject, WaitForMultipleObjects). The
+      vault's T-014 (Module Stomping), T-015 (not specified), and T-016 (NTAPI Hook Evasion)
+      all assume familiarity with these patterns but do not document them as a shared
+      prerequisite. A concept card should document the handle table model (per-process handle
+      table, handle value encoding with audit/inherit bits), the Create/Close lifecycle, the
+      GetLastError/HRESULT/NTSTATUS error-code regimes (and how they differ), and the
+      WaitFor* family's relationship to signaled/non-signaled kernel objects. This card
+      would serve as a navigation hub for readers new to Windows internals approaching the
+      vault's technique cards.
+    technical_anchor: "Create* → HANDLE (per-process handle table with Entry containing Lock/Inheritable/Audit/Protect-from-close bits) + CloseHandle + GetLastError (Win32 error) vs HRESULT vs NTSTATUS (ntstatus.h) error regimes"
+    would_relate_to: [T-014, T-015, T-016]
+    priority: medium
+    priority_reason: "Singleton but documents foundational Windows API patterns assumed by three existing cards; high prerequisite value."
+
+  - cluster_id: "rust-offensive-language-endorsement"
+    canonical_name: "Rust as Offensive Tooling Language — Cross-Source Endorsement"
+    proposed_category: discovery
+    proposed_tier: C
+    rationale: "Singleton convergence note confirming the vault's Rust-based architecture aligns with cross-source endorsement of Rust for offensive tools."
+    member_note_ids:
+      - "lgtm:rust-offensive-language-convergence"
+    consolidated_description: |
+      SEC670 unit 37 explicitly cites Rust as a language used 'with great success' for
+      offensive tools and shellcode, alongside C, C++, C#, and Go. The HUGIN vault is built
+      on this same premise (dark_crystal and client_rust are Rust crates). The convergence
+      validates the vault's architecture choice and suggests the vault can serve as a
+      reference implementation for Rust-based offensive tooling. A concept card should
+      document the specific Rust features that make it suitable for offensive tooling
+      (zero-cost abstractions, memory safety without GC, extern "C" FFI for Win32/NT API
+      binding, #[no_std] for PIC shellcode, proc macros for compile-time payload
+      transformation), the tradeoffs versus C/C++ (compilation time, binary size, learning
+      curve), and the specific crates the vault uses (windows-sys for Win32 bindings,
+      aes-gcm for crypto).
+    technical_anchor: "Rust extern \"C\" FFI for Win32/NT API binding + #[no_std] for PIC shellcode + windows-sys crate (raw FFI bindings) + aes-gcm crate"
+    would_relate_to: [T-021]
+    priority: low
+    priority_reason: "Singleton convergence; validates existing architecture choice rather than introducing a new technique."
+
+  - cluster_id: "pe-format-internals-concept"
+    canonical_name: "PE Format Internals — MZ Header, DOS Stub, Section Layout"
+    proposed_category: discovery
+    proposed_tier: C
+    rationale: "Two concept notes from different atlas batches both describe the PE file format structure as a foundational concept; concept node, not a technique."
+    member_note_ids:
+      - "lgtm:pe-section-manipulation-foundations"
+      - "lgtm:gap-pe-format-internals-coverage"
+    consolidated_description: |
+      SEC670 introduces the PE file format at a bird's-eye level — MZ header (IMAGE_DOS_HEADER),
+      DOS stub, e_lfanew offset (at 0x3C in IMAGE_DOS_HEADER) to IMAGE_NT_HEADERS, COFF file
+      header (IMAGE_FILE_HEADER), Optional Header (IMAGE_OPTIONAL_HEADER), section headers
+      (IMAGE_SECTION_HEADER array), and image pages. The .text section holds executable code;
+      .rdata holds read-only data including the Export Directory (whose RVA is in
+      IMAGE_DIRECTORY_ENTRY_EXPORT of the DataDirectory array). This structural layout is
+      the foundation for module stomping (T-006, overwriting a loaded module's .text section),
+      function stomping (overwriting specific export function bytes), and reflective loading
+      (T-013, manual PE mapping). A concept card should document the field-by-field layout
+      of IMAGE_DOS_HEADER (e_magic 'MZ', e_lfanew at 0x3C), IMAGE_NT_HEADERS (Signature
+      'PE\0\0', FileHeader, OptionalHeader), the DataDirectory[16] array, and the section
+      header fields (VirtualAddress, SizeOfRawData, PointerToRawData, Characteristics).
+    technical_anchor: "IMAGE_DOS_HEADER.e_lfanew at offset 0x3C → IMAGE_NT_HEADERS (Signature 'PE\0\0' + IMAGE_FILE_HEADER + IMAGE_OPTIONAL_HEADER) → DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT] → IMAGE_EXPORT_DIRECTORY in .rdata"
+    would_relate_to: [T-006, T-013, T-016, T-007]
+    priority: medium
+    priority_reason: "Two member notes from different batches; concept node but foundational prerequisite for module stomping, reflective loading, and PE manipulation."
+
+  - cluster_id: "def-file-ordinal-export-control"
+    canonical_name: ".def File Ordinal-Based Export Control"
+    proposed_category: exploit-primitive
+    proposed_tier: B
+    rationale: "Singleton emerging-tradecraft note about .def files for ordinal-based export declaration, operationally distinct from name-based resolution."
+    member_note_ids:
+      - "lgtm:def-file-export-ordinal-control"
+    consolidated_description: |
+      SEC670 covers .def files as a way to declare DLL exports with explicit ordinals and
+      library/version metadata. The .def file syntax includes EXPORTS section with function
+      name, ordinal (@N suffix), NONAME attribute (export by ordinal only, hiding the name),
+      and PRIVATE attribute (not visible in the import library). Ordinal-based export
+      resolution is operationally distinct from name-based resolution: GetProcAddress(hModule,
+      MAKEINTRESOURCE(ordinal)) resolves by ordinal, which bypasses name-based EDR hooks on
+      GetProcAddress and produces no export-name string in the import table. The vault's
+      T-008 (Thread Hijacking) and T-016 (NTAPI Hook Evasion) could benefit from ordinal-based
+      resolution for stealthy function lookup. A card should document the .def file syntax,
+      the linker /DEF flag, the MAKEINTRESOURCE(ordinal) macro for GetProcAddress, the
+      NONAME/Private attributes, and the detection surface (ordinal-only exports are a known
+      DLL-cloaking IoC).
+    technical_anchor: ".def file EXPORTS section: FunctionName @Ordinal NONAME PRIVATE — resolved via GetProcAddress(hModule, MAKEINTRESOURCE(ordinal)) bypassing name-based hooks"
+    would_relate_to: [T-008, T-016]
+    priority: medium
+    priority_reason: "Singleton but documents a distinct export-control mechanism with evasion implications; named technique with concrete .def syntax."
+
+  - cluster_id: "uacme-corpus-uac-bypass"
+    canonical_name: "UACMe Project as Canonical UAC Bypass Corpus"
+    proposed_category: privesc
+    proposed_tier: B
+    rationale: "Singleton convergence note identifying UACMe as the canonical research corpus for UAC bypass techniques, referencing the vault's existing UAC bypass implementations."
+    member_note_ids:
+      - "lgtm:uacme-corpus-coverage"
+    consolidated_description: |
+      SEC670 Unit 39 explicitly references the UACMe project's FusionScanFiles routine,
+      identifying UACMe as the canonical UAC bypass research corpus. The vault's T-021 covers
+      UAC bypass via CMSTP (Microsoft Connection Manager Profile Installer) and slui.exe
+      (Windows Activation executable) registry manipulation. UACMe documents 80+ UAC bypass
+      methods organized by auto-elevation mechanism (ICMLuaUtil, IColorDataProxy,
+      IEditionUpgradeManager, IFwCplUser), each exploiting a different auto-elevated COM
+      interface or binary. A card should document the UACMe corpus structure, the auto-
+      elevation criteria (requestedExecutionLevel=RequireAdministrator in manifest +
+      autoElevate=true), the COM-interface-based bypass pattern (instantiating an
+      elevated COM object and calling its methods to execute arbitrary actions), and the
+      FusionScanFiles routine specifically (which uses IFileOperation via elevated COM to
+      copy/replace files in protected locations).
+    technical_anchor: "UACMe FusionScanFiles: elevated COM interface IFileOperation (CLSID {3ad00546-1E8F-4C95-A33A-9C9B20BEE633}) via ICMLuaUtil::ShellExec — bypass via autoElevate=true manifest + CoCreateInstance with elevated token"
+    would_relate_to: [T-021, T-017]
+    priority: medium
+    priority_reason: "Singleton but documents a named corpus (UACMe) with 80+ methods and a specific routine (FusionScanFiles); privesc reference value."
+
+  - cluster_id: "service-persistence-architecture"
+    canonical_name: "Windows Service Architecture and Failure-Action Persistence"
+    proposed_category: persistence
+    proposed_tier: A
+    rationale: "Two coverage-gap notes from different atlas batches both describe service-based persistence: the service architecture (main thread, service thread, control handler) and the failure-action resilience mechanism."
+    member_note_ids:
+      - "lgtm:windows-service-persistence-coverage"
+      - "lgtm:service-failure-actions-resilience"
+    consolidated_description: |
+      SEC670 documents the three-component Windows service architecture required to construct
+      a functional service: the main thread (calling StartServiceCtrlDispatcher with a
+      SERVICE_TABLE_ENTRY), the service thread (the actual ServiceMain callback), and the
+      control handler (registered via RegisterServiceCtrlHandler for
+      SERVICE_CONTROL_STOP/PAUSE/CONTINUE events). For persistence resilience, the
+      SERVICE_FAILURE_ACTIONS structure is set via ChangeServiceConfig2 with
+      SERVICE_CONFIG_FAILURE_ACTIONS, specifying SC_ACTION_RESTART with a delay (e.g., 60
+      seconds) — ensuring the service auto-restarts on failure and thus survives
+      termination. The vault's T-017 documents PhantomPersist with a 30-minute resilience
+      monitor but does not document the service architecture or the failure-action
+      mechanism. A card should document the service registration sequence (CreateService →
+      StartServiceCtrlDispatcher → RegisterServiceCtrlHandler → SetServiceStatus), the
+      ChangeServiceConfig2 failure-action API, and how the auto-restart creates a
+      self-healing persistence layer.
+    technical_anchor: "StartServiceCtrlDispatcher(SERVICE_TABLE_ENTRY) → ServiceMain → RegisterServiceCtrlHandler + ChangeServiceConfig2(SERVICE_CONFIG_FAILURE_ACTIONS, SC_ACTION_RESTART with delay) for auto-restart resilience"
+    would_relate_to: [T-017]
+    priority: high
+    priority_reason: "Two member notes from different batches; documents a SYSTEM-privilege persistence mechanism with auto-restart resilience absent from T-017."
+
+  - cluster_id: "pe-export-directory-resolution"
+    canonical_name: "PE Export Directory Traversal for API Resolution"
+    proposed_category: discovery
+    proposed_tier: B
+    rationale: "Two notes (one convergence, one emerging-tradecraft) both describe the PE export directory traversal as the shared foundation for T-004, T-006, and T-008 — the same mechanism reimplemented as custom GetProcAddress."
+    member_note_ids:
+      - "lgtm:cross-source-pe-export-resolution-convergence"
+      - "lgtm:getprocaddress-implementation-as-resolution-primitive"
+    consolidated_description: |
+      SEC670 units 23-32 walk through the PE export resolution chain: IMAGE_DOS_HEADER →
+      e_lfanew → IMAGE_NT_HEADERS → OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]
+      → IMAGE_EXPORT_DIRECTORY (in .rdata) → AddressOfNames (DWORD RVA array of name
+      pointers) → AddressOfNameOrdinals (WORD ordinal array, parallel to names) →
+      AddressOfFunctions (DWORD RVA array of function pointers, indexed by ordinal). The
+      resolution algorithm: binary-search AddressOfNames for the target function name, read
+      the parallel ordinal from AddressOfNameOrdinals, index into AddressOfFunctions with
+      that ordinal, and add the module base address to get the function's virtual address.
+      SEC670 Unit 40 tasks students with reimplementing GetProcAddress — the same primitive
+      T-004 PEB Walker implements by walking gs:[0x60] → PEB → Ldr → InLoadOrderModuleList
+      to find ntdll, then traversing its export table to resolve Nt* functions. This
+      traversal is the shared foundation for T-004 (API resolution), T-006 (module stomping,
+      which must locate export functions to stomp), and T-008 (thread hijacking, which must
+      resolve function addresses for hijack targets).
+    technical_anchor: "IMAGE_EXPORT_DIRECTORY traversal: AddressOfNames (DWORD* RVA array) → binary search → AddressOfNameOrdinals (WORD* parallel array) → AddressOfFunctions[ordinal] (DWORD RVA) + base address = function VA — reimplemented as custom GetProcAddress via PEB → Ldr → InLoadOrderModuleList"
+    would_relate_to: [T-004, T-006, T-008]
+    priority: high
+    priority_reason: "Two member notes; documents the PE export resolution mechanism shared by three existing cards (T-004, T-006, T-008); foundational prerequisite."
+
+  - cluster_id: "network-serialization-endianness-c2"
+    canonical_name: "Network Serialization and Endianness for C2 Protocol Design"
+    proposed_category: networking
+    proposed_tier: B
+    rationale: "Singleton coverage-gap note about byte-order serialization concerns for C2 protocol design, not documented in T-022."
+    member_note_ids:
+      - "lgtm:serialization-endianness-c2-protocol"
+    consolidated_description: |
+      SEC670 covers serialization concerns specific to C2 protocol design: byte ordering
+      (_byteswap_ushort/ulong/uint64 for big-endian to little-endian conversion on x86/x64,
+      which is natively little-endian), serialization libraries (alpaca, a header-only C++
+      binary serialization library), and C++20 std::bit_cast for type-safe reinterpretation
+      of raw bytes between same-size types without violating strict aliasing. The vault's
+      T-022 documents HTTP transport but does not address the binary protocol layer above it.
+      A card should document the endianness differential between x86/x64 (little-endian) and
+      network byte order (big-endian, per RFC 791), the hton*/ntoh* and _byteswap_* families,
+      the tradeoff between binary (compact, fast, fragile to schema changes) and text (JSON,
+      verbose, flexible) serialization for C2 protocols, and how the vault's Rust-based
+      protocol (client_rust crate) handles serialization (likely via serde + bincode or
+      postcard).
+    technical_anchor: "_byteswap_ushort/ulong/uint64 (MSVC intrinsics for bswap16/32/64) + C++20 std::bit_cast<To, From>() for type-punned reinterpretation + alpaca header-only serialization library"
+    would_relate_to: [T-022]
+    priority: medium
+    priority_reason: "Singleton but documents the C2 binary protocol layer (serialization, endianness) that T-022's HTTP transport sits beneath."
+
+  - cluster_id: "ntsetinformationobject-handle-flags"
+    canonical_name: "NtSetInformationObject Handle Flag Manipulation (Protect-from-Close)"
+    proposed_category: edr-evasion
+    proposed_tier: B
+    rationale: "Singleton coverage-gap note about NtSetInformationObject with ObjectHandleFlagInformation for handle-table entry manipulation, not documented in T-016."
+    member_note_ids:
+      - "lgtm:gap-handle-flag-manipulation-via-ntsetinformationobject"
+    consolidated_description: |
+      SEC670 unit 3 documents the handle table Entry bit fields — Lock, Inheritable, Audit,
+      and Protect-from-close — and explicitly names NtSetInformationObject with
+      ObjectHandleFlagInformation (class 0) as the API to manipulate the Protect-from-close
+      and Inheritable flags. The OBJECT_HANDLE_FLAG_INFORMATION structure contains two
+      BOOLEAN fields: Inherit (whether the handle is inherited by child processes) and
+      ProtectFromClose (whether CloseHandle on this handle returns ERROR_INVALID_HANDLE
+      instead of closing). Setting ProtectFromClose=1 prevents the handle from being closed,
+      which can be used to pin open handles to resources (e.g., a file handle to a deleted
+      file, preserving its data) or to prevent EDR from closing handles to monitored
+      resources. The vault's T-016 (NTAPI Hook Evasion) does not document this handle-
+      manipulation primitive. A card should document the OBJECT_HANDLE_FLAG_INFORMATION
+      structure, the NtSetInformationObject call, the detectability (ObjectHandleFlagInformation
+      is a rare information class), and operational scenarios for Protect-from-close.
+    technical_anchor: "NtSetInformationObject(ObjectHandleFlagInformation, class 0) with OBJECT_HANDLE_FLAG_INFORMATION {Inherit, ProtectFromClose} — ProtectFromClose=1 makes CloseHandle return ERROR_INVALID_HANDLE"
+    would_relate_to: [T-016]
+    priority: medium
+    priority_reason: "Singleton but documents a specific NT API for handle-table manipulation with evasion and pinning use cases; named primitive."
+
+  - cluster_id: "com-apartment-mode-hijack-targeting"
+    canonical_name: "COM Apartment Mode as Hijack Targeting Variable"
+    proposed_category: persistence
+    proposed_tier: B
+    rationale: "Singleton coverage-gap note about COM apartment mode (STA vs MTA) as a variable that determines which InprocServer32 entries are viable hijack targets."
+    member_note_ids:
+      - "lgtm:gap-com-apartment-aware-hijack-targeting"
+    consolidated_description: |
+      SEC670 unit 15 frames CoInitialize as a binary prerequisite for COM hijacking, but
+      the COM apartment mode — STA (Single-Threaded Apartment) via CoInitialize(NULL) or
+      CoInitializeEx(NULL, COINIT_APARTMENTTHREADED) vs. MTA (Multi-Threaded Apartment) via
+      CoInitializeEx(NULL, COINIT_MULTITHREADED) — determines which InprocServer32 threading
+      model entries a host process will load. The registry key
+      HKCR\CLSID\{CLSID}\InprocServer32 has a ThreadingModel value (Apartment, Free, Both,
+      or Neutral). A process in STA will only load DLLs with ThreadingModel=Apartment or
+      Both; a process in MTA will only load ThreadingModel=Free or Both. T-017 (COM Hijack
+      persistence) does not document apartment-aware targeting. A card should document the
+      apartment-mode matrix, the CoInitialize/CoInitializeEx flag values, the ThreadingModel
+      registry values, and how to enumerate viable hijack targets by matching the host
+      process's apartment mode to the InprocServer32 ThreadingModel.
+    technical_anchor: "CoInitializeEx(NULL, COINIT_APARTMENTTHREADED) for STA vs CoInitializeEx(NULL, COINIT_MULTITHREADED) for MTA — InprocServer32 ThreadingModel value (Apartment/Free/Both/Neutral) determines loadability"
+    would_relate_to: [T-017]
+    priority: medium
+    priority_reason: "Singleton but documents a targeting variable that affects COM hijack viability in T-017; operational precision value."
+
+  - cluster_id: "multi-language-tool-diversity"
+    canonical_name: "Multi-Language Tool Diversity as Signature-Attribution Defense"
+    proposed_category: edr-evasion
+    proposed_tier: B
+    rationale: "Singleton emerging-tradecraft note about using multiple programming languages (C, C++, Rust, C#, Go) to prevent signature attribution across operations."
+    member_note_ids:
+      - "lgtm:emerging-tradecraft-language-diversity-for-signature-evasion"
+    consolidated_description: |
+      SEC670 unit 26 explicitly recommends developing offensive tools across C, C++, Rust,
+      C#, and Go so that signature attribution cannot tie multiple operations to a single
+      toolchain. Each language produces distinctive binary characteristics: C/C++ produce
+      unmanaged native code with MSVC or GCC ABI signatures; Rust produces native code with
+      unique monomorphized generics and panic-handling patterns; C# produces managed IL
+      assemblies with CLR metadata; Go produces statically linked binaries with Go runtime
+      signatures (goroutine scheduling, channel primitives). The vault is currently Rust-only
+      (dark_crystal, client_rust), meaning all vault-derived tooling shares Rust-attributable
+      binary features (panic string table, trait vtable layout, proc macro artifacts). A
+      concept card should document the per-language attribution surface (compiler
+      signatures, runtime artifacts, import patterns, section names), the rationale for
+      diversification (preventing cross-operation correlation), and the operational cost
+      (maintaining multiple toolchains, payload format compatibility across languages).
+    technical_anchor: "Per-language binary attribution: Rust (panic string table, monomorphized generics, .rustc section) vs Go (goroutine scheduler, runtime signatures) vs C# (CLR metadata, IL disassembly) vs C/C++ (MSVC/GCC ABI signatures)"
+    would_relate_to: []
+    priority: medium
+    priority_reason: "Singleton but articulates a cross-cutting attribution-evasion philosophy relevant to all vault tooling; operational tradecraft value."
+
+  - cluster_id: "amsi-bypass-customshell-challenges"
+    canonical_name: "AMSI Bypass and CustomShell Bootcamp Challenges"
+    proposed_category: edr-evasion
+    proposed_tier: B
+    rationale: "Singleton emerging-tradecraft note about AMSI bypass and CustomShell as named SEC701 challenges, adjacent to the vault's existing AMSI bypass implementations."
+    member_note_ids:
+      - "lgtm:amsi-bypass-as-bootcamp-challenge"
+    consolidated_description: |
+      SEC670 surfaces a 'Bootcamp' module listing 'AMSI No More' and 'CustomShell' as named
+      challenges under SEC701. The vault's T-016 already covers AMSI bypass via hardware
+      breakpoint (amsi_hbp.rs, using SetThreadContext to set a DR1 breakpoint on
+      AmsiScanBuffer) and PAGE_GUARD (amsi_page_guard.rs, using VirtualProtect to apply
+      PAGE_GUARD on the AMSI scan function's memory, catching the guard exception to
+      redirect execution). 'AMSI No More' likely refers to the classic patching approach
+      (overwriting AmsiScanBuffer's prologue with return-success bytes: mov eax, 1; ret).
+      'CustomShell' likely refers to a custom command-shell implementation that bypasses
+      AMSI by avoiding the content-scanning path entirely (not spawning cmd.exe, using
+      custom command parsing and execution). A card should document the three AMSI bypass
+      approaches (patching, hardware breakpoint, exception-based), the AmsiScanBuffer
+      function signature and its role in the AMSI pipeline (amsi.dll → AmsiScanBuffer →
+      AV/EDR scan provider), and the CustomShell alternative as a fourth approach (bypassing
+      by avoidance rather than by patching).
+    technical_anchor: "AmsiScanBuffer in amsi.dll — patching approach (prologue overwrite: mov eax, 1; ret) vs HW breakpoint (DR1 via SetThreadContext) vs PAGE_GUARD (VirtualProtect on AmsiScanBuffer memory)"
+    would_relate_to: [T-016]
+    priority: low
+    priority_reason: "Singleton; adjacent to existing T-016 AMSI bypass implementations; low novelty but documents the named challenge variants."
+```

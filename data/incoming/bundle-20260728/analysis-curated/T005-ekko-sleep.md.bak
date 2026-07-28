@@ -1,0 +1,325 @@
+---
+id: T-005
+name: Ekko ROP Sleep Obfuscation
+category: sleep-obfuscation
+tier: S
+mitre: T1497.003
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires: [T-001, T-004, T-016, T-021]
+enables: [T-017, T-018, T-019, T-022]
+vault_references:
+  - dark_crystal/crowd/src/sleep.rs
+  - dark_crystal/crates/core/src/ekko_variants.rs
+implements:
+  - file: dark_crystal/crowd/src/sleep.rs
+    key_functions: [ekko, ekko_sleep_dynamic, find_ret_gadget, cb_nt_continue, plain_sleep_ms]
+    key_structs: [UString]
+    key_constants: [WT_EXECUTEINTIMERTHREAD, PAGE_READWRITE=0x04, PAGE_EXECUTE_READ=0x20, 0xC3 ret gadget, IMAGE_SCN_MEM_EXECUTE=0x20000000]
+    lines_of_interest: ["L99-L120: cb_nt_continue NtContinue dispatcher", "L125-L160: find_ret_gadget ntdll .text scanner", "L170-L260: ekko() ROP frame construction with ret-gadget fix", "L240-L260: 6-frame timer queue dispatch with staggered delays", "L290-L300: ekko_sleep_dynamic jitter + CSPRNG key"]
+  - file: dark_crystal/crates/core/src/ekko_variants.rs
+    key_functions: [ekko_sleep_dynamic, ekko_rop_sleep, split_sleep, burst_sleep, nt_sleep_ms, apply_cloak_before_sleep, apply_uncloak_after_sleep]
+    key_structs: [UString]
+    key_constants: [PAGE_READWRITE=0x04, PAGE_EXECUTE_READ=0x20, jitter divisor=8, burst range=4..9, sandbox spin probability=0.4]
+    lines_of_interest: ["L28-L48: ekko_sleep_dynamic profile dispatch + stack spoof guard", "L50-L78: split_sleep random halving", "L80-L105: burst_sleep 4-9 sub-sleeps", "L107-L120: nt_sleep_ms via RecycledGate syscall2", "L122-L152: apply_cloak_before/after using VirtualProtect", "L154-L230: ekko_rop_sleep (variant with BUG: no ret gadget, timer-based RtlCaptureContext)"]
+min_windows: Windows 7 x64
+needs_admin: no
+tags: [sleep, rop-chain, rc4, memory-encryption, timer-queue, ntcontinue, rtlcapturecontext, stack-spoof, jitter, anti-sandbox]
+---
+
+# Ekko ROP Sleep Obfuscation — Operator Playbook
+
+## TL;DR
+Ekko turns "sleep" into a 6-frame ROP chain executed by the native timer-queue thread pool. While the agent sleeps, its own PE image is flipped to `PAGE_READWRITE` and RC4-encrypted in place, so memory scanners (`pe-sieve`, `Moneta`, `Hunt-Sleeping-Beacons`) see ciphertext on a non-executable page. The chain is driven by `NtContinue` restoring crafted `CONTEXT` frames — the agent never executes its own code during the sleep window. Use this whenever long polling cadence (≥1s) is acceptable and you need to defeat passive memory scanners.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `dark_crystal/crowd/src/sleep.rs` | **Canonical Ekko** with two critical bug fixes (main-thread `RtlCaptureContext`, `ret` gadget at `[RSP]`); pure ROP, no profile selector | `ekko(sleep_ms, key)`, `ekko_sleep_dynamic(ms)`, `find_ret_gadget()`, `cb_nt_continue()`, `plain_sleep_ms()` | ~305 lines |
+| `dark_crystal/crates/core/src/ekko_variants.rs` | Profile dispatcher (`ekko` / `burst` / `split`) plus cloak/uncloak helpers for non-ROP variants; **older/broken Ekko** used as reference | `ekko_sleep_dynamic(ms)`, `ekko_rop_sleep(ms)`, `split_sleep`, `burst_sleep`, `nt_sleep_ms`, `apply_cloak_before_sleep`, `apply_uncloak_after_sleep` | ~230 lines |
+
+The two files overlap in purpose but **diverge in correctness**: `sleep.rs` is the patched, production-ready implementation; `ekko_variants.rs` retains the historical bugs as variant scaffolding and adds the `burst`/`split`/cloak modes the canonical file does not yet expose.
+
+## How It Works
+
+The mechanism is a timer-queue-driven ROP chain. Each numbered step cites the exact function/identifier from `sleep.rs` (the canonical impl) unless noted.
+
+1. **Resolve API surface dynamically** (`ekko()`, `sleep.rs` L176-L192). `LoadLibraryA` pulls `ntdll`, `kernel32.dll`, `Advapi32.dll`; `GetProcAddress` resolves `RtlCaptureContext`, `NtContinue`, `SystemFunction032`, `VirtualProtect`, `WaitForSingleObject`, `SetEvent`. Zero-address check at L192-L196 → falls back to `plain_sleep_ms()` if any resolution fails. The fallback path uses `NtDelayExecution` directly (L295-L308) — no encryption, no VirtualProtect.
+2. **Locate the PE image** (L198-L202). `GetModuleHandleA(null())` returns the host module base; cast to `IMAGE_DOS_HEADER`, walk `e_lfanew` to `IMAGE_NT_HEADERS64`, read `OptionalHeader.SizeOfImage`. The entire image (headers + `.text` + `.data` + `.rsrc` + IAT) is the encryption target.
+3. **Heap-allocate RC4 key + UString outside the image range** (L204-L218). `Box::new(*key)` and `Box::new(UString { ... })` put the 16-byte RC4 key, the `UString` describing the key, and the `UString` describing the image on the process heap. This is essential: anything inside `image_base..+image_size` is RC4-scrambled by Frame 2 — including stack locals. Heap allocations survive because they live outside that VA range.
+4. **Build timer queue + completion event** (L220-L228). `CreateTimerQueue()` → `h_timer_queue`; `CreateEventW(null, 0, 0, null)` → manual-reset=false event used for completion signaling. Null-check → fallback on failure.
+5. **Capture the main thread's `CONTEXT`** (L235, **BUG 2 FIX** comment). `RtlCaptureContext(&mut ctx_thread)` is called **inline on the calling thread**. The older `ekko_variants.rs` (L211) dispatched it via `CreateTimerQueueTimer(delay=0, callback=rtl_capture_context, &ctx_thread)`, which captured a timer-pool thread's context — wrong RIP, wrong RSP. The fix is one line but changes everything: all six downstream `CONTEXT` frames are derived from `ctx_thread` by copying it (`rop_X = ctx_thread;`) and patching `Rip`, `Rsp`, and arg registers, so the captured base must be the *main* thread.
+6. **Locate a `ret` gadget in `ntdll`** (`find_ret_gadget()`, L125-L160, **BUG 1 FIX**). Walks the PE section table, finds the first section with `Characteristics & 0x20000000` (`IMAGE_SCN_MEM_EXECUTE`), and linear-scans for byte `0xC3`. Returns its VA. If 0 → cleanup + `plain_sleep_ms` fallback.
+7. **Build 6 ROP frames** (L236-L291). Each frame starts as a copy of `ctx_thread`, then:
+   - `Rsp -= 8` — push one qword of room
+   - `*(Rsp as *mut u64) = ret_gadget` — write the `ret` gadget address at `[RSP]` so when the target function returns it jumps to `ret`, pops one more qword, and the timer-thread frame cleanly unwinds instead of crashing (BUG 1 FIX)
+   - `Rip = target_function`
+   - Windows x64 calling convention: `Rcx/Rdx/R8/R9` = args 1-4
+   
+   The six frames:
+   | # | Delay | Rip | Args | Effect |
+   |---|---|---|---|---|
+   | 1 | 100ms | `VirtualProtect` | `image_base, image_size, 0x04 (PAGE_RW), &old_protect` | Image → RW |
+   | 2 | 200ms | `SystemFunction032` | `&img_ustr, &key_ustr` | RC4 encrypt image |
+   | 3 | 300ms | `WaitForSingleObject` | `-1 (INVALID_HANDLE_VALUE), sleep_ms` | Real sleep |
+   | 4 | 300+sleep+100ms | `SystemFunction032` | `&img_ustr, &key_ustr` | RC4 decrypt (RC4 is self-inverse) |
+   | 5 | 300+sleep+200ms | `VirtualProtect` | `image_base, image_size, 0x20 (PAGE_ER), &old_protect` | Image → RX |
+   | 6 | 300+sleep+300ms | `SetEvent` | `h_event` | Signal completion |
+8. **Enqueue timers** (L262-L279). `CreateTimerQueueTimer(&h_timer, h_timer_queue, nc, ctx_ptr, delay_ms, 0, WT_EXECUTEINTIMERTHREAD)`. `nc` is `NtContinue` transmuted into a `WAITORTIMERCALLBACK`. When each timer fires, the timer-pool thread calls `NtContinue(ctx_ptr, 0)` → restores `RIP/RSP/regs` → jumps into the target function with the crafted args. `WT_EXECUTEINTIMERTHREAD` forces execution on a persistent timer thread (not a worker thread).
+9. **Main thread blocks** (L281): `WaitForSingleObject(h_event, 0xFFFFFFFF)` until Frame 6 signals.
+10. **Cleanup** (L283): `DeleteTimerQueueEx(h_timer_queue, null_mut())` destroys the queue.
+
+## Code Architecture
+
+### Call Graph
+
+```
+ekko_sleep_dynamic(ms)            [sleep.rs public API]
+├── thread_rng().fill(&mut key)   [16-byte CSPRNG key]
+├── jitter: rng.gen_range(0..(ms/8).max(1))   [±12.5%]
+└── unsafe { ekko(total, &key) }
+    ├── LoadLibraryA × 3
+    ├── GetProcAddress × 6
+    ├── GetModuleHandleA(null) → image_base
+    ├── Box::new(key)          [heap, outside image]
+    ├── Box::new(UString × 2)  [heap, outside image]
+    ├── CreateTimerQueue / CreateEventW
+    ├── RtlCaptureContext(&mut ctx_thread)        [main thread, inline]
+    ├── find_ret_gadget(h_ntdll)                   [scans ntdll .text for 0xC3]
+    ├── 6× CONTEXT patching (Rsp-=8, *Rsp=ret, Rip=Rcx=Rdx=R8=R9=...)
+    ├── 6× CreateTimerQueueTimer(..., nc=NtContinue, ctx_ptr, delay)
+    └── WaitForSingleObject(h_event, INFINITE)
+        DeleteTimerQueueEx
+    [fallback on any failure → plain_sleep_ms → NtDelayExecution]
+```
+
+### Variant Dispatcher (`ekko_variants.rs`)
+
+`crate::selection_config::sleep_profile()` (T-021 config) returns `"ekko" | "burst" | _` (default `split`). Each path:
+- **`ekko`** → `unsafe { ekko_rop_sleep(total as u32) }` — same ROP concept, **but the `ekko_variants.rs` version of `ekko_rop_sleep` has BOTH bugs** (no ret gadget at `[RSP]`, and uses `CreateTimerQueueTimer` to invoke `rtl_capture_context` on a timer thread). In production, route to `sleep.rs::ekko` instead.
+- **`burst`** → `apply_cloak_before_sleep` + `burst_sleep` (4-9 random sub-sleeps summing to total) + `apply_uncloak_after_sleep`. Each sub-sleep uses `nt_sleep_ms` → T-001 RecycledGate indirect syscall to `NtDelayExecution`.
+- **`split`** (default) → two random halves via `nt_sleep_ms`.
+- All paths: 40% chance of a post-sleep anti-sandbox spin loop (`rng.gen_bool(0.4)`), 500-1500 spins of `acc.rotate_left(3) ^ (i * 0x45d9f3b)`.
+
+### Data Flow
+
+```
+[main thread stack]                 [process heap, outside image]      [image_base..+size]
+  ctx_thread ──copy──┐                key_buf (16B RC4 key)              ╔══════════════════╗
+                       ├──> 6× CONTEXT frames on stack                 ║  PE image         ║
+  ret_gadget ──────────┘    key_ustr, img_ustr (heap ptrs)              ║  (RC4 target)     ║
+  h_event handle                                                         ╚══════════════════╝
+       │                                                                              ▲
+       └── WaitForSingleObject(h_event, INFINITE)                                    │
+                                                                                     │
+[timer-pool thread fires every delay]                                                │
+  NtContinue(&rop_frame) → RIP=VirtualProtect/SystemFunction032/... ────operates───┘
+```
+
+### Type Hierarchy
+
+- `UString { length: u32, max_length: u32, buffer: *mut c_void }` (`#[repr(C)]`) — matches the undocumented `UNICODE_STRING` layout that `SystemFunction032` consumes. RC4 key and image are both described by `UString` instances; the API uses `key->buffer` to XOR `data->buffer` for `data->length` bytes.
+- `CONTEXT` (winapi re-export of `_CONTEXT` for x64) — 1232 bytes, holds `Rip`, `Rsp`, `Rcx`, `Rdx`, `R8`, `R9`, segment regs, FP state. `NtContinue` treats it as the authoritative thread state.
+
+### Feature Gates
+
+No `cfg()` gates in either file — Ekko is unconditionally compiled when the `crowd` crate (or `core` crate, via `ekko_variants`) is built. Profile selection is runtime, via `selection_config::sleep_profile()`.
+
+## Operational Profile
+
+### When to Use
+- Long-haul C2 beacons with ≥1s poll intervals (typical: 3-30s, jittered).
+- Memory scanners in the threat model (`pe-sieve`, `Moneta`, `Hunt-Sleeping-Beacons`, EDR `.text` hash checks).
+- Post-exploitation dwell phases where the agent is mostly idle (waiting for operator tasking).
+- Engagement duration: hours-to-days, where the agent will sleep thousands of times.
+
+### When NOT to Use
+- Sub-100ms sleep cadence — the 6-frame ROP chain has a fixed 100/200/300ms dispatch overhead (~600ms minimum even for `sleep_ms=0`).
+- Cooperative timing attacks where you need precise wake timing (jitter +6-12.5% from `rng.gen_range(0..(ms/8).max(1))`).
+- Targets where `CreateTimerQueueTimer` is monitored by ETW `Tbs_ThreadPool` (rare but EDR vendors have begun adding it).
+- Single-shot droppers — no benefit since they execute and exit.
+
+### Kill Chain Position
+
+```
+T-004 (PEB walk) → T-002 (SSN resolve) → T-001 (RecycledGate)
+   → T-012 (Early Cascade injection) → **T-005 (Ekko sleep)** ← idle loop
+       → T-017 (Persistence) + T-018 (Edo Tensei) + T-019 (Dead Drop C2)
+```
+
+Ekko sits in the agent's main loop between task polls. Persistence (T-017), autonomous C2 (T-019), and resurrection (T-018) all rely on the agent surviving memory scans during idle — T-005 enables them.
+
+### Trade-offs
+
+| Dimension | Rating | Notes |
+|---|---|---|
+| Stealth | 9/10 | Image is `PAGE_READWRITE` + RC4-encrypted during sleep; scanners see random bytes on a non-exec page. Loses 1 point: timer-queue callbacks leave `Tbs_ThreadPool` ETW events. |
+| Reliability | 7/10 | Two bugs in `ekko_variants.rs` (`RtlCaptureContext` on wrong thread; missing `ret` gadget) caused timer-thread crashes — **use `sleep.rs::ekko` only**. Heap allocation of `UString` is fragile under low-memory conditions. |
+| Complexity | 8/10 | Hand-rolled PE section walking in `find_ret_gadget`, `unsafe transmute` of `WAITORTIMERCALLBACK`, manual `CONTEXT` patching, alignment-sensitive `Rsp -= 8` writes. |
+| Version range | Win7+ x64 | `CreateTimerQueueTimer` legacy API present since XP, but the x64 `CONTEXT` layout requires Win7x64+. `SystemFunction032` is in `advapi32` since Win7. |
+| Privilege needed | none | No admin required. Runs as the agent's own thread. |
+
+## Rust Implementation Deep Dive
+
+### `unsafe` Blocks
+
+1. **`sleep.rs::ekko()` whole-function** — declared `pub unsafe fn ekko(sleep_ms: u32, key: &[u8; 16])`. Reason: dereferences raw pointers (`image_base as *const IMAGE_DOS_HEADER`), calls FFI (`GetProcAddress`, `CreateTimerQueueTimer`), writes to arbitrary `*mut u64` (`*(rop_prot_rw.Rsp as *mut u64) = ret_gadget`).
+2. **`sleep.rs::find_ret_gadget()`** — declared `unsafe fn`. Walks `IMAGE_SECTION_HEADER` array via `first_section.add(i)`, dereferences `*section_va.add(offset) == 0xC3`. Bounds-check via `section_sz` from `Misc.VirtualSize()`. Returns 0 on null module or no-exec sections.
+3. **`sleep.rs::cb_nt_continue()`** — `extern "system" fn` invoked by the timer pool. Internally `unsafe { let nt_cont = std::mem::transmute(GetProcAddress(...)); nt_cont(context, 0); }`. Transmutes a `FARPROC` to `unsafe extern "system" fn(*mut CONTEXT, u8) -> NTSTATUS` and calls it. **No error check on `GetProcAddress` return** — if `NtContinue` lookup fails inside the callback, this is UB. In practice `ntdll` is always loaded and the name is a literal string, so this is acceptable.
+4. **`sleep.rs::ekko_sleep_dynamic()`** — only `unsafe { ekko(total, &key) }` call.
+5. **`sleep.rs::plain_sleep_ms()`** — `unsafe { let nt_delay = transmute(GetProcAddress(...)); nt_delay(0, &ticks); }`. Same transmute pattern, same lack of error check.
+6. **`ekko_variants.rs::apply_cloak_before_sleep()` / `apply_uncloak_after_sleep()`** — VirtualProtect FFI on `image_base` with `0x04` / `0x20`. Reads `IMAGE_DOS_HEADER` and `IMAGE_NT_HEADERS64` via raw pointers.
+7. **`ekko_variants.rs::ekko_rop_sleep()`** — same shape as `sleep.rs::ekko` but with the two documented bugs. Treat as reference, not production.
+8. **`ekko_variants.rs::nt_sleep_ms()`** — uses `crate::sys_indirect::syscall2(ssn, 0, &ticks as *const i64 as usize)` via T-001 RecycledGate.
+
+### Inline Assembly
+
+**None.** Ekko relies entirely on `RtlCaptureContext` (NT-provided) and `NtContinue` (NT-provided) to manipulate the register state. No `core::arch::asm!` blocks in either file. This is a strength: the same source compiles on `stable` Rust with no `asm!` feature flag, and avoids `#![feature(asm_sym)]`/LLVM register-constraint quirks.
+
+### FFI Patterns
+
+- **Type aliasing via `transmute`**: `WAITORTIMERCALLBACK` is `Option<unsafe extern "system" fn(*mut c_void, u8)>` per winapi. `std::mem::transmute(nt_continue)` reinterprets a `u64` function pointer as that callback type — **the call site must guarantee the target has the matching Win64 ABI**. `NtContinue` is `NTAPI NTSTATUS NtContinue(PCONTEXT, BOOLEAN)`, which matches `extern "system" fn(*mut CONTEXT, u8) -> NTSTATUS`. Verified.
+- **Handle ownership**: `h_timer_queue` and `h_event` are raw `HANDLE`s with no RAII. Cleanup is manual: `DeleteTimerQueueEx(h_timer_queue, null_mut())` at the end of `ekko()`. **Leak risk**: if any of the early-return fallbacks (after `CreateTimerQueue` succeeds but before `DeleteTimerQueueEx`) triggers, the queue leaks. Currently the only post-creation fallback is `ret_gadget == 0` at L213-L217, which does call `DeleteTimerQueueEx` — good.
+- **`UString` lifetime**: `key_buf` is `Box::new(*key)` — heap-allocated, dropped at end of `ekko()`. The `key_ustr.buffer` points into `key_buf`. **Critical**: `key_ustr` and `img_ustr` must outlive every ROP frame that references them. They are `Box`-held locals, and `ekko()` blocks on `WaitForSingleObject(h_event, INFINITE)` until Frame 6 completes — so the boxes are alive for the entire chain. Correct.
+- **`old_protect: Box<u32>`** — single `Box` shared across all 6 frames (Frames 1 and 5 both write to `&mut *old_protect`). Frames 1 and 5 are temporally disjoint (100ms vs 300+sleep+200ms), so the sharing is safe.
+
+### Initialization Patterns
+
+- `mem::zeroed()` for `CONTEXT` (1232 bytes) — six times in `ekko()`. This is **expensive** (memset 7.4KB on every sleep call) but necessary because `CONTEXT` has padding/FP state that must be zero before partial assignment.
+- No `OnceLock` / `LazyCell` in either file — every sleep call re-resolves `NtContinue`, `SystemFunction032`, etc. via `GetProcAddress`. **Optimization opportunity**: cache these in a `OnceLock<EkkoFuncs>` struct to skip ~6 syscalls per sleep cycle. Currently re-resolution is "free" OPSEC (no extra IAT entries) but wasteful on a hot path.
+- `thread_rng().fill(&mut key_data[..])` — fresh 16-byte RC4 key every sleep call. **Correct**: reusing a key would let a scanner who captures two ciphertexts XOR them to reveal plaintext XOR plaintext. Per-call randomization defeats this.
+
+### Error Handling
+
+Error paths in `ekko()`:
+| Failure | Detection | Recovery |
+|---|---|---|
+| Any of 6 API resolutions = 0 | `.iter().any(\|&p\| p == 0)` (L192) | `plain_sleep_ms(sleep_ms)` |
+| `h_timer_queue.is_null()` or `h_event.is_null()` | explicit null check (L224) | `plain_sleep_ms(sleep_ms)` |
+| `ret_gadget == 0` (ntdll has no executable section) | return value of `find_ret_gadget` (L213) | `DeleteTimerQueueEx` + `plain_sleep_ms` |
+| Timer-pool crash mid-chain (BUG 1 in `ekko_variants.rs`) | none — silent hang | (none — main thread blocks forever on `WaitForSingleObject(h_event, INFINITE)`) |
+
+**Critical gap**: `WaitForSingleObject(h_event, 0xFFFFFFFF)` is an INFINITE wait. If a timer thread crashes (e.g., the `ret` gadget is in a non-executable page, or `SystemFunction032` returns an error and the frame's `ret` lands on the gadget but the next frame never fires), the main thread hangs forever. **Recommendation**: replace with a timeout `sleep_ms + 5000` and fallback to `plain_sleep_ms` on `WAIT_TIMEOUT`.
+
+### Memory Layout
+
+- `UString` is 16 bytes: `length: u32` (0-3), `max_length: u32` (4-7), padding (8-15 on x64? actually no — buffer is `*mut c_void` at offset 8, so 8+8=16, no padding). Matches `UNICODE_STRING` x64 layout.
+- `CONTEXT` x64 = 1232 bytes (0x4D0). Key fields used: `Rip` (offset 0xF8), `Rsp` (0x98), `Rcx` (0xA0), `Rdx` (0xA8), `R8` (0xB0), `R9` (0xB8). The `Rsp -= 8` decrement is by 1 qword — must be 8-byte aligned for x64 ABI; the captured `Rsp` from `RtlCaptureContext` is already aligned, so `Rsp -= 8` preserves alignment.
+- `Box<u32>` for `old_protect` — 4 bytes on heap, 8-byte aligned by allocator. The `&mut *old_protect as *mut u32 as u64` cast is safe because the heap allocation is stable for the function lifetime.
+
+### RC4 Self-Inverse Property
+
+`SystemFunction032(data: *mut UString, key: *mut UString)` is the documented RC4 implementation in `advapi32`. RC4 is a stream cipher where `encrypt` and `decrypt` are the same XOR-keystream operation — **calling `SystemFunction032(&img, &key)` twice with the same key returns the original bytes**. This is why Frames 2 and 4 use the *same* function pointer and *same* args — Frame 2 encrypts, Frame 4 decrypts, and the `UString` references must remain valid across both. Confirmed by the `Box`-held `key_ustr`/`img_ustr` lifetimes.
+
+## Cross-References Found in Code
+
+- `sleep.rs` → none (self-contained; pure winapi)
+- `ekko_variants.rs:ekko_sleep_dynamic()` → calls `crate::evasion::stack_spoof::spoof_return_address()` (**T-016 stack spoofing**) — wraps the entire sleep in a stack-spoofing RAII guard so the return address on the main thread's stack points into a legit module during the sleep window.
+- `ekko_variants.rs:ekko_sleep_dynamic()` → reads `crate::selection_config::sleep_profile()` (**T-021 config** — `OnceLock`-cached YAML from `include_str!`)
+- `ekko_variants.rs:nt_sleep_ms()` → calls `crate::compute_hash("NtDelayExecution")` (**T-004 PEB walker** DJB2 hash), `crate::sysindirect_map::get_ssn_and_gadget(hash)` (**T-004 syscall map**), `crate::sys_indirect::syscall2(ssn, 0, &ticks)` (**T-001 RecycledGate** indirect syscall dispatch).
+- `ekko_variants.rs:apply_cloak_before_sleep/apply_uncloak_after_sleep` → uses raw `VirtualProtect` (no syscall indirection — this is a minor OPSEC gap; the cloak/uncloak pair appears on the syscall trace as direct `VirtualProtect` calls from the agent's thread).
+
+## Edge Cases & Failure Modes
+
+1. **`RtlCaptureContext` invoked from a timer-pool thread (BUG 2 in `ekko_variants.rs`)**
+   - Code path: `ekko_variants.rs::ekko_rop_sleep()` L211: `CreateTimerQueueTimer(&mut null_mut(), h_timer_queue, rtl_capture_context, &mut ctx_thread, 0, 0, WT_EXECUTEINTIMERTHREAD)`.
+   - What goes wrong: the captured `Rip` is `rtl_capture_context`'s return address inside the timer thread, `Rsp` is the timer thread's stack. All 6 derived `CONTEXT` frames inherit this. When `NtContinue` fires Frame 1, it restores the timer-thread stack — `Rsp -= 8; *Rsp = ret_gadget` writes onto the timer thread's stack, but Frame 1's `VirtualProtect` `ret` lands back on the timer thread, which has no further work and silently exits. The chain breaks after Frame 1.
+   - Symptom: image is set to `PAGE_READWRITE` (Frame 1 ran) but never encrypted (Frame 2 onward never fires) and never restored to RX. Main thread blocks forever on `h_event`. **Image stays RW forever** — agent is bricked.
+   - Workaround: **use `sleep.rs::ekko()`** which calls `RtlCaptureContext` inline.
+
+2. **Missing `ret` gadget at `[RSP]` (BUG 1 in `ekko_variants.rs`)**
+   - Code path: `ekko_variants.rs::ekko_rop_sleep()` does `rop_prot_rw.Rsp -= 8` but never writes `*Rsp`.
+   - What goes wrong: when `VirtualProtect` returns, the `ret` instruction pops an undefined value from `[RSP]` (whatever was on the timer thread's stack at that offset) and jumps there. Almost certainly crashes the timer thread with an access violation.
+   - Symptom: one timer thread dies per fired frame; the chain stalls silently.
+   - Workaround: `sleep.rs::find_ret_gadget()` scans ntdll `.text` for `0xC3` and writes its address at `[RSP]` for every frame.
+
+3. **`find_ret_gadget` returns 0 (ntdll has no exec section)**
+   - Detection: explicit `if ret_gadget == 0` at `sleep.rs` L213.
+   - Recovery: `DeleteTimerQueueEx` + `plain_sleep_ms` fallback. Image is not encrypted. **Acceptable degraded mode** — better to sleep without encryption than to crash.
+
+4. **`SystemFunction032` returns non-zero NTSTATUS**
+   - Detection: none — `ekko()` does not check `SystemFunction032`'s return value (it's called via `NtContinue`-restored RIP, so the return value lands in `Rax` of the timer thread which immediately executes `ret` and unwinds).
+   - Symptom: image is partially encrypted or not encrypted at all; Frame 4 "decrypt" runs on plaintext, producing ciphertext. Agent crashes on next instruction fetch from a now-RC4-corrupted `.text`.
+   - Workaround: none in current code. Would need to add a post-Frame-4 integrity check (e.g., re-read `IMAGE_DOS_HEADER.e_magic` and verify `0x5A4D`).
+
+5. **`sleep_ms` < 300**
+   - The frame dispatch has 100+200+300 = 600ms of fixed pre-sleep overhead. For `sleep_ms=100`, Frame 3 fires at 300ms and Frame 4 fires at 300+100+100=500ms — total sleep is 100ms but the agent is blocked for ≥500ms.
+   - Workaround: gate `ekko()` behind `if sleep_ms >= 1000 { ekko(...) } else { plain_sleep_ms(sleep_ms) }`. Not present in current code.
+
+6. **`thread_rng()` re-keying across rapid sleeps**
+   - A new 16-byte key per call is cryptographically correct but generates CSPRNG syscalls (`ProcessPrng`) visible in ETW `Microsoft-Windows-RNG`). High-frequency sleep with Ekko = high RNG syscall rate.
+   - Workaround: cache a base key + per-call counter nonce, derive per-call keys via HKDF. Not implemented.
+
+7. **Image contains self-modifying data (e.g., `OnceLock` init flag)**
+   - If Frame 2 (encrypt) runs *after* a `OnceLock` was initialized (the `OnceLock` byte is in `.data`), Frame 4 (decrypt) restores it. But if any code executes *between* Frames 2 and 4 (it shouldn't — main thread is blocked), the `OnceLock` would be observed in an encrypted state.
+   - Workaround: ensure no other threads run during Ekko. Single-threaded agent design assumed.
+
+## Variant Ideas
+
+1. **Chacha20 instead of RC4**: `SystemFunction032` is RC4 (weak, distinguishable). Replace Frame 2/4 with a custom `ChaCha20` ROP frame using a `bcrypt.dll` BCryptEncrypt call. Larger keystream setup but cryptographically stronger and avoids the "RC4 in 2026" detection signature.
+2. **`RtlCreateTimer` + `NtSetTimer` instead of `CreateTimerQueueTimer`**: native NT timer API is less commonly hooked by EDR than the legacy winapi timer-queue. Trade-off: more complex setup, no built-in thread-pool dispatch.
+3. **Per-section encryption**: instead of `image_base..+image_size`, encrypt only `.text` + `.rdata` and leave `.data` + `.pdata` intact. Reduces `SystemFunction032` cost (RC4 over 4KB instead of 1MB) and lets `OnceLock` / `LazyCell` state survive sleep. Requires walking the section table in `ekko()` and per-section `VirtualProtect`.
+4. **Timer-threadless Ekko**: drive the chain via `RtlCreateTimer` + manual `NtContinue` calls from a single worker fiber, eliminating the `WT_EXECUTEINTIMERTHREAD` ETW signature.
+5. **Heap-spray the `UString`**: allocate `key_ustr` / `img_ustr` at randomized heap addresses per call to defeat signature-based scanners that key on `UString`-on-heap-near-`image_base` patterns.
+6. **Integrity canary**: add a 7th frame at `300+sleep+150` that reads `image_base` and writes a known canary (`0xDEADBEEF`) to a stack variable, verified after `WaitForSingleObject` returns. Catches partial-encryption failures (Edge Case 4).
+7. **Adaptive profile**: switch to `burst` (no encryption, just `nt_sleep_ms` via RecycledGate) when ETW `Microsoft-Windows-Kernel-Process` indicates a scanner PID is running.
+
+## OPSEC Notes
+
+### Artifacts Left
+
+- **Timer queue + event handle**: `CreateTimerQueue` / `CreateEventW` syscalls visible to ETW `Tbs_ThreadPool` provider (GUID `{202b1d1f-1e2f-4d2d-9d1f-99e3f9f4cfda}`). `DeleteTimerQueueEx` cleans up the queue but does **not** retroactively scrub the ETW event.
+- **`advapi32.dll` load**: `LoadLibraryA("Advapi32.dll\0")` in `ekko_variants.rs` L163 — if the host process hadn't already loaded advapi32, this adds it to the PEB module list mid-execution. `sleep.rs::ekko()` L176 uses `LoadLibraryA` identically. Workaround: check `GetModuleHandleA("advapi32")` first, fall back to `LoadLibraryA` only if null.
+- **`VirtualProtect` on the agent's own image** from a non-agent thread (the timer pool thread): this is an unusual call stack pattern. `VirtualProtect` source-VA = `image_base`, source-thread = timer pool, target-protection = `PAGE_READWRITE` on an `MEM_IMAGE` region — classic Ekko signature. EDR vendors have begun adding this exact pattern to detection rules.
+- **`RtlCaptureContext` followed by 6× `CreateTimerQueueTimer` within 1ms**: the call sequence itself is a fingerprint.
+- **`SystemFunction032` called twice within a sleep window**: this API is almost never used by legitimate software. Two calls symmetric around a `WaitForSingleObject` is the Ekko beacon signature.
+- **Anti-sandbox spin loop** (`ekko_variants.rs` L41-L48): `acc.rotate_left(3) ^ (i * 0x45d9f3b)` is a recognizable FPU-emulation-like workload. 40% chance per sleep call.
+
+### Cleanup
+
+- `DeleteTimerQueueEx(h_timer_queue, null_mut())` at `sleep.rs` L283 — destroys the timer queue and waits for outstanding callbacks. Does **not** zero the `CONTEXT` frames (they're stack locals, scrubbed on function return) or the `Box`-held `UString`s (dropped on return, heap freed but not zeroed — key material survives in freed heap until reuse).
+- **Recommendation**: explicitly `ptr::write_volatile`-zero `key_buf` before drop, or use `Zeroize` from the `zeroize` crate.
+
+### Telemetry-Bearing APIs
+
+| API | ETW Provider | Notes |
+|---|---|---|
+| `CreateTimerQueueTimer` | `Tbs_ThreadPool` | Fires per timer enqueue (6× per sleep) |
+| `VirtualProtect` | `Microsoft-Windows-Kernel-Memory` | 2× per sleep (RW + RX), source VA = image_base |
+| `SystemFunction032` | none directly | But `advapi32!SystemFunction032` import is unusual |
+| `RtlCaptureContext` | none | Pure CPU, no ETW |
+| `WaitForSingleObject` | `Microsoft-Windows-Kernel-Synch` | 1× per sleep, on `h_event` |
+
+## Reusable Patterns
+
+### Pattern: Heap-Outside-Image for ROP Data
+- **Use when**: any ROP chain encrypts/overwrites a memory range that includes your own stack frame.
+- **Code ref**: `sleep.rs::ekko()` L204-L218 (`Box::new(*key)`, `Box::new(UString { ... })`)
+- **How**: stack locals and `static`s inside the encrypted range get scrambled. `Box` forces the allocation onto the process heap (different VA range). Verify with `VirtualQuery` that the heap address is *not* in `[image_base, image_base + SizeOfImage)`.
+
+### Pattern: `ret`-Gadget Discovery via Section Table Walk
+- **Use when**: any ROP frame needs a clean return address.
+- **Code ref**: `sleep.rs::find_ret_gadget()` L125-L160
+- **How**: parse `IMAGE_DOS_HEADER` → `e_lfanew` → `IMAGE_NT_HEADERS64` → `IMAGE_FILE_HEADER::NumberOfSections` → walk `IMAGE_SECTION_HEADER[]` filtering on `Characteristics & IMAGE_SCN_MEM_EXECUTE (0x20000000)`. Linear-scan for `0xC3`. First match wins. ntdll is the canonical target because it's always loaded, always has `.text`, and `.text` always contains `0xC3` at many offsets.
+
+### Pattern: `CONTEXT`-Copy-and-Patch ROP Frame Builder
+- **Use when**: building ROP frames for `NtContinue`-driven execution.
+- **Code ref**: `sleep.rs::ekko()` L240-L291
+- **How**: `let mut frame = ctx_thread; frame.Rsp -= 8; *(frame.Rsp as *mut u64) = ret_gadget; frame.Rip = target_fn; frame.Rcx = arg1; frame.Rdx = arg2; ...`. The `Rsp -= 8` + write is the standard "push a return address" emulation for the Win64 ABI. The captured `ctx_thread` provides valid segment regs, FP state, and stack base so `NtContinue` restores a sane thread.
+
+### Pattern: RAII Stack-Spoof Guard Around Sleep
+- **Use when**: any sleep path, even non-Ekko.
+- **Code ref**: `ekko_variants.rs::ekko_sleep_dynamic()` L33: `let _guard = unsafe { crate::evasion::stack_spoof::spoof_return_address() };`
+- **How**: the guard's `Drop` impl restores the original return address. Even if the sleep variant panics, the stack is restored. T-016 stack spoofing composes cleanly with T-005 via this RAII pattern.
+
+### Pattern: Profile Selector via `OnceLock`-Cached `include_str!` YAML
+- **Use when**: agent needs runtime-selectable technique variants.
+- **Code ref**: `ekko_variants.rs::ekko_sleep_dynamic()` L35: `crate::selection_config::sleep_profile()`
+- **How**: `selection_config.rs` uses `static PROFILE: OnceLock<&str> = OnceLock::new();` initialized from `include_str!("../config.yaml")` parsed at first call. Compile-time embedding + runtime parse-once = zero file IO at decision time.
+
+### Pattern: Jitter via `rng.gen_range(0..(ms/8).max(1))`
+- **Use when**: any timed operation that should resist cadence fingerprinting.
+- **Code ref**: `sleep.rs::ekko_sleep_dynamic()` L292, `ekko_variants.rs::ekko_sleep_dynamic()` L30
+- **How**: `ms/8` = ±12.5% jitter. `.max(1)` guards against `ms=0` (which would panic on `gen_range(0..0)`). The jitter is *additive* (always extends), never shortens — guarantees the agent never wakes earlier than requested.

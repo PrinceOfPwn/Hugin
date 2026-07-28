@@ -1,0 +1,54 @@
+{
+  "timestamp": "2026-07-22T15:51:24.580058+00:00",
+  "model": "glm-5.2",
+  "total_jobs": 5,
+  "successful": 5,
+  "failed": 0,
+  "results": [
+    {
+      "job_id": "thc-crypto-opsec-misc",
+      "status": "success",
+      "elapsed_s": 155.8,
+      "files": [
+        "training-source/thc-chunks/thc-crypto-opsec-misc.md"
+      ],
+      "output_file": "thc-crypto-opsec-misc.md"
+    },
+    {
+      "job_id": "thc-network-ops",
+      "status": "success",
+      "elapsed_s": 176.6,
+      "files": [
+        "training-source/thc-chunks/thc-network-ops.md"
+      ],
+      "output_file": "thc-network-ops.md"
+    },
+    {
+      "job_id": "thc-exfil-shells",
+      "status": "success",
+      "elapsed_s": 200.2,
+      "files": [
+        "training-source/thc-chunks/thc-exfil-shells.md"
+      ],
+      "output_file": "thc-exfil-shells.md"
+    },
+    {
+      "job_id": "thc-backdoors-recon",
+      "status": "success",
+      "elapsed_s": 226.5,
+      "files": [
+        "training-source/thc-chunks/thc-backdoors-recon.md"
+      ],
+      "output_file": "thc-backdoors-recon.md"
+    },
+    {
+      "job_id": "thc-shell-tradecraft",
+      "status": "success",
+      "elapsed_s": 242.8,
+      "files": [
+        "training-source/thc-chunks/thc-shell-tradecraft.md"
+      ],
+      "output_file": "thc-shell-tradecraft.md"
+    }
+  ]
+}

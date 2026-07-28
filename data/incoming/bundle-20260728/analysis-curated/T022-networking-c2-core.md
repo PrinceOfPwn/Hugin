@@ -1,0 +1,383 @@
+---
+id: T-022
+name: Network and Protocol Suite
+category: networking
+tier: mixed
+mitre: T1071, T1071.001, T1090, T1090.003, T1132, T1132.001, T1571, T1572, T1573, T1573.002, T1105, T1105.001
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires: [T023-client-capabilities, T021-crypto-obfuscation, T019-edo-dead-drop]
+enables: [T023-client-capabilities, T019-edo-dead-drop, T021-crypto-obfuscation]
+vault_references:
+  - src/client_rust/src/protocol.rs
+  - src/client_rust/src/henge.rs
+  - src/client_rust/src/http_poll_transport.rs
+  - src/client_rust/src/tcp_transport.rs
+implements:
+  - file: src/client_rust/src/protocol.rs
+    key_functions: [build_message, parse_message]
+    key_structs: []
+    key_constants: [MSG_FRAME, MSG_HELLO, MSG_COMMAND, MSG_PING, MSG_AMATERASU_CHUNK, MSG_KAMUI_TCP_DATA, MSG_KAMUI_UDP_DATA, MSG_BYAKUGAN_SCAN_RESULT, MSG_KOTOAMATSUKAMI_OUTPUT, MSG_JUUBI_HELLO, MSG_JUUBI_AUTH_CHALL, MSG_CHAIN_CONFIG, MSG_VNC_DATA]
+    lines_of_interest: ["L1-L60: namespace constants 0x01-0x6D", "L62-L69: build_message frame constructor", "L71-L88: parse_message validator", "L90-L420: test suite incl. namespace-overlap invariant"]
+  - file: src/client_rust/src/henge.rs
+    key_functions: [parse_transform, apply_encode, apply_decode, encode_data, decode_data, fill_template, extract_from_template, random_hex, find_data_field, fetch_active_profile]
+    key_structs: [HengeProfile]
+    key_constants: []
+    lines_of_interest: ["L24-L41: HengeProfile struct fields", "L71-L130: from_client_config JSON parser", "L140-L230: transform match arms (base64/xor/gzip/mask/prepend/append/hex)", "L240-L260: fill_template placeholder substitution", "L270-L300: extract_from_template regex extractor", "L320-L360: wrap_ws/unwrap_ws WebSocket envelope", "L380-L420: wrap_http_request/unwrap_http_response HTTP body wrappers", "L440-L470: fetch_active_profile startup fetch"]
+  - file: src/client_rust/src/http_poll_transport.rs
+    key_functions: [henge_wrap_upload, henge_unwrap_download, run_http_poll_session]
+    key_structs: []
+    key_constants: []
+    lines_of_interest: ["L33-L50: henge_wrap_upload encoding pipeline", "L52-L70: henge_unwrap_download decoding pipeline", "L72-L260: run_http_poll_session 6-step bootstrap", "L120-L155: HELLO POST + X-Session-Id extraction", "L160-L210: upload_task control+frame select!", "L240-L285: poll_task 204/200/status dispatch", "L265-L275: HENGE_PROFILE_UPDATE hot-swap path"]
+  - file: src/client_rust/src/tcp_transport.rs
+    key_functions: [read_tcp_message, write_tcp_message, run_tcp_session, run_plain_session, run_tls_session, run_inner]
+    key_structs: [DangerousVerifier]
+    key_constants: []
+    lines_of_interest: ["L27-L50: DangerousVerifier rustls trait impl", "L55-L75: read_tcp_message with 10MB cap", "L77-L83: write_tcp_message length-prefixed framing", "L115-L135: run_tls_session with custom verifier", "L155-L310: run_inner transport-agnostic loop", "L225-L260: COMMAND dispatch via block_in_place"]
+min_windows: "7"
+needs_admin: "no"
+tags: [socks5, hvnc, vnc, malleable-c2, blockchain, peer-relay, http-poll, discovery, binary-protocol, tls-pin-bypass, frame-multiplexing, hot-swap-profile]
+---
+
+# Network and Protocol Suite — Operator Playbook
+
+## TL;DR
+T-022 is the entire networking surface of the client: a single binary protocol multiplexes ~45 message types across 7 namespaces (control, Amaterasu exfil, Kamui SOCKS5, Byakugan recon, Kotoamatsukami BOF, Juubi peer relay, blockchain C2). Three transports — TCP, TCP+TLS, HTTP long-poll — all share the same inner protocol, with Henge (malleable C2 profile engine) layered only on HTTP long-poll for inline transformation and in-flight hot-swap. The TLS path disables certificate validation entirely via a `DangerousVerifier`, which is intentional: it lets the operator self-sign C2 certs without paying for pinning. The protocol layer is tiny (~420 LOC) but is the contract every other client module speaks.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `src/client_rust/src/protocol.rs` | Wire-format contract — 45 MSG_* constants + `build_message`/`parse_message` | `MSG_*` (45 constants), `build_message`, `parse_message` | ~420 LOC |
+| `src/client_rust/src/henge.rs` | Malleable C2 profile engine — ordered transforms + WS/HTTP envelope wrappers | `HengeProfile`, `encode_data`, `decode_data`, `fetch_active_profile`, `wrap_http_request`, `unwrap_http_response` | ~470 LOC |
+| `src/client_rust/src/http_poll_transport.rs` | HTTP long-poll transport with Henge integration + hot-swap | `run_http_poll_session`, `henge_wrap_upload`, `henge_unwrap_download` | ~290 LOC |
+| `src/client_rust/src/tcp_transport.rs` | Plaintext + TLS transport (no Henge layer) | `run_tcp_session`, `run_plain_session`, `run_tls_session`, `run_inner`, `DangerousVerifier` | ~310 LOC |
+
+Analysis below covers only the four files actually supplied; subsystems beyond the wire format and transport layer are documented in the card but not verified against source here.
+
+## How It Works
+
+### 1. Wire format (protocol.rs)
+Every C2 frame on every transport follows one shape, enforced by `build_message` (L62-L69) and `parse_message` (L71-L88):
+```
+[1 byte type][4 bytes length, big-endian][payload]
+```
+- `build_message(msg_type: u8, payload: &[u8])` pre-allocates `Vec::with_capacity(5 + payload.len())`, pushes type byte, extends with `payload.len().to_be_bytes()`, then payload.
+- `parse_message(data: &[u8])` rejects `data.len() < 5` with `Message too short`, reads `u32::from_be_bytes([data[1..5]])`, rejects truncation if `data.len() < 5 + length`. Returns `(u8, Vec<u8>)`.
+- The test suite at L90-L420 encodes four invariants as tests: round-trip equality, short-input rejection, truncation rejection, and a `namespace_ranges_no_overlap` test (L378-L420) that asserts the 7 namespaces never collide byte values. This last test is operator-relevant: adding a new subsystem requires reserving a non-conflicting range or the test gate fails.
+
+### 2. Namespace allocation (protocol.rs L1-L60)
+The 45 constants partition the u8 space into 7 disjoint subsystems:
+| Range | Subsystem | Role |
+|---|---|---|
+| 0x01-0x0D | Client → Server | Frame, HELLO, STATE_SYNC, PONG, DIRTY_FRAME, VIDEO_FRAME, CMD_OUTPUT, PROCESS_LIST, CLIPBOARD_CHANGE, KEYLOG, BROWSER_DATA, VNC_DATA |
+| 0x10-0x11 | Server → Client | COMMAND, PING |
+| 0x20-0x23 | Amaterasu (exfil) | CHUNK, HARVEST, LS, ERROR — T023 |
+| 0x30-0x39 | Kamui (SOCKS5) | TCP_DATA/OPEN/CLOSE/PAUSE/RESUME/ERROR, UDP_BIND/DATA/CLOSE, CHAIN_DATA — T022 |
+| 0x40-0x42 | Byakugan (recon) | SCAN_RESULT, HOST, ERROR — T023 |
+| 0x50 | Kotoamatsukami (BOF) | OUTPUT — T023 |
+| 0x60-0x6A | Juubi (peer relay) | HELLO, PEER_LIST, OPEN, DATA, CLOSE, ACK, FAILOVER, CAP_ADVERTISE, AUTH_CHALL, AUTH_RESP, TOPO_DELTA — T022 |
+| 0x6B-0x6D | Blockchain C2 | CHAIN_CONFIG (S→C), CHAIN_FUNDED (S→C), CHAIN_STATUS (C→S) — T019 |
+
+Note the embedded payload conventions documented in comments: `MSG_AMATERASU_CHUNK` is `[4B job_id][4B offset][chunk_data]`, `MSG_KAMUI_TCP_DATA` is `[4B stream_id][data]`, `MSG_KAMUI_UDP_DATA` is `[4B relay_id][2B src_port BE][data]`, `MSG_KAMUI_CHAIN_DATA` is `[4B chain_stream_id][data]`. These are NOT enforced by `parse_message` — they are sub-protocol invariants each consumer must implement separately.
+
+### 3. Malleable C2 — Henge (henge.rs)
+Henge is a layered transform pipeline mirroring the server-side `henge_engine.py`. The model is:
+```
+raw bytes → encode_data(transforms) → wrap_ws() / wrap_http_request() → wire
+wire → unwrap_ws() / unwrap_http_response() → decode_data(transforms) → raw bytes
+```
+
+`HengeProfile` (L24-L41) carries:
+- `transforms: Vec<String>` — ordered list like `["base64", "xor:0x42", "gzip"]`
+- `ws_wrapper: Option<String>` — JSON/HTML template for WebSocket frames
+- `post_body_wrapper: Option<String>` — HTTP POST body template
+- `get_response_wrapper: Option<String>` — HTTP GET body template
+- `get_response_data_header: Option<String>` — header name where data hides (e.g. `X-GA-Debug`)
+- `post_content_type` / `get_content_type` — content-type strings
+
+`apply_encode`/`apply_decode` (L142-L230) implement 8 transform primitives:
+- `base64` / `base64url` (uses `general_purpose::STANDARD` and `URL_SAFE_NO_PAD`)
+- `hex`
+- `xor:<key>` — accepts both hex (`0x5a`) and decimal (`90`) keys
+- `gzip` (via `flate2::write::GzEncoder`)
+- `prepend:<str>` / `append:<str>`
+- `mask:<n>` — prepends `n` random bytes (default 16) using `rand::thread_rng().fill_bytes`
+
+Critically, `decode_data` (L232-L240) iterates `transforms.iter().rev()` — i.e., decode reverses the encode order. The test `decode_reverses_transform_order` (L335-L345) encodes with `["xor:0x5a", "base64"]` and asserts decode applies base64-decode first, then xor. This is the only correctness invariant that prevents asymmetric pipeline corruption.
+
+Template system (L247-L300): `fill_template` replaces `{DATA}`, `{nonce}`, `{token}`, `{zone}`, `{ray_id}` where the latter four pull from `random_hex()`. `extract_from_template` is the inverse — it `regex::escape`s the template, replaces dynamic placeholders with `.*?` patterns, swaps `{DATA}` for `(.+?)`, and tries to capture. The `ray_id` placeholder format is `[0-9a-f]*-[A-Z]+` mimicking Cloudflare CF-RAY headers — a direct indicator that Henge profiles are designed to impersonate CDN traffic.
+
+### 4. HTTP long-poll transport (http_poll_transport.rs)
+`run_http_poll_session` (L72-L260) executes a 6-step bootstrap:
+1. **Profile fetch** (L86-L88): `henge::fetch_active_profile(base_url)` GETs `/api/henge/active` with 5s timeout and `danger_accept_invalid_certs(true)`. Falls back to `HengeProfile::raw()` (passthrough) on any error — this is a hard fail-safe so the implant always has *some* profile.
+2. **HELLO POST** (L120-L155): collects `sysinfo_collect::SystemInfo` (T023-recon), wraps in `build_message(MSG_HELLO, …)`, then `henge_wrap_upload()` runs `profile.encode()` + `profile.wrap_http_request()` to produce `(body_bytes, content_type)`. POSTs to `/api/c2/up` and reads `X-Session-Id` from the response header — `anyhow::Context("No X-Session-Id in HELLO response")` aborts if absent.
+3. **State setup** (L157-L170): `ClientState::new(target_fps, jpeg_quality, config_path)` is created under `Arc<Mutex<…>>`, then `ws_send_tx` (the shared command channel) and `current_encoding` are populated.
+4. **Upload task** (L173-L210): `tokio::select!` with `biased` keyword drains `control_rx` (mpsc) and `frame_rx` (watch) — control messages always win arbitration over frames. Each item goes through `henge_wrap_upload()` before POST.
+5. **Send loop** (L212-L220): calls `crate::send_loop(state, control_tx, frame_tx, …)` — the same send_loop used by the WebSocket transport in `main.rs`. This is the contract reuse pattern: send_loop is transport-agnostic.
+6. **Poll task** (L222-L285): long-polls `GET /api/c2/down?sid=<id>` with a 35-second client timeout (>30s server-side). Response dispatch:
+   - `204` → no commands, immediate re-poll
+   - `200` → collect headers, run `henge_unwrap_download()` (unwrap + decode), then `parse_message()`. Three msg types handled: `MSG_PING` → reply `MSG_PONG`; `MSG_VNC_DATA` → feed to `vnc_handle`; `MSG_COMMAND` → `block_in_place` + `commands::handle_command()`.
+   - Special case at L265-L275: `cmd_type == "HENGE_PROFILE_UPDATE"` triggers `*henge_poll.write().await = new_profile;` — atomic in-flight profile swap with NO reconnect, NO WS drop. This is the most operationally significant line in the file.
+
+### 5. TCP/TLS transport (tcp_transport.rs)
+TCP transport adds a 4-byte length prefix on top of the binary protocol frame:
+```
+[4B length BE][1 byte type][4B length BE][payload]
+```
+This double-length-framing is needed because TCP is a stream — the outer prefix tells `read_tcp_message` how many bytes to read for one message; the inner 5-byte header is then parsed by the shared `parse_message`.
+
+Key code points:
+- `read_tcp_message` (L55-L67): reads 4B length, **rejects messages > 10_000_000 bytes** (`TCP frame too large`), reads exactly `msg_len` bytes. This 10MB cap is the only DoS guard in the transport layer.
+- `DangerousVerifier` (L27-L50): a `rustls::client::danger::ServerCertVerifier` that returns `ServerCertVerified::assertion()` (the unsafe constructor) for every check. `verify_tls12_signature` and `verify_tls13_signature` both return `HandshakeSignatureValid::assertion()`. `supported_verify_schemes()` returns the ring default. This is intentional — the operator can self-sign C2 certs without trust-store manipulation.
+- `run_tls_session` (L115-L135): builds a `ClientConfig` with `.dangerous().with_custom_certificate_verifier(Arc::new(DangerousVerifier)).with_no_client_auth()`, then `TlsConnector::connect(server_name, stream)`. ServerName falls back to `"localhost"` on parse error.
+- `run_inner` (L155-L310): transport-agnostic loop. Same `MSG_PING/PONG`, `MSG_VNC_DATA`, `MSG_COMMAND` dispatch as HTTP poll, but **no Henge integration** — TCP is raw binary protocol only. `tokio::task::block_in_place` is used for command handling because `commands::handle_command` is sync.
+- `cmd_payload_clean` (L226-L240): strips a leading `<digits>|` prefix from the command payload — this looks like a length-prefixed framing stripped before JSON parse. Both transports implement this identically.
+
+### 6. Hot-swap mechanics (henge.rs L440-L470 + http_poll_transport.rs L265-L275)
+Profile updates arrive as `MSG_COMMAND` with `type=HENGE_PROFILE_UPDATE` and a JSON payload containing `client_config`. The flow:
+1. `commands::handle_command` does NOT process it — it's intercepted before dispatch in the poll task.
+2. `serde_json::from_str` parses the payload.
+3. `HengeProfile::from_client_config(&cfg["client_config"])` builds the new profile.
+4. `*henge_poll.write().await = new_profile;` swaps the `TokioRwLock<HengeProfile>` atomically.
+5. Next upload/poll cycle uses the new transforms — no WS reconnect, no re-HELLO, no session ID loss.
+
+This is significant because it allows the operator to change malleable C2 profile (e.g., from `raw` to `["base64", "mask:32"]` with a Cloudflare-impersonation `ws_wrapper`) mid-engagement without losing the session — useful for evading a freshly-deployed IDS signature.
+
+## Code Architecture
+
+### Call graph (verified from imports)
+
+```
+http_poll_transport.rs
+  ├── imports protocol::{build_message, parse_message, MSG_*}
+  ├── imports commands::{ClientState, handle_command}          [T023]
+  ├── imports henge::{HengeProfile, fetch_active_profile}    [T022 self]
+  ├── imports sysinfo_collect::{SystemInfo, get_screen_dimensions}  [T023]
+  └── calls crate::send_loop(...)                              [T023 main.rs]
+
+tcp_transport.rs
+  ├── imports protocol::{build_message, parse_message, MSG_*}
+  ├── imports commands::{ClientState, handle_command}         [T023]
+  ├── imports sysinfo_collect::{SystemInfo, get_screen_dimensions}  [T023]
+  └── calls crate::send_loop(...)                              [T023 main.rs]
+
+henge.rs
+  ├── imports base64, flate2 (gzip), rand, regex, serde_json
+  └── no internal crate imports — leaf module
+
+protocol.rs
+  └── no imports — leaf module, only std and anyhow
+```
+
+### Data flow
+
+```
+[Capture / keylog / commands::handle_command reply]
+              │
+              ▼
+       build_message(MSG_*, payload)              ← protocol.rs
+              │
+              ▼
+   ┌──────────┴───────────┐
+   │                      │
+[TCP transport]      [HTTP poll transport]
+   │                      │
+   │                      ▼
+   │              henge_wrap_upload()
+   │                ├─ profile.encode()           ← henge.rs encode_data
+   │                └─ profile.wrap_http_request() ← henge.rs fill_template
+   │                      │
+   ▼                      ▼
+[4B len prefix]    [HTTP POST body with template]
+   │                      │
+   ▼                      ▼
+[TCP writer]       [reqwest POST /api/c2/up?sid=]
+```
+
+Inbound is the mirror: TCP reads `[4B len][msg]` then `parse_message`; HTTP poll reads body, runs `henge_unwrap_download` (header check → template extract → JSON `data` field fallback), then `parse_message`. Both then dispatch on `msg_type` to PING/PONG, VNC_DATA, or COMMAND paths.
+
+### Type hierarchy
+
+`HengeProfile` is the only non-trivial struct. It owns:
+- 2 `Vec<String>` / `Option<String>` transform/wrapper slots
+- 2 `String` content-types
+- 2 `Option<String>` HTTP response extractors (wrapper + data_header)
+
+`DangerousVerifier` is a unit struct — no state — implementing 4 trait methods that all return assertion tokens.
+
+`ClientState` (T023, referenced but not defined here) holds `ws_send_tx: Option<UnboundedSender<Vec<u8>>>`, `current_encoding`, `vnc_handle`, `stop_signal` — the shared mutable state all transports mutate under `Arc<Mutex<>>`.
+
+### Feature gates
+No `cfg()` feature gates appear in any of the four files. The transports are unconditionally compiled. The protocol constants are unconditional `pub const`. Henge is always built (no feature flag for "no malleable C2" build).
+
+## Operational Profile
+
+### When to Use
+- **HTTP long-poll + Henge profile**: default choice against mature proxies/IDS. The profile can impersonate CDN traffic (CF-RAY pattern in `extract_from_template`), and the 35s timeout mimics legitimate long-poll AJAX. Use when egress is HTTP-only.
+- **TCP + TLS with self-signed cert**: when raw bandwidth matters (video frame throughput), Henge overhead is undesirable, and the operator controls a VPS with a self-signed cert. The `DangerousVerifier` accepts any cert so no trust store manipulation is needed on the target.
+- **Plain TCP**: dev/debug only, or internal pivots where TLS adds no value.
+- **Hot-swap profile**: when an IDS signature fires mid-engagement on the current profile. Send `HENGE_PROFILE_UPDATE`, the next poll cycle uses the new transforms — no session loss.
+
+### When NOT to Use
+- **HTTP poll for high-FPS video**: the per-frame POST overhead (TCP setup, TLS handshake if HTTPS, reqwest allocation) dominates. TCP+TLS is 5-10× higher throughput.
+- **Henge with `mask:16` on tiny messages**: every frame grows by 16 bytes random + transform overhead. For 5-byte PONG replies this is a 4× bloat — visible in flow analysis.
+- **TLS transport in air-gapped environments**: handshake traffic is anomalous.
+- **Self-signed certs in environments with SSL inspection**: a proxy will MITM and the connection breaks (the `DangerousVerifier` only defeats the client-side check, not the proxy).
+
+### Kill Chain Position
+T-022 is the C2 channel — it sits after initial execution (T-007 injection / T-013 misc) and before recon/exfil (T-023 client capabilities).
+
+Example chain:
+T-004 (PEB walk) → T-001 (RecycledGate) → T-012 (Early Cascade injection) → T-005 (Ekko sleep) → **T-022 (HTTP poll transport + Henge profile)** → T-023 (Byakugan recon via MSG_BYAKUGAN_*) → T-023 (Amaterasu exfil via MSG_AMATERASU_CHUNK) → T-019 (Edo Dead Drop fallback via MSG_CHAIN_STATUS)
+
+### Trade-offs
+
+## Rust Implementation Deep Dive
+
+### `unsafe` blocks
+**None** in any of the four files. The entire networking layer is safe Rust. This is a deliberate architecture choice — the unsafe/syscall surface lives in T-001 through T-018 (dark_crystal crate), and the client transport layer stays in safe-land for auditability.
+
+### `core::arch::asm!` usage
+**None.** No inline assembly.
+
+### FFI patterns
+- **rustls verifier trait**: `DangerousVerifier` (tcp_transport.rs L27-L50) implements `rustls::client::danger::ServerCertVerifier`. All four methods return `assertion()` tokens which are `#[track_caller]`-marked unsafe constructors in rustls — calling them is safe because we are deliberately opting out of verification. The `supported_verify_schemes()` returns the ring provider's algorithm list to avoid handshake failure on algorithm mismatch.
+- **reqwest config**: `Client::builder().timeout(Duration::from_secs(35)).danger_accept_invalid_certs(true).build()` — both transports disable cert validation. The 35s value is precisely 5s margin over the 30s server-side poll timeout (per code comment at L83).
+
+### Initialization patterns
+- **OnceLock singleton**: NOT used in these four files — protocol.rs has no state, henge.rs holds the profile in a `TokioRwLock` initialized at runtime by `fetch_active_profile`.
+- **`TokioRwLock` for hot-swap**: `Arc<TokioRwLock<HengeProfile>>` is shared between upload and poll tasks. Read-locks are taken on every frame encode/decode; write-lock is taken only on `HENGE_PROFILE_UPDATE`. This is correct — write contention is rare, read contention is high.
+- **mpsc + watch channel pair**: control messages use `tokio::sync::mpsc::unbounded_channel` (queue semantics, never blocks sender), frames use `tokio::sync::watch::channel` (latest-wins, drops stale frames on slow consumer). This pair is duplicated in BOTH transports — refactor opportunity.
+- **`biased` select!**: both transports use `tokio::select! { biased; … }` so control messages always preempt frames. Without `biased`, tokio would randomize branch order and a flood of frames could starve PONG replies — a real liveness bug avoided here.
+
+### Error handling
+- `parse_message`: explicit length validation with `anyhow::bail!`. Both `Message too short` and `Message payload truncated` paths return errors that the transport dispatch logs and `continue`s — never aborts the session.
+- `fetch_active_profile`: 5 separate fallback paths (build error, HTTP error, non-200, JSON parse error, network error) all return `HengeProfile::raw()`. Hard fail-safe.
+- `henge_wrap_upload`: on `encode` failure, logs `[henge] encode failed: … — sending raw` and ships the raw bytes. The profile is bypassed, not the message — the operator keeps getting telemetry.
+- `henge_unwrap_download`: on `decode` failure, logs and uses raw body. Same fail-safe.
+- TCP transport: `read_tcp_message` returns `Err` on EOF → recv_task logs `TCP recv error` and breaks. Outer `tokio::select!` handles the bail.
+
+### Memory layout
+- `build_message`: pre-allocates `Vec::with_capacity(5 + payload.len())` — one allocation, no growth. The 5-byte header is `push`ed (1 byte) then `extend_from_slice`d (4 bytes) then payload `extend_from_slice`d. Optimal.
+- `parse_message`: `data[5..end].to_vec()` — one allocation. Could be `&[u8]` zero-copy but the owned-Vec API is more ergonomic for consumers.
+- `HengeProfile`: 7 fields, all heap-allocated Strings/Vecs — typical size ~300-500 bytes total. Cheap to clone, but the hot-swap path uses `TokioRwLock` write so no clone is needed.
+
+### Frame size limits
+- TCP: hard 10MB cap in `read_tcp_message` (`if msg_len > 10_000_000 { bail! }`).
+- HTTP poll: no explicit cap — `resp.bytes().await` reads whatever the server sends. **Asymmetry**: a malicious/compromised server could OOM the HTTP-poll client. 
+
+### TLS implementation specifics
+- `rustls` (not native-tls) — pure Rust TLS, no Schannel/ OpenSSL linkage.
+- `with_no_client_auth()` — no client cert, so no mTLS without code change.
+- `server_name` falls back to `"localhost"` if `host.try_into()` fails — this means SNI will be `localhost` for IP literals. Some IDS flag `localhost` SNI on non-loopback connections.
+
+## Cross-References Found in Code
+
+| Reference | Source | Target Technique | Reason |
+|---|---|---|---|
+| `protocol.rs:MSG_AMATERASU_*` | Constants 0x20-0x23 | T023 (exfil) | Defines wire types for Amaterasu exfil engine |
+| `protocol.rs:MSG_KAMUI_*` | Constants 0x30-0x39 | T022 (SOCKS5 — Kamui) | Defines wire types for SOCKS5 relay (NOT in provided files) |
+| `protocol.rs:MSG_BYAKUGAN_*` | Constants 0x40-0x42 | T023 (recon — Byakugan) | Defines wire types for recon results |
+| `protocol.rs:MSG_KOTOAMATSUKAMI_OUTPUT` | Constant 0x50 | T023 (BOF exec) | Defines wire type for BOF output |
+| `protocol.rs:MSG_JUUBI_*` | Constants 0x60-0x6A | T022 (peer relay — Juubi) | Defines wire types for peer relay (NOT in provided files) |
+| `protocol.rs:MSG_CHAIN_CONFIG/FUNDED/STATUS` | Constants 0x6B-0x6D | T019 (Edo Dead Drop) | Blockchain C2 control plane —Sepolia/Base/Arbitrum/Optimism |
+| `protocol.rs:MSG_VNC_DATA` | Constant 0x0E | T022 (VNC/RFB) | RFB bytes wrapped over existing transport |
+| `http_poll_transport.rs:commands::handle_command` | Function call | T023 (client capabilities) | All command dispatch routes through T023 |
+| `http_poll_transport.rs:sysinfo_collect::SystemInfo::collect` | Function call | T023 (sysinfo) | HELLO payload is sysinfo JSON |
+| `http_poll_transport.rs:crate::send_loop` | Function call | T023 (main.rs) | Reuses WS transport's send_loop |
+| `http_poll_transport.rs:vnc.feed_rfb_bytes` | Method call | T022 (VNC) | VNC server receives RFB via transport |
+| `henge.rs:fetch_active_profile` | HTTP GET `/api/henge/active` | T021 (crypto/encoding) | Server-side transforms mirror client transforms |
+| `henge.rs:fill_template {ray_id}` | Cloudflare CF-RAY pattern | T021 (malleable C2 profile) | CDN impersonation primitive |
+
+## Edge Cases & Failure Modes
+
+1. **HTTP poll: server sends body shorter than 5 bytes**
+   - Code path: `http_poll_transport.rs:L245` — `if raw.len() < 5 { continue; }`
+   - Symptom: silent skip, no log. Hard to debug.
+   - Workaround: add a debug-level log on the skip.
+
+2. **Henge hot-swap during in-flight upload**
+   - Code path: `http_poll_transport.rs:L265-L275` swaps `*henge_poll.write().await`. The upload task at L173 holds `henge_upload.read().await` separately. If a frame is mid-encode when the swap happens, the encode completes with the OLD profile; the next frame uses the NEW profile.
+   - Symptom: one frame encoded with stale transforms — server may fail to decode it.
+
+3. **TCP frame size > 10MB**
+   - Code path: `tcp_transport.rs:L62` — `bail!("TCP frame too large: {} bytes", msg_len)`
+   - Symptom: session terminates.legitimate large video frames (e.g. 4K BGRA × tiles) could exceed 10MB in pathological cases.
+   - Workaround: increase cap or implement frame fragmentation.
+
+4. **TLS ServerName parse failure for IP literal**
+   - Code path: `tcp_transport.rs:L124-L127` — `host.to_string().try_into().unwrap_or_else(|_| "localhost".to_string().try_into().unwrap())`
+   - Symptom: SNI sent as `localhost` to an IP — some servers/IDS flag this.
+   - Workaround: use a hostname, not an IP, for TLS endpoints.
+
+5. **Henge `xor` transform without key**
+   - Code path: `henge.rs:L160-L163` — `anyhow::bail!("xor requires a key parameter")`
+   - Symptom: encode_data returns Err, transport falls back to raw bytes. The server expecting xor'd bytes will get cleartext.
+   - Workaround: validate profile on server-side before pushing `HENGE_PROFILE_UPDATE`.
+
+6. **`extract_from_template` regex fails on filled template**
+   - Code path: `henge.rs:L283-L300` — falls back to JSON `data` field search via `find_data_field`, then to raw bytes.
+   - Symptom: decode receives the wrapper instead of payload — decode pipeline then operates on garbage.
+   - Workaround: ensure `fill_template` and `extract_from_template` use identical placeholder patterns. Test `test_specific_constant_values` does NOT cover this round-trip for the `ws_wrapper` path — only the raw transforms are tested.
+
+7. **HTTP poll command with `cmd_payload` containing `|` but non-numeric prefix**
+   - Code path: `http_poll_transport.rs:L243-L252` (mirrored in tcp_transport.rs L226-L240) — `if prefix.chars().all(|c| c.is_ascii_digit())` decides whether to strip. If prefix is `abc|data`, the strip is skipped and the whole `abc|data` reaches `handle_command`.
+   - Symptom: command payload includes unexpected prefix.
+   - Workaround: operator must use only numeric length prefixes.
+
+## OPSEC Notes
+
+### Artifacts
+- **HTTP poll**: persistent 35-second outbound HTTPS to `/api/c2/down?sid=<id>` with `X-Session-Id` header. Easy to detect via long-poll duration + sid parameter pattern.
+- **TCP+TLS**: long-lived single connection to a non-standard port. Flow duration is the giveaway.
+- **Henge profile fetch**: one-time GET to `/api/henge/active` at startup. 
+- **Self-signed TLS**: handshake completes but chain validation would fail at any inspection point. Internal `DangerousVerifier` hides this from the client, NOT from a proxy.
+- **SNI = "localhost"** when target is IP literal — visible in PCAP.
+
+### Telemetry
+- No ETW/AMSI hooks in this layer (no native calls).
+- `tracing::{debug, info, warn}` emits to whatever subscriber is configured. In deployed builds, ensure tracing is silenced or routed to a file with restrictive ACL.
+- `[henge]` log prefix appears in 4 places — searchable signature in log aggregators.
+
+### Cleanup
+- `state.cleanup()` is called at the end of both `run_http_poll_session` and `run_inner` — this is the only cleanup. It does NOT close the underlying TCP/HTTP connections explicitly (relying on Drop).
+- No cookie jar clearing, no DNS cache flushing — if the operator pivots to a new C2 domain, the reqwest Client cache may retain cookies from the old domain.
+
+### Forensic footprint
+- The protocol is stateless on disk — no config file is written by these modules.
+- `config_path` is passed to `ClientState::new` but the four analyzed files do not write to it. Other modules (browser_hook, persist) do — see T017/T023.
+- Henge profiles are not persisted client-side; they live only in `TokioRwLock` memory. Memory dump would recover the active profile struct.
+
+## Reusable Patterns
+
+### Pattern: Biased mpsc+watch select for priority multiplexing
+- **Use when**: you have a high-frequency data stream (frames) and a low-frequency control stream (commands) sharing one outbound channel.
+- **Code ref**: `http_poll_transport.rs:run_http_poll_session:L183-L210`, `tcp_transport.rs:run_inner:L185-L215`
+- **How**: declare `let (control_tx, control_rx) = mpsc::unbounded_channel()` and `let (frame_tx, frame_rx) = watch::channel(None)`. Use `tokio::select! { biased; maybe = control_rx.recv() => …, changed = frame_rx.changed() => … }`. The `biased` keyword forces polling order — control always checked first. `watch` drops stale frames automatically if the consumer is slow.
+
+### Pattern: Fail-safe leaf-initialization with raw fallback
+- **Use when**: a feature has a "default passthrough" mode and any initialization failure should not break the system.
+- **Code ref**: `henge.rs:fetch_active_profile:L440-L470`
+- **How**: every error branch returns `HengeProfile::raw()`. Caller wraps in `Arc<TokioRwLock<…>` and the rest of the code paths treat raw profile as no-op (via `is_raw()` check).
+
+### Pattern: Hot-swap config via TokioRwLock write under command control
+- **Use when**: configuration needs to change without dropping the transport connection.
+- **Code ref**: `http_poll_transport.rs:L265-L275`
+- **How**: intercept a specific command type BEFORE the normal `commands::handle_command` dispatch. Construct new config, take write-lock, swap. Next read-lock acquirer sees new config. No reconnect needed.
+
+### Pattern: Frame-validation as protocol contract
+- **Use when**: defining a binary protocol that multiple subsystems share.
+- **Code ref**: `protocol.rs:parse_message:L71-L88`, `protocol.rs:tests:L90-L420`
+- **How**: the parser is the single source of truth for frame validity. The test suite encodes invariants (round-trip, short rejection, truncation rejection, namespace uniqueness, namespace disjointness). Any new MSG_* constant must pass the disjointness test — CI gates subsystem additions.
+
+### Pattern: Trait-based TLS verifier opt-out
+- **Use when**: you need a TLS client that accepts self-signed certs without touching the system trust store.
+- **Code ref**: `tcp_transport.rs:DangerousVerifier:L27-L50`
+- **How**: implement `rustls::client::danger::ServerCertVerifier` with all four methods returning `assertion()` tokens. Pass `Arc::new(verifier)` to `with_custom_certificate_verifier`. No `unsafe` needed — the assertions are safe constructors in rustls's API designed for this exact use case.
+
+### Pattern: Transport-agnostic inner loop via generics
+- **Use when**: multiple transports share the same protocol dispatch logic.
+- **Code ref**: `tcp_transport.rs:run_inner<R, W>: R: AsyncReadExt + Unpin + Send + 'static, W: AsyncWriteExt + Unpin + Send + 'static`
+- **How**: take `reader: R, writer: W` as generics. The plaintext path passes `(TcpStream::into_split().0, BufWriter::new(...))`, the TLS path passes `(tokio::io::split(tls_stream).0, BufWriter::new(...))`. The inner loop is identical. HTTP poll does NOT do this because reqwest's API doesn't expose reader/writer — it's a higher-level abstraction.
