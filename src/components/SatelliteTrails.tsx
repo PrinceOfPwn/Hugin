@@ -88,8 +88,8 @@ export default function SatelliteTrails({
         const a0 = t0 * intensity;
         const a1 = t1 * intensity;
         const v = base + seg * 6;
-        col[v]     = r * a0; col[v + 1] = g * a0; col[v + 2] = b * a0;
-        col[v + 3] = r * a1; col[v + 4] = g * a1; col[v + 5] = b * a1;
+        colors[v]     = r * a0; colors[v + 1] = g * a0; colors[v + 2] = b * a0;
+        colors[v + 3] = r * a1; colors[v + 4] = g * a1; colors[v + 5] = b * a1;
       }
     }
   }, [colors3, colors, segsPerSat, vertsPerSat, nSats, intensity]);
