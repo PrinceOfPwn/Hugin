@@ -34,10 +34,26 @@ if (!input) {
   console.error("Usage: node scripts/detect-format.mjs <input.jsonl> [--force]");
   process.exit(1);
 }
-const INPUT   = path.resolve(input);
-const MAPPING = INPUT.replace(/\.jsonl$/i, ".mapping.json");
+let INPUT   = path.resolve(input);
+let MAPPING = INPUT.replace(/\.jsonl$/i, ".mapping.json");
 
 if (!fs.existsSync(INPUT)) { console.error(`Not found: ${INPUT}`); process.exit(1); }
+
+// Auto-wrap non-JSONL files (e.g. .py, .md, .c, .go) into a single-line JSONL
+if (!INPUT.endsWith(".jsonl")) {
+  const rawText = fs.readFileSync(INPUT, "utf8");
+  const wrapper = {
+    source_file: path.basename(INPUT),
+    content: rawText,
+    file_type: INPUT.split(".").pop()
+  };
+  const jsonlPath = INPUT + ".jsonl";
+  fs.writeFileSync(jsonlPath, JSON.stringify(wrapper) + "\n");
+  console.log(`Wrapped non-JSONL file into ${jsonlPath}`);
+  INPUT = jsonlPath;
+  MAPPING = INPUT.replace(/\.jsonl$/i, ".mapping.json");
+}
+
 if (fs.existsSync(MAPPING) && !force) {
   const inputMtime = fs.statSync(INPUT).mtimeMs;
   const mappingMtime = fs.statSync(MAPPING).mtimeMs;
@@ -64,56 +80,64 @@ if (samples.length === 0) {
 }
 console.log(`Sampled ${samples.length} records from ${allLines.length} total in ${path.basename(INPUT)}`);
 
-// ── Prompt ───────────────────────────────────────────────────────────────────
-const SYSTEM = `You are a universal data-ingestion classifier for the HUGIN offensive-security knowledge vault.
+// ── System Prompt del Clasificador Universal y Generador de Grafos ──────────
+const SYSTEM = `You are a universal data-ingestion and knowledge-graph classifier for the HUGIN offensive-security vault.
 
-TASK: Read N sample records from a JSONL file. The input file can contain ANY type of offensive security data:
-- Q&A pairs / training material
-- Offensive security techniques / tradecraft (e.g. exploit validation, attack steps, blackboard traces, worker results)
-- Playbooks / detections / chains / technical documentation
+TASK: Read N sample records from a JSONL file. The input can contain ANY format: Q&A pairs, raw source code, markdown notes, playbooks, or offensive security traces.
+Return a JSON mapping-spec that tells our normalizer how to extract data, map it to the canonical schema, AND extract graph entities/relations.
 
-Return a JSON mapping-spec that tells our normalizer how to extract and reshape every record into the canonical schema.
-
-CANONICAL TARGET SCHEMA (fields the normalizer expects):
-  id           string — stable unique record id (e.g. $.unit_id, $.id, $.uuid)
-  prompt       string — context / title / scenario / role / question / unit_id
-  answer       string — main technical payload / assessment / narrative / execution details / solution / body
-  category     string — one of: recon, initial_access, execution, persistence,
-                        privilege_escalation, defense_evasion, credential_access,
-                        discovery, lateral_movement, collection, c2, exfiltration,
-                        impact, tools, internals, evasion, unknown
-  tags         string[] — free-text tags or primitives (e.g. $.sample.worker_result.primitives_present[*])
-  kind         string — one of: technique, tradecraft_qa, chain, detection,
-                        concept, lgtm_note, playbook, source, documentation
+CANONICAL TARGET SCHEMA:
+  id           string — stable unique record id
+  prompt       string — context / title / scenario / question
+  answer       string — main technical payload / code / assessment / narrative / notes
+  category     string — MUST be mapped to standard MITRE ATT&CK tactic (e.g. recon, initial_access, execution, persistence, privilege_escalation, defense_evasion, credential_access, discovery, lateral_movement, collection, c2, exfiltration, impact)
+  tags         string[] — free-text tags
+  kind         string — one of: technique, tradecraft_qa, chain, detection, concept, lgtm_note, playbook, source, documentation, source_code, markdown_notes
+  entities     array  — extracted MITRE TTPs (e.g. T1055), tools (e.g. Cobalt Strike), or concepts.
 
 OUTPUT — return EXACTLY this JSON shape, nothing else:
 
 {
-  "source_name":  string,               // descriptive name (e.g. "offx-blackboard-validation")
-  "confidence":   1|2|3|4|5,            // your confidence in the mapping
-  "record_shape": "flat" | "nested",
+  "source_name":  string,
+  "confidence":   1|2|3|4|5,
+  "record_shape": "flat" | "nested" | "raw_text" | "code_block",
+  "detected_language": string, // e.g. "en", "es", "raw_code"
   "field_map": {
-    "id":       string | null,          // JSONPath expression to unique ID (e.g. "$.unit_id")
-    "prompt":   string | null,          // JSONPath to context/scenario/prompt (e.g. "$.role" or "$.unit_id")
-    "answer":   string | null,          // JSONPath to main text/assessment (e.g. "$.sample.worker_result.assessment")
-    "category": string | null,          // JSONPath to category/topic (e.g. "$.meta.primary_topic")
-    "tags":     string | null,          // JSONPath ending in [*] for arrays
-    "source":   string | null           // JSONPath to source/provider
+    "id":       string | null,          // JSONPath to unique ID
+    "prompt":   string | null,          // JSONPath to context/title
+    "answer":   string | null,          // JSONPath to main text/code body
+    "category": string | null,          // JSONPath to topic (will be normalized to MITRE)
+    "tags":     string | null           // JSONPath ending in [*] for arrays
   },
-  "constants": {                        // fields to set unconditionally on every record
-    "kind":         string,             // "technique" if offensive security data/sample/blackboard, else "tradecraft_qa"
-    "category":     string,             // fallback category
+  "constants": {
+    "kind":         string,             // e.g. "source_code" if it's code, "tradecraft_qa" if Q&A
+    "category":     string,             // Fallback MITRE category
     "publishState": "core" | "support"
   },
-  "id_strategy":  "field" | "hash",     // "field" if id exists, "hash" if null
+  "graph_extraction": {
+    "entities": [
+      {
+        "type": "MITRE_TTP" | "Tool" | "Primitive",
+        "extraction_method": "regex" | "jsonpath",
+        "pattern": string               // e.g. "\\bT\\d{4}(?:\\.\\d{3})?\\b" or "$.tools_used[*]"
+      }
+    ],
+    "relations": [
+      {
+        "type": "uses" | "bypasses" | "mitigates" | "depends_on",
+        "extraction_method": "regex" | "constant",
+        "pattern": string               // e.g. "bypasses (.*?)" or fixed relation
+      }
+    ]
+  },
+  "id_strategy":  "field" | "hash",
   "notes":        string
 }
 
 RULES:
-- JSONPath dialect: "$" is root, "." for child, "[N]" for index, "[*]" for wildcard.
-  Examples for nested structures: "$.unit_id", "$.sample.worker_result.assessment", "$.meta.primary_topic"
-- For nested structures (like blackboard candidates, worker results, evaluation traces), map "answer" to the deepest technical text field (e.g. "$.sample.worker_result.assessment" or "$.sample.blackboard_patch.facts[0].text").
-- Set "kind" in constants to "technique" if the input is a technique/exploit/attack record, or "tradecraft_qa" if Q&A.
+- UNIVERSAL INPUT: If the input is raw code, map the entire code block to "answer" and set "kind" to "source_code". If it's markdown notes, set "kind" to "markdown_notes".
+- MULTILINGUAL: If the content is in Spanish or another language, set "detected_language". The normalizer will handle standardizing the category to English MITRE tactics.
+- GRAPH EXTRACTION: Provide regex patterns to extract entities (like TTPs, tool names) directly from the mapped "answer" text. This allows fast extraction without calling an LLM per record.
 - Return ONE JSON object. No markdown fences. No prose.`;
 
 function smartTrim(obj, maxStrLen = 120) {
@@ -183,7 +207,7 @@ catch {
 }
 
 // Validation
-const validKinds = new Set(["tradecraft_qa","technique","chain","detection","concept","lgtm_note","playbook","source","documentation"]);
+const validKinds = new Set(["tradecraft_qa","technique","chain","detection","concept","lgtm_note","playbook","source","documentation","source_code","markdown_notes"]);
 const errors = [];
 if (typeof parsed.source_name !== "string" || !parsed.source_name)                errors.push("source_name missing");
 if (!Number.isInteger(parsed.confidence) || parsed.confidence < 1 || parsed.confidence > 5) errors.push("confidence out of range");
