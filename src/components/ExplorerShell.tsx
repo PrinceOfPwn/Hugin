@@ -213,9 +213,37 @@ export default function ExplorerShell({
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div style={shellStyle}>
+    <div className="explorer-shell" style={shellStyle}>
+      <style>{`
+        @media (max-width: 900px) {
+          .explorer-shell {
+            flex-direction: column;
+            height: auto !important;
+            min-height: 100vh;
+          }
+          .explorer-sidebar {
+            height: auto !important;
+          }
+          .explorer-sidebar > aside {
+            width: 100% !important;
+            max-width: none !important;
+            max-height: 44vh !important;
+          }
+          .explorer-results {
+            min-height: 62vh;
+            height: 62vh !important;
+          }
+          .explorer-preview {
+            flex: 0 0 auto !important;
+            width: 100%;
+            max-width: none !important;
+            height: auto !important;
+            min-height: 320px;
+          }
+        }
+      `}</style>
       {/* Left: filters */}
-      <div style={{ flex: "0 0 auto", height: "100%", overflow: "hidden" }}>
+      <div className="explorer-sidebar" style={{ flex: "0 0 auto", height: "100%", overflow: "hidden" }}>
         <FilterSidebar
           entities={entities}
           filter={filter}
@@ -226,7 +254,7 @@ export default function ExplorerShell({
       </div>
 
       {/* Center: results */}
-      <div style={centerCol}>
+      <div className="explorer-results" style={centerCol}>
         <ExplorerHeader
           count={results.length}
           total={entities.length}
@@ -308,7 +336,7 @@ export default function ExplorerShell({
       </div>
 
       {/* Right: preview */}
-      <div style={rightCol}>
+      <div className="explorer-preview" style={rightCol}>
         <EntityPreviewPane
           entity={selectedEntity}
           entitiesById={entitiesById}

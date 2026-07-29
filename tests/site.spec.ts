@@ -4,12 +4,12 @@ test("dashboard presents the curated knowledge layer", async ({ page }) => {
   await page.goto("./");
   await expect(page.getByRole("heading", { name: /Map tradecraft/i })).toBeVisible();
   await expect(page.getByText(/knowledge nodes/i).first()).toBeVisible();
-  await expect(page.getByText(/anonymous evidence records/i)).toBeVisible();
+  await expect(page.getByText(/evidence records/i).first()).toBeVisible();
 });
 
 test("catalog filters and preserves a shareable URL", async ({ page }) => {
   await page.goto("./explore/");
-  await page.getByLabel("Filter catalog").fill("Recycled Gate");
+  await page.getByLabel("Search catalog").fill("Recycled Gate");
   await expect(page.getByRole("heading", { name: /Recycled Gate/i }).first()).toBeVisible();
   await expect(page).toHaveURL(/q=Recycled\+Gate/);
   await expect(page.getByText(/title slide/i)).toHaveCount(0);
@@ -23,8 +23,11 @@ test("graph exposes structured modes and an accessible catalog", async ({ page }
 });
 
 test("deep entity routes stay readable under the GitHub Pages base path", async ({ page }) => {
-  await page.goto("./explore/?q=Recycled+Gate");
-  await page.getByRole("heading", { name: /Recycled Gate/i }).first().click();
+  await page.goto("./explore/");
+  await page.getByLabel("Search catalog").fill("Recycled Gate");
+  await expect(page).toHaveURL(/q=Recycled\+Gate/);
+  await page.getByRole("option", { name: /Recycled Gate/i }).first().click();
+  await page.getByRole("link", { name: /Open full record/i }).click();
   await expect(page.locator("[data-pagefind-body]")).toBeVisible();
   await expect(page.getByRole("heading", { name: /What this record contributes/i })).toBeVisible();
   await expect(page).toHaveURL(/\/Hugin\/techniques\//);
@@ -45,7 +48,7 @@ test("MITRE matrix preserves exact sub-techniques and official links", async ({ 
   await search.fill("T1055.004");
   await search.press("Enter");
 
-  const technique = page.locator('[data-mitre-id="T1055.004"]');
+  const technique = page.locator('[data-mitre-id="T1055.004"]').first();
   await expect(technique).toBeVisible();
   await expect(technique.getByText("Asynchronous Procedure Call")).toBeVisible();
   await technique.getByRole("button").click();

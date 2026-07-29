@@ -204,6 +204,17 @@ export default function GraphPageShell({ graphData, manifest, entities }: Props)
         <CommandPalette entities={visibleEntities} onSelect={handleSelectFromPalette} />
         <AffordanceHint />
         <WelcomeTour />
+        <a
+          href="/Hugin/explore/"
+          style={{
+            position: "absolute", right: 16, bottom: 16, zIndex: 25,
+            padding: "8px 12px", border: "1px solid rgba(157,124,244,0.35)",
+            background: "rgba(0,8,20,0.82)", color: "var(--nav-accent)",
+            fontFamily: "monospace", fontSize: 11, textDecoration: "none",
+          }}
+        >
+          Open accessible catalog →
+        </a>
       </div>
     </div>
   );

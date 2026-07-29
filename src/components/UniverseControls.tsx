@@ -140,7 +140,7 @@ export default function UniverseControls({
     spacetimeMode !== undefined && onSpacetimeModeChange !== undefined;
 
   return (
-    <div style={{ ...panelStyle, ...style }}>
+    <div role="group" aria-label="Graph view controls" style={{ ...panelStyle, ...style }}>
       {onReset && (
         <button type="button" onClick={onReset} style={resetBtnStyle}>
           Reset view

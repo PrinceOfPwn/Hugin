@@ -590,7 +590,12 @@ export default function GraphThreeV3({
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh", background: "#000005", color: "#e8f0ff", overflow: "hidden" }}>
       {/* ─── CANVAS ──────────────────────────────────────────────────────── */}
-      <div ref={canvasWrapRef} style={{ position: "absolute", top: 0, left: 0, right: selected ? 360 : 0, bottom: 0, transition: "right 0.25s ease" }}>
+      <div
+        ref={canvasWrapRef}
+        role="img"
+        aria-label={`${manifest.counts.coreEntities.toLocaleString()} HUGIN knowledge nodes in an interactive 3D universe`}
+        style={{ position: "absolute", top: 0, left: 0, right: selected ? 360 : 0, bottom: 0, transition: "right 0.25s ease" }}
+      >
         <Canvas
           camera={{ position: [0, 0, 8000], fov: 55, near: 0.1, far: 20000 }}
           dpr={[1, 1.6]}

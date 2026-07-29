@@ -190,6 +190,7 @@ export default function FilterSidebar({ entities, filter, onChange, storageKey =
       {/* Search */}
       <Section id="search" title="Search" open={sections.search} onToggle={() => toggleSection("search")}>
         <input
+          aria-label="Search catalog"
           value={queryDraft}
           onChange={(e) => { setQueryDraft(e.target.value); commitQuery(e.target.value); }}
           placeholder="title, summary, tags…"
