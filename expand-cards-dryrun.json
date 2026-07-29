@@ -1,0 +1,46 @@
+{
+  "summary": {
+    "ran_at": "2026-07-29T07:14:11.726Z",
+    "mode": "pending",
+    "priority": "any",
+    "limit": 20,
+    "dry_run": true,
+    "model": "z-ai/glm-5.2",
+    "out_dir": "data/incoming/expand-2026-07-29T07-14-11-578Z",
+    "ran": [
+      "sec670-injection-evasion-convergence",
+      "sparse-course-meta-content-filter"
+    ],
+    "generated": [
+      {
+        "cluster_id": "sec670-injection-evasion-convergence",
+        "id": "T-1575",
+        "note": "prompt only (no api key)"
+      },
+      {
+        "cluster_id": "sparse-course-meta-content-filter",
+        "id": "T-1576",
+        "note": "prompt only (no api key)"
+      }
+    ],
+    "failed": []
+  },
+  "payloads": [
+    {
+      "cluster_id": "sec670-injection-evasion-convergence",
+      "canonical_name": "SEC670 Convergence on Injection and Evasion Tradecraft",
+      "next_id": "T-1575",
+      "prompt_chars": 5399,
+      "content": null,
+      "error": null
+    },
+    {
+      "cluster_id": "sparse-course-meta-content-filter",
+      "canonical_name": "Sparse Course Meta-Content Filter",
+      "next_id": "T-1576",
+      "prompt_chars": 5545,
+      "content": null,
+      "error": null
+    }
+  ]
+}
