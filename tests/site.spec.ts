@@ -30,7 +30,7 @@ test("deep entity routes stay readable under the GitHub Pages base path", async 
   await page.getByRole("link", { name: /Open full record/i }).click();
   await expect(page).toHaveURL(/\/Hugin\/techniques\//);
   await expect(page.locator("[data-pagefind-body]")).toBeVisible();
-  await expect(page.getByRole("heading", { name: /What this record contributes/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Recycled Gate/i }).first()).toBeVisible();
 });
 
 test("quality report exposes the quarantine", async ({ page }) => {
