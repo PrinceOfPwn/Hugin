@@ -41,7 +41,7 @@ jobs:
           node-version: 24
 
       - name: Test deterministic helpers
-        run: node tests/mercury-audit.test.mjs
+        run: npm run test:mercury
 
       - name: Audit graph
         shell: bash
