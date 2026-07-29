@@ -23,8 +23,6 @@ on:
 permissions:
   contents: read
 
-github-token: ${{ secrets.GITHUB_TOKEN }}
-
 jobs:
   audit:
     runs-on: ubuntu-latest
