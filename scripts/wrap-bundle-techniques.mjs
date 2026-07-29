@@ -13,6 +13,8 @@ import path from "node:path";
 
 const INCOMING = path.resolve("data/incoming");
 const GRAPH_PATH = path.resolve("data/source/public-graph.json");
+const MANIFEST_PATH = path.resolve("data/source/ingest-manifest.json");
+const DRY_RUN = process.env.HUGIN_BUNDLE_DRY_RUN === "true";
 const SUBDIRS = (process.env.HUGIN_BUNDLE_SUBDIRS || "techniques,techniques-generated")
   .split(",")
   .map((s) => s.trim())
@@ -20,22 +22,36 @@ const SUBDIRS = (process.env.HUGIN_BUNDLE_SUBDIRS || "techniques,techniques-gene
 
 const now = new Date().toISOString();
 
-function readGraphIds() {
-  if (!fs.existsSync(GRAPH_PATH)) return new Set();
+function readGraphState() {
+  const existingIds = new Set();
+  const repairIds = new Set();
+  if (!fs.existsSync(GRAPH_PATH)) return { existingIds, repairIds };
   try {
     const g = JSON.parse(fs.readFileSync(GRAPH_PATH, "utf8"));
-    const ids = new Set();
+    const nodes = new Map();
     for (const n of g.nodes || []) {
       const id = String(n?.id || "").trim();
-      if (/^T-\d{3}$/.test(id)) ids.add(id);
+      if (id) nodes.set(id, n);
+      if (/^T-\d{3}$/.test(id)) existingIds.add(id);
       const label = String(n?.label || n?.title || "");
       const m = label.match(/^T-(\d{3})/);
-      if (m) ids.add(`T-${m[1]}`);
+      if (m) existingIds.add(`T-${m[1]}`);
     }
-    return ids;
+    if (fs.existsSync(MANIFEST_PATH)) {
+      const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
+      for (const [source, details] of Object.entries(manifest.sources || {})) {
+        const match = source.match(/^data\/incoming\/tech-(T-\d{3})\.jsonl$/);
+        if (!match) continue;
+        const techniqueId = match[1];
+        const ownedNodes = (details?.node_ids || []).map((id) => nodes.get(id)).filter(Boolean);
+        if (ownedNodes.length > 0) existingIds.add(techniqueId);
+        if (ownedNodes.some((node) => node.enrichment_status === "degraded")) repairIds.add(techniqueId);
+      }
+    }
+    return { existingIds, repairIds };
   } catch (e) {
     console.warn(`could not parse public-graph.json: ${e.message}`);
-    return new Set();
+    return { existingIds, repairIds };
   }
 }
 
@@ -88,12 +104,12 @@ function collectCardFiles() {
   return files;
 }
 
-function emitCard(entry, existingIds) {
+function emitCard(entry, existingIds, repairIds) {
   const text = fs.readFileSync(entry.full, "utf8");
   const fm = extractFrontmatter(text);
   const id = parseId(fm);
   if (!id) return { action: "skip-no-id", src: entry.name };
-  if (existingIds.has(id)) return { action: "skip-already-in-graph", src: entry.name, id };
+  if (existingIds.has(id) && !repairIds.has(id)) return { action: "skip-already-in-graph", src: entry.name, id };
   const outPath = path.join(INCOMING, `tech-${id}.jsonl`);
   if (fs.existsSync(outPath)) return { action: "skip-existing-jsonl", src: entry.name, id, out: path.basename(outPath) };
 
@@ -120,8 +136,8 @@ function emitCard(entry, existingIds) {
     wrapped_from: "bundle_technique_card",
     wrapped_at: now,
   };
-  fs.writeFileSync(outPath, JSON.stringify(record) + "\n");
-  return { action: "emit", src: entry.name, id, out: path.basename(outPath) };
+  if (!DRY_RUN) fs.writeFileSync(outPath, JSON.stringify(record) + "\n");
+  return { action: repairIds.has(id) ? "repair" : "emit", src: entry.name, id, out: path.basename(outPath) };
 }
 
 const files = collectCardFiles();
@@ -130,17 +146,17 @@ if (files.length === 0) {
   process.exit(0);
 }
 
-const existingIds = readGraphIds();
-console.log(`[bundle-tech] scanning ${files.length} cards; ${existingIds.size} T-NNN already in graph`);
+const { existingIds, repairIds } = readGraphState();
+console.log(`[bundle-tech] scanning ${files.length} cards; ${existingIds.size} present; ${repairIds.size} degraded`);
 
-const stats = { emit: 0, skipped: 0 };
+const stats = { emit: 0, repair: 0, skipped: 0 };
 for (const entry of files) {
-  const r = emitCard(entry, existingIds);
-  if (r.action === "emit") {
-    stats.emit++;
-    console.log(`[bundle-tech] emit ${r.id} → ${r.out}`);
+  const r = emitCard(entry, existingIds, repairIds);
+  if (r.action === "emit" || r.action === "repair") {
+    stats[r.action]++;
+    console.log(`[bundle-tech] ${r.action} ${r.id} -> ${r.out}`);
   } else {
     stats.skipped++;
   }
 }
-console.log(`[bundle-tech] summary: emitted=${stats.emit} skipped=${stats.skipped}`);
+console.log(`[bundle-tech] summary: emitted=${stats.emit} repaired=${stats.repair} skipped=${stats.skipped}`);

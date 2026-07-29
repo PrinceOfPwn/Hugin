@@ -160,7 +160,8 @@ console.log("Running HUGIN Universal Ingest v2 Pipeline Test Suite…\n");
 {
   console.log("\nTest 6-9: Remote model policy, HTTP 429 rate limit & fallback handling");
   const policy = JSON.parse(fs.readFileSync("scripts/ingest-model-policy.json", "utf8"));
-  assert.equal(policy.local.model, "onnx-community/Qwen3.5-4B-Instruct-ONNX");
+  assert.equal(policy.local.model, "onnx-community/Qwen3.5-4B-ONNX-OPT");
+  assert.equal(policy.local.revision, "57b13b4dce7be073be0df3eaf1c842a6bbb2e0a7");
   assert.equal(policy.local.dtype, "q4");
   assert.equal(policy.complex.model, "z-ai/glm-5.2");
 

@@ -163,8 +163,10 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           HUGIN_MODEL_CACHE: .hf-cache
           HUGIN_NVIDIA_CACHE: .cache/nvidia-models
-          HUGIN_SIMPLE_MODEL: onnx-community/Qwen3.5-4B-Instruct-ONNX
+          HUGIN_SIMPLE_MODEL: onnx-community/Qwen3.5-4B-ONNX-OPT
+          HUGIN_SIMPLE_REVISION: 57b13b4dce7be073be0df3eaf1c842a6bbb2e0a7
           HUGIN_SIMPLE_DTYPE: q4
+          HUGIN_FAIL_ON_DEGRADED: "true"
         shell: bash
         run: |
           set -euo pipefail
