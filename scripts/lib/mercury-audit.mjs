@@ -145,7 +145,7 @@ export function truncateForPrompt(value, maxChars = 14000) {
 
 export function detectLanguage(node = {}, content = "") {
   for (const candidate of [node.file, node.path, node.label, node.name].filter(Boolean).map(String)) {
-    const match = candidate.match(/\.([a-z0-9+_-]{1,8})(?:\b|$)/i);
+    const match = candidate.match(/\.([a-z0-9+_-]{1,8})$/i);
     if (match && EXTENSION_LANGUAGES.has(match[1].toLowerCase())) return EXTENSION_LANGUAGES.get(match[1].toLowerCase());
   }
   const sample = String(content).slice(0, 8000);
