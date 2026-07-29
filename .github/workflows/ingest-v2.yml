@@ -43,6 +43,7 @@ on:
       - "scripts/ingest-model-policy.json"
       - "package.json"
       - "package-lock.json"
+      - ".github/workflows/ingest-v2.yml"
   workflow_dispatch:
     inputs:
       target:
