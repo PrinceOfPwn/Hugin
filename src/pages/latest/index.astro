@@ -1,0 +1,48 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import LatestListShell from "../../components/LatestListShell";
+import { entities, galaxies, manifest } from "../../lib/data";
+
+// Slim entity subset (avoid serializing bodyRef/provenance).
+const slim = entities.map((e) => ({
+  id: e.id,
+  slug: e.slug,
+  route: e.route,
+  title: e.title,
+  kind: e.kind,
+  category: e.category,
+  galaxyId: e.galaxyId,
+  subgalaxy: e.subgalaxy,
+  summary: e.summary,
+  tags: e.tags,
+  tier: e.tier,
+  mitre: e.mitre,
+  bodyRef: "",
+  bodyShard: 0,
+  degree: e.degree,
+  publishState: e.publishState,
+  evidenceId: "",
+  provenance: [],
+  mass: e.mass,
+  charCount: e.charCount,
+  orbitOf: e.orbitOf ?? null,
+  firstSeenAt: e.firstSeenAt ?? null,
+  lastUpdatedAt: e.lastUpdatedAt ?? null,
+}));
+---
+
+<BaseLayout
+  title="Latest added"
+  description={`Most recently added entities across ${manifest.counts.coreEntities.toLocaleString()} knowledge nodes.`}
+>
+  <header class="wrap page-head">
+    <p class="eyebrow">Recent additions</p>
+    <h1>Latest added.</h1>
+    <p class="lede">
+      The 50 most recently added entities across the graph. Narrow with filters below.
+    </p>
+  </header>
+  <section class="wrap">
+    <LatestListShell client:only="react" entities={slim} galaxies={galaxies} routePrefix="/Hugin" />
+  </section>
+</BaseLayout>

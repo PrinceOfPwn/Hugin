@@ -1,7 +1,43 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import CatalogExplorer from "../../components/CatalogExplorer";
-import { manifest } from "../../lib/data";
+import ExplorerShell from "../../components/ExplorerShell";
+import { entities, galaxies, curatedRelations, manifest } from "../../lib/data";
+
+// Slim entity subset (avoid serializing bodyRef/provenance/position).
+const slimEntities = entities.map((e) => ({
+  id: e.id,
+  slug: e.slug,
+  route: e.route,
+  title: e.title,
+  kind: e.kind,
+  category: e.category,
+  galaxyId: e.galaxyId,
+  subgalaxy: e.subgalaxy,
+  summary: e.summary,
+  tags: e.tags,
+  tier: e.tier,
+  mitre: e.mitre,
+  bodyRef: "",
+  bodyShard: 0,
+  degree: e.degree,
+  publishState: e.publishState,
+  evidenceId: "",
+  provenance: [],
+  mass: e.mass,
+  charCount: e.charCount,
+  orbitOf: e.orbitOf ?? null,
+  firstSeenAt: e.firstSeenAt ?? null,
+  lastUpdatedAt: e.lastUpdatedAt ?? null,
+}));
+
+// Trim relations to source+target+type only — that's all the preview pane needs.
+const slimRelations = curatedRelations.map((r) => ({
+  id: r.id,
+  source: r.source,
+  target: r.target,
+  type: r.type,
+  origin: r.origin,
+}));
 ---
 
 <BaseLayout
@@ -13,10 +49,25 @@ import { manifest } from "../../lib/data";
     <h1>Find the record. Then follow its connections.</h1>
     <p class="lede">
       Search techniques, concepts, detections, operational chains, and LGTM research notes.
-      Source records are available as an optional layer.
+      Preview any node, then open the full record.
     </p>
   </header>
-  <section class="wrap">
-    <CatalogExplorer client:load manifest={manifest} />
+  <section class="explorer-outer">
+    <ExplorerShell
+      client:only="react"
+      entities={slimEntities}
+      galaxies={galaxies}
+      relations={slimRelations}
+      routePrefix="/Hugin"
+    />
   </section>
 </BaseLayout>
+
+<style>
+  .explorer-outer {
+    width: 100%;
+    max-width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+</style>

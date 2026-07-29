@@ -5,6 +5,35 @@ on:
     branches: [main]
     paths:
       - "data/incoming/**/*.jsonl"
+      - "data/incoming/**/*.rs"
+      - "data/incoming/**/*.py"
+      - "data/incoming/**/*.go"
+      - "data/incoming/**/*.c"
+      - "data/incoming/**/*.cc"
+      - "data/incoming/**/*.cpp"
+      - "data/incoming/**/*.h"
+      - "data/incoming/**/*.hpp"
+      - "data/incoming/**/*.ts"
+      - "data/incoming/**/*.tsx"
+      - "data/incoming/**/*.js"
+      - "data/incoming/**/*.jsx"
+      - "data/incoming/**/*.java"
+      - "data/incoming/**/*.kt"
+      - "data/incoming/**/*.swift"
+      - "data/incoming/**/*.rb"
+      - "data/incoming/**/*.php"
+      - "data/incoming/**/*.cs"
+      - "data/incoming/**/*.md"
+      - "data/incoming/**/*.txt"
+      - "data/incoming/**/*.rst"
+      - "data/incoming/**/*.adoc"
+      - "data/incoming/**/*.mp4"
+      - "data/incoming/**/*.mov"
+      - "data/incoming/**/*.mkv"
+      - "data/incoming/**/*.webm"
+      - "data/incoming/**/*.m4v"
+      - "scripts/ingest-video.mjs"
+      - "scripts/wrap-inputs.mjs"
       - "scripts/detect-format.v2.mjs"
       - "scripts/apply-mapping.v2.mjs"
       - "scripts/enrich-records.mjs"
@@ -71,6 +100,16 @@ jobs:
 
       - name: Test ingestion contracts
         run: node tests/ingest-v2-pipeline.test.mjs
+
+      - name: Ingest video notes (Gemini)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: bash
+        run: node scripts/ingest-video.mjs
+
+      - name: Wrap raw inputs
+        shell: bash
+        run: node scripts/wrap-inputs.mjs
 
       - name: Discover inputs
         id: discover

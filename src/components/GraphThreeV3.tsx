@@ -1,17 +1,26 @@
 import {
-  useCallback, useEffect, useMemo, useRef, useState,
+  useCallback, useEffect, useMemo, useState,
 } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Stars, OrbitControls } from "@react-three/drei";
-import { EffectComposer, Bloom } from "@react-three/postprocessing";
+import { Canvas } from "@react-three/fiber";
+import { Stars } from "@react-three/drei";
+import { EffectComposer, Bloom, DepthOfField } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { DatasetManifest } from "../lib/types";
 
-import NodeCloud from "./NodeCloud";
-import type { NodeDatum } from "./NodeCloud";
+import NodeCloud, { buildSpinRotation } from "./NodeCloud";
+import type { NodeDatum, OrbitDescriptor } from "./NodeCloud";
 import EdgeSet, { EDGE_COLOR } from "./EdgeSet";
+import SpacetimeWarp, { type HeavyNode } from "./SpacetimeWarp";
+import CinematicCamera from "./CinematicCamera";
+import NebulaField, { type NebulaGalaxy } from "./NebulaField";
+import SatelliteTrails, { type TrailOrbit } from "./SatelliteTrails";
+import UniverseControls, { type UniverseSettings, type EdgesMode } from "./UniverseControls";
 
 type Mode = "universe" | "galaxy" | "neighborhood";
+
+type OrbitalElementsIn = {
+  a: number; e: number; omega: number; Omega: number; incl: number; M0: number; n: number;
+};
 
 type GraphNodeIn = {
   id: string; label: string; kind: string; galaxyId: string; category: string;
@@ -19,6 +28,12 @@ type GraphNodeIn = {
   scope: "core" | "support" | "structure" | "evidence";
   degree: number; size: number; color: string; isGalaxy?: boolean;
   tier?: "S" | "A" | "B" | "C";
+  mass?: number;
+  orbitOf?: string | null;
+  orbitDistance?: number | null;
+  orbit?: OrbitalElementsIn | null;
+  isAttractor?: boolean;
+  position?: { x: number; y: number; z: number };
 };
 type GraphEdgeIn = {
   id: string; source: string; target: string; type: string;
@@ -28,23 +43,13 @@ type GraphDataIn = {
   nodes: GraphNodeIn[];
   edges: GraphEdgeIn[];
   positions?: Map<string, THREE.Vector3> | Record<string, { x: number; y: number; z: number }>;
+  spinAxes?: Record<string, { x: number; y: number; z: number }>;
 };
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  Layout constants
+//  Palette + labels
 // ═════════════════════════════════════════════════════════════════════════════
 
-const GALAXY_CENTERS: Record<string, [number, number, number]> = {
-  techniques:    [ 340,   40,   60],
-  internals:     [-260,  200,  -80],
-  defenses:      [-300, -180,   40],
-  chains:        [ 120, -260,  140],
-  evidence:      [-100,  100, -300],
-  sources:       [  80,  240,  260],
-  gaps:          [ 240, -100, -220],
-  architecture:  [-140, -240, -160],
-  tradecraft_qa: [   0,  360,  180],
-};
 const GALAXY_COLORS: Record<string, string> = {
   techniques:    "#ff2244",
   internals:     "#00f0ff",
@@ -62,90 +67,30 @@ const GALAXY_LABELS: Record<string, string> = {
   gaps: "Gaps", architecture: "Architecture", tradecraft_qa: "Q&A",
 };
 
+// Fallback spin axis when the server-provided map is missing an entry.
+// (Doesn't match the server hash — only used defensively; the real axes come
+// through graphData.spinAxes.)
+const FALLBACK_SPIN: { x: number; y: number; z: number } = { x: 0, y: 1, z: 0 };
+
 const NOISE_EDGE = new Set(["similar_to"]);
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  Deterministic 3D layout — hash-based Fibonacci sphere per galaxy.
-//  Guaranteed to spread nodes evenly, never collapses, O(N).
+//  Galaxy orbs — glowing markers at each galaxy centroid.
 // ═════════════════════════════════════════════════════════════════════════════
 
-function compute3DLayout(nodes: GraphNodeIn[], edges: GraphEdgeIn[]): Map<string, THREE.Vector3> {
-  type Particle = { x: number; y: number; z: number; vx: number; vy: number; vz: number };
-  const particles = new Map<string, Particle>();
-
-  nodes.forEach((n) => {
-    const c = GALAXY_CENTERS[n.galaxyId] ?? [0, 0, 0];
-    const spread = n.isGalaxy ? 10 : n.scope === "evidence" ? 80 : 160;
-    particles.set(n.id, {
-      x: c[0] + (Math.random() - 0.5) * spread,
-      y: c[1] + (Math.random() - 0.5) * spread,
-      z: c[2] + (Math.random() - 0.5) * spread,
-      vx: 0, vy: 0, vz: 0,
-    });
-  });
-
-  const adj = new Map<string, string[]>();
-  nodes.forEach((n) => adj.set(n.id, []));
-  edges.forEach((e) => {
-    adj.get(e.source)?.push(e.target);
-    adj.get(e.target)?.push(e.source);
-  });
-
-  const nodeById = new Map(nodes.map((n) => [n.id, n]));
-  const SPRING_K = 0.009;
-  const REST = 72;
-  const GAL_K = 0.004;
-  const DAMP = 0.80;
-  const ITERS = 80;
-
-  for (let iter = 0; iter < ITERS; iter++) {
-    const alpha = Math.pow(1 - iter / ITERS, 1.4);
-
-    particles.forEach((p, id) => {
-      let fx = 0, fy = 0, fz = 0;
-
-      for (const nid of adj.get(id) ?? []) {
-        const q = particles.get(nid);
-        if (!q) continue;
-        const dx = q.x - p.x, dy = q.y - p.y, dz = q.z - p.z;
-        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.01;
-        const f = SPRING_K * (dist - REST) / dist;
-        fx += f * dx; fy += f * dy; fz += f * dz;
-      }
-
-      const gid = nodeById.get(id)?.galaxyId ?? "";
-      const [cx, cy, cz] = GALAXY_CENTERS[gid] ?? [0, 0, 0];
-      fx += (cx - p.x) * GAL_K * alpha;
-      fy += (cy - p.y) * GAL_K * alpha;
-      fz += (cz - p.z) * GAL_K * alpha;
-
-      p.vx = (p.vx + fx) * DAMP;
-      p.vy = (p.vy + fy) * DAMP;
-      p.vz = (p.vz + fz) * DAMP;
-      p.x += p.vx;
-      p.y += p.vy;
-      p.z += p.vz;
-    });
-  }
-
-  const result = new Map<string, THREE.Vector3>();
-  particles.forEach((p, id) => result.set(id, new THREE.Vector3(p.x, p.y, p.z)));
-  return result;
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  Galaxy orbs — 9 big glowing points marking each galaxy center. Always
-//  visible, always clickable to warp/zoom.
-// ═════════════════════════════════════════════════════════════════════════════
-
-function GalaxyOrbs({ onSelect }: { onSelect: (galaxyId: string) => void }) {
+function GalaxyOrbs({
+  centers,
+  onSelect,
+}: {
+  centers: Array<[string, [number, number, number]]>;
+  onSelect: (galaxyId: string) => void;
+}) {
   const [geo, mat] = useMemo(() => {
-    const entries = Object.entries(GALAXY_CENTERS);
-    const positions = new Float32Array(entries.length * 3);
-    const colors = new Float32Array(entries.length * 3);
+    const positions = new Float32Array(centers.length * 3);
+    const colors = new Float32Array(centers.length * 3);
     const c = new THREE.Color();
-    for (let i = 0; i < entries.length; i++) {
-      const [gid, pos] = entries[i];
+    for (let i = 0; i < centers.length; i++) {
+      const [gid, pos] = centers[i];
       positions[i * 3]     = pos[0];
       positions[i * 3 + 1] = pos[1];
       positions[i * 3 + 2] = pos[2];
@@ -158,14 +103,14 @@ function GalaxyOrbs({ onSelect }: { onSelect: (galaxyId: string) => void }) {
     g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     g.setAttribute("color",    new THREE.BufferAttribute(colors, 3));
     const m = new THREE.PointsMaterial({
-      size: 90, sizeAttenuation: true, vertexColors: true,
+      size: 140, sizeAttenuation: true, vertexColors: true,
       transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     return [g, m];
-  }, []);
+  }, [centers]);
 
-  const ids = useMemo(() => Object.keys(GALAXY_CENTERS), []);
+  const ids = useMemo(() => centers.map(([gid]) => gid), [centers]);
 
   return (
     <points
@@ -177,71 +122,105 @@ function GalaxyOrbs({ onSelect }: { onSelect: (galaxyId: string) => void }) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  Camera focus animator — smooth lerp to a target on selection
-// ═════════════════════════════════════════════════════════════════════════════
-
-function CameraFocuser({ target, distance = 180 }: { target: THREE.Vector3 | null; distance?: number }) {
-  const { camera } = useThree();
-  const tgt = useRef(new THREE.Vector3());
-  const cur = useRef(new THREE.Vector3());
-  const active = useRef(false);
-
-  useEffect(() => {
-    if (!target) return;
-    tgt.current.copy(target);
-    cur.current.set(target.x + distance, target.y + distance * 0.6, target.z + distance);
-    active.current = true;
-  }, [target, distance]);
-
-  useFrame(() => {
-    if (!active.current) return;
-    camera.position.lerp(cur.current, 0.06);
-    camera.lookAt(tgt.current);
-    if (camera.position.distanceTo(cur.current) < 2) active.current = false;
-  });
-  return null;
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
 //  Main
 // ═════════════════════════════════════════════════════════════════════════════
 
 interface Props {
   graphData: GraphDataIn;
   manifest: DatasetManifest;
+  filteredIds?: Set<string> | null;
+  universe?: UniverseSettings;
+  onUniverseChange?: (next: UniverseSettings) => void;
 }
 
-export default function GraphThreeV3({ graphData, manifest }: Props) {
+const DEFAULT_UNIVERSE: UniverseSettings = {
+  edgesMode: "selected",
+  autoOrbit: true,
+  cinematic: true,
+};
+
+export default function GraphThreeV3({
+  graphData, manifest, filteredIds,
+  universe: universeProp, onUniverseChange,
+}: Props) {
   const [mode, setMode] = useState<Mode>("universe");
   const [selected, setSelected] = useState<GraphNodeIn | null>(null);
   const [hovered, setHovered] = useState<{ id: string; screen: { x: number; y: number } } | null>(null);
   const [focusPos, setFocusPos] = useState<THREE.Vector3 | null>(null);
   const [galaxyFilter, setGalaxyFilter] = useState<string | null>(null);
 
-  // ─── Positions ────────────────────────────────────────────────────────────
+  // Local fallback if parent doesn't lift universe settings.
+  const [universeLocal, setUniverseLocal] = useState<UniverseSettings>(DEFAULT_UNIVERSE);
+  const universe = universeProp ?? universeLocal;
+  const setUniverse = onUniverseChange ?? setUniverseLocal;
+
+  // ─── Positions ───────────────────────────────────────────────────────────
   const positionsMap = useMemo<Map<string, THREE.Vector3>>(() => {
+    const m = new Map<string, THREE.Vector3>();
     const raw = graphData.positions;
-    if (raw instanceof Map && raw.size > 0) {
-      // sanity: reject if all positions are (0,0,0)
-      let nonZero = 0;
-      for (const v of raw.values()) if (v.x !== 0 || v.y !== 0 || v.z !== 0) { nonZero++; break; }
-      if (nonZero > 0) return raw;
-    }
-    if (raw && !(raw instanceof Map) && typeof raw === "object") {
-      const keys = Object.keys(raw);
-      if (keys.length > 0) {
-        const m = new Map<string, THREE.Vector3>();
-        for (const k of keys) {
-          const v = (raw as any)[k];
-          m.set(k, new THREE.Vector3(v.x, v.y, v.z));
-        }
-        return m;
+
+    if (raw instanceof Map) {
+      for (const [k, v] of raw) m.set(k, v.clone());
+    } else if (raw && typeof raw === "object") {
+      for (const k of Object.keys(raw)) {
+        const v = (raw as any)[k];
+        m.set(k, new THREE.Vector3(v.x, v.y, v.z));
       }
     }
-    return compute3DLayout(graphData.nodes, graphData.edges);
+
+    for (const n of graphData.nodes) {
+      if (m.has(n.id)) continue;
+      if (n.position) {
+        m.set(n.id, new THREE.Vector3(n.position.x, n.position.y, n.position.z));
+      } else {
+        m.set(n.id, new THREE.Vector3(
+          (Math.random() - 0.5) * 4,
+          (Math.random() - 0.5) * 4,
+          (Math.random() - 0.5) * 4,
+        ));
+      }
+    }
+    return m;
   }, [graphData]);
 
-  // ─── Adjacency (curated only, no similarity noise) ────────────────────────
+  // ─── Galaxy centroids ────────────────────────────────────────────────────
+  const galaxyCenters = useMemo<Record<string, [number, number, number]>>(() => {
+    const acc = new Map<string, { x: number; y: number; z: number; n: number }>();
+    for (const n of graphData.nodes) {
+      if (n.isGalaxy) continue;
+      const p = positionsMap.get(n.id);
+      if (!p) continue;
+      const rec = acc.get(n.galaxyId) || { x: 0, y: 0, z: 0, n: 0 };
+      rec.x += p.x; rec.y += p.y; rec.z += p.z; rec.n += 1;
+      acc.set(n.galaxyId, rec);
+    }
+    const out: Record<string, [number, number, number]> = {};
+    for (const [gid, r] of acc) {
+      out[gid] = r.n > 0 ? [r.x / r.n, r.y / r.n, r.z / r.n] : [0, 0, 0];
+    }
+    return out;
+  }, [graphData.nodes, positionsMap]);
+
+  // ─── Universe bounds — used to frame the cinematic warp-in ──────────────
+  const universeBounds = useMemo(() => {
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    let any = false;
+    for (const p of positionsMap.values()) {
+      any = true;
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+      if (p.z < minZ) minZ = p.z; if (p.z > maxZ) maxZ = p.z;
+    }
+    if (!any) return { center: [0, 0, 0] as [number, number, number], size: 3000 };
+    const size = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
+    return {
+      center: [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2] as [number, number, number],
+      size,
+    };
+  }, [positionsMap]);
+
+  // ─── Adjacency (curated only) ────────────────────────────────────────────
   const adjacency = useMemo(() => {
     const a = new Map<string, string[]>();
     for (const n of graphData.nodes) a.set(n.id, []);
@@ -253,20 +232,127 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
     return a;
   }, [graphData]);
 
-  // ─── Node list — filtered by galaxy in galaxy mode ────────────────────────
+  // ─── Visible nodes ───────────────────────────────────────────────────────
   const visibleNodes = useMemo<NodeDatum[]>(() => {
     return graphData.nodes
       .filter((n) => !n.isGalaxy)
       .filter((n) => !galaxyFilter || n.galaxyId === galaxyFilter)
-      .map((n) => ({
-        id: n.id,
-        position: positionsMap.get(n.id) ?? new THREE.Vector3(),
-        color: GALAXY_COLORS[n.galaxyId] || n.color || "#888",
-        size: Math.max(2.4, (n.tier === "S" ? 5.5 : n.tier === "A" ? 4.2 : n.tier === "B" ? 3.2 : 2.6) + Math.log2(n.degree + 1) * 0.4),
-        kind: n.kind,
-        galaxyId: n.galaxyId,
-      }));
+      .map((n) => {
+        // Dramatic mass-driven size + attractor boost, clamped.
+        let size = 1.6 + (n.mass ?? 2) * 0.9;
+        if (n.isAttractor) size *= 1.7;
+        size = Math.min(24, Math.max(1.6, size));
+        return {
+          id: n.id,
+          position: positionsMap.get(n.id) ?? new THREE.Vector3(),
+          color: GALAXY_COLORS[n.galaxyId] || n.color || "#888",
+          size,
+          kind: n.kind,
+          galaxyId: n.galaxyId,
+          isAttractor: n.isAttractor,
+        } satisfies NodeDatum;
+      });
   }, [graphData.nodes, positionsMap, galaxyFilter]);
+
+  // ─── Per-galaxy spin rotation matrices ───────────────────────────────────
+  // Server emits `spinAxes` keyed by galaxyId; we build the 9-element
+  // rotation matrix once so the frame loop just multiplies against it.
+  const spinRotByGalaxy = useMemo<Record<string, Float32Array>>(() => {
+    const out: Record<string, Float32Array> = {};
+    const axes = graphData.spinAxes || {};
+    for (const n of graphData.nodes) {
+      if (out[n.galaxyId]) continue;
+      const axis = axes[n.galaxyId] || FALLBACK_SPIN;
+      out[n.galaxyId] = buildSpinRotation(axis);
+    }
+    return out;
+  }, [graphData.nodes, graphData.spinAxes]);
+
+  // ─── Kepler orbit descriptors ────────────────────────────────────────────
+  const orbits = useMemo<OrbitDescriptor[]>(() => {
+    const indexById = new Map<string, number>();
+    visibleNodes.forEach((n, i) => indexById.set(n.id, i));
+    const nodeById = new Map(graphData.nodes.map((n) => [n.id, n]));
+    const list: OrbitDescriptor[] = [];
+    for (let i = 0; i < visibleNodes.length; i++) {
+      const nd = visibleNodes[i];
+      const meta = nodeById.get(nd.id);
+      if (!meta?.orbitOf || !meta.orbit) continue;
+      const pIdx = indexById.get(meta.orbitOf);
+      if (pIdx == null) continue;
+      const spin = spinRotByGalaxy[meta.galaxyId];
+      if (!spin) continue;
+      list.push({
+        nodeIndex: i,
+        parentIndex: pIdx,
+        elements: meta.orbit,
+        spinRot: spin,
+      });
+    }
+    return list;
+  }, [visibleNodes, graphData.nodes, spinRotByGalaxy]);
+
+  // ─── Trail data for SatelliteTrails — one entry per orbiter ─────────────
+  const trailOrbits = useMemo<TrailOrbit[]>(() => {
+    const nodeById = new Map(graphData.nodes.map((n) => [n.id, n]));
+    const list: TrailOrbit[] = [];
+    for (const nd of visibleNodes) {
+      const meta = nodeById.get(nd.id);
+      if (!meta?.orbitOf || !meta.orbit) continue;
+      const parentPos = positionsMap.get(meta.orbitOf);
+      if (!parentPos) continue;
+      const axis = graphData.spinAxes?.[meta.galaxyId] || FALLBACK_SPIN;
+      list.push({
+        id: nd.id,
+        parentPos: [parentPos.x, parentPos.y, parentPos.z],
+        elements: meta.orbit,
+        spinAxis: axis,
+        color: GALAXY_COLORS[meta.galaxyId] || "#888",
+      });
+    }
+    // Trails are expensive-ish per satellite (24 samples × solve). Cap.
+    return list.slice(0, 400);
+  }, [visibleNodes, graphData.nodes, positionsMap, graphData.spinAxes]);
+
+  // ─── Nebula field data ───────────────────────────────────────────────────
+  const nebulaGalaxies = useMemo<NebulaGalaxy[]>(() => {
+    const massByG = new Map<string, number>();
+    for (const n of graphData.nodes) {
+      if (n.isGalaxy) continue;
+      massByG.set(n.galaxyId, (massByG.get(n.galaxyId) ?? 0) + (n.mass ?? 0));
+    }
+    const out: NebulaGalaxy[] = [];
+    for (const [gid, center] of Object.entries(galaxyCenters)) {
+      out.push({
+        id: gid,
+        color: GALAXY_COLORS[gid] || "#7fbfff",
+        centroid: { x: center[0], y: center[1], z: center[2] },
+        totalMass: massByG.get(gid) ?? 1,
+      });
+    }
+    return out;
+  }, [galaxyCenters, graphData.nodes]);
+
+  // ─── Heavy nodes for spacetime-warp halos ────────────────────────────────
+  const heavyNodes = useMemo<HeavyNode[]>(() => {
+    const scored = graphData.nodes
+      .filter((n) => !n.isGalaxy && (n.mass ?? 0) > 0)
+      .map((n) => ({ n, mass: n.mass ?? 0 }))
+      .sort((a, b) => b.mass - a.mass)
+      .slice(0, 8);
+    return scored
+      .map(({ n, mass }) => {
+        const p = positionsMap.get(n.id);
+        if (!p) return null;
+        return {
+          id: n.id,
+          mass,
+          position: p,
+          color: GALAXY_COLORS[n.galaxyId] || "#7fbfff",
+        } as HeavyNode;
+      })
+      .filter((x): x is HeavyNode => x !== null);
+  }, [graphData.nodes, positionsMap]);
 
   const nodeById = useMemo(() => {
     const m = new Map<string, GraphNodeIn>();
@@ -274,28 +360,45 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
     return m;
   }, [graphData]);
 
-  // ─── Edges — hidden unless a node is focused ──────────────────────────────
-  // Design decision: showing ALL 2945 curated edges at once was a visual mess.
-  // Instead, show edges progressively: on hover show that node's edges muted;
-  // on select show that node's edges highlighted. Zero edges shown otherwise.
+  // ─── Edges — mode-gated. Hidden by default, "selected only" when focused,
+  //     and optional global top-N% by combined endpoint degree.
   const focusId = selected?.id ?? hovered?.id ?? null;
 
+  const globalEdges = useMemo(() => {
+    if (universe.edgesMode !== "top5" && universe.edgesMode !== "top20" && universe.edgesMode !== "all") return [];
+    const relevant = graphData.edges.filter((e) => !NOISE_EDGE.has(e.type));
+    if (universe.edgesMode === "all") return relevant;
+    // Rank by combined endpoint degree.
+    const degOf = (id: string) => nodeById.get(id)?.degree ?? 0;
+    const ranked = [...relevant].sort((a, b) => (degOf(b.source) + degOf(b.target)) - (degOf(a.source) + degOf(a.target)));
+    const pct = universe.edgesMode === "top5" ? 0.05 : 0.20;
+    return ranked.slice(0, Math.max(1, Math.floor(ranked.length * pct)));
+  }, [graphData.edges, universe.edgesMode, nodeById]);
+
   const focusEdges = useMemo(() => {
+    if (universe.edgesMode === "none") return [];
     if (!focusId) return [];
     return graphData.edges.filter(
       (e) => !NOISE_EDGE.has(e.type) && (e.source === focusId || e.target === focusId)
     );
-  }, [graphData.edges, focusId]);
+  }, [graphData.edges, focusId, universe.edgesMode]);
 
-  // ─── Dimmed set — when a node is selected, dim everything not connected ──
   const dimmedSet = useMemo<Set<string> | null>(() => {
-    if (!selected) return null;
-    const connected = new Set([selected.id]);
-    for (const nid of adjacency.get(selected.id) ?? []) connected.add(nid);
-    return connected;
-  }, [selected, adjacency]);
+    let selBase: Set<string> | null = null;
+    if (selected) {
+      selBase = new Set([selected.id]);
+      for (const nid of adjacency.get(selected.id) ?? []) selBase.add(nid);
+    }
+    if (filteredIds && selBase) {
+      const out = new Set<string>();
+      for (const id of selBase) if (filteredIds.has(id)) out.add(id);
+      out.add(selected!.id);
+      return out;
+    }
+    if (filteredIds) return filteredIds;
+    return selBase;
+  }, [selected, adjacency, filteredIds]);
 
-  // ─── Related items for the inspector, grouped by edge type ────────────────
   const related = useMemo(() => {
     if (!selected) return [];
     const grouped = new Map<string, Array<{ id: string; label: string; kind: string; direction: "out" | "in" }>>();
@@ -313,7 +416,6 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
     return [...grouped.entries()].map(([type, items]) => ({ type, items })).sort((a, b) => b.items.length - a.items.length);
   }, [selected, graphData.edges, nodeById]);
 
-  // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleNodeClick = useCallback((id: string) => {
     const node = nodeById.get(id);
     if (!node) return;
@@ -325,9 +427,9 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
   const handleGalaxyClick = useCallback((gid: string) => {
     setGalaxyFilter(gid);
     setMode("galaxy");
-    const c = GALAXY_CENTERS[gid];
+    const c = galaxyCenters[gid];
     if (c) setFocusPos(new THREE.Vector3(c[0], c[1], c[2]));
-  }, []);
+  }, [galaxyCenters]);
 
   const handleReset = useCallback(() => {
     setSelected(null);
@@ -336,17 +438,30 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
     setFocusPos(null);
   }, []);
 
-  // Diagnostic
   useEffect(() => {
-    console.log(`[GraphThreeV3] nodes=${visibleNodes.length}/${graphData.nodes.length}  edges_visible=${focusEdges.length}/${graphData.edges.length}  mode=${mode}  galaxy=${galaxyFilter ?? "all"}`);
-  }, [visibleNodes.length, focusEdges.length, mode, galaxyFilter, graphData.nodes.length, graphData.edges.length]);
+    console.log(`[GraphThreeV3] nodes=${visibleNodes.length}/${graphData.nodes.length}  orbits=${orbits.length}  edges_visible=${focusEdges.length + globalEdges.length}/${graphData.edges.length}  mode=${mode}  galaxy=${galaxyFilter ?? "all"}  edgesMode=${universe.edgesMode}`);
+  }, [visibleNodes.length, orbits.length, focusEdges.length, globalEdges.length, mode, galaxyFilter, graphData.nodes.length, graphData.edges.length, universe.edgesMode]);
 
   const selectedRoute = selected?.route;
-  const galaxies = Object.entries(GALAXY_CENTERS);
+  const galaxies = Object.entries(galaxyCenters) as Array<[string, [number, number, number]]>;
+
+  // Focus target passed to CinematicCamera — memoised so we don't retrigger
+  // the tween every render.
+  const cameraFocus = useMemo(() => {
+    if (!focusPos) return null;
+    return { position: focusPos, distance: selected ? 220 : 500 };
+  }, [focusPos, selected]);
+
+  // Stable world-space focus for the DOF pass. Prefer the selected node's
+  // position; else fall back to the universe centroid.
+  const dofTarget = useMemo(() => {
+    if (focusPos) return focusPos;
+    return new THREE.Vector3(universeBounds.center[0], universeBounds.center[1], universeBounds.center[2]);
+  }, [focusPos, universeBounds]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh", background: "#000005", color: "#e8f0ff", overflow: "hidden" }}>
-      {/* ─── LEFT RAIL: navigation + filters ─────────────────────────────── */}
+      {/* ─── LEFT RAIL ───────────────────────────────────────────────────── */}
       <aside style={{
         position: "absolute", top: 0, left: 0, bottom: 0, width: 240,
         padding: "20px 18px", background: "linear-gradient(180deg, rgba(0,8,20,0.85), rgba(0,4,12,0.65))",
@@ -400,29 +515,30 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
       {/* ─── CANVAS ──────────────────────────────────────────────────────── */}
       <div style={{ position: "absolute", top: 0, left: 240, right: selected ? 360 : 0, bottom: 0, transition: "right 0.25s ease" }}>
         <Canvas
-          camera={{ position: [520, 340, 640], fov: 55, near: 0.1, far: 8000 }}
+          camera={{ position: [0, 0, 8000], fov: 55, near: 0.1, far: 20000 }}
           dpr={[1, 1.6]}
           gl={{ antialias: true, powerPreference: "high-performance", alpha: false }}
         >
           <color attach="background" args={["#000005"]} />
-          <fogExp2 attach="fog" args={["#02061a", 0.00045]} />
+          <fogExp2 attach="fog" args={["#0a0a15", universe.cinematic ? 0.00025 : 0.00045]} />
 
           <ambientLight intensity={0.15} color="#4455ff" />
           <pointLight position={[400, 400, 300]}  intensity={1.2} color="#00d0ff" distance={2500} />
           <pointLight position={[-400, -300, -300]} intensity={1.0} color="#ff2288" distance={2000} />
 
-          <Stars radius={800} depth={200} count={5000} factor={5} saturation={0} fade speed={0.3} />
+          <Stars radius={universeBounds.size * 2} depth={universeBounds.size} count={6000} factor={6} saturation={0} fade speed={0.3} />
 
-          <GalaxyOrbs onSelect={handleGalaxyClick} />
+          <NebulaField galaxies={nebulaGalaxies} intensity={universe.cinematic ? 0.18 : 0.10} />
+          <GalaxyOrbs centers={galaxies} onSelect={handleGalaxyClick} />
+          <SpacetimeWarp heavyNodes={heavyNodes} />
 
-          <EdgeSet
-            edges={graphData.edges.filter((e) => !NOISE_EDGE.has(e.type))}
-            positions={positionsMap}
-            opacity={0.06}
-          />
+          {universe.cinematic && (
+            <SatelliteTrails orbits={trailOrbits} trailLength={24} intensity={0.55} />
+          )}
 
           <NodeCloud
             nodes={visibleNodes}
+            orbits={orbits}
             hoveredId={hovered?.id ?? null}
             selectedId={selected?.id ?? null}
             dimmedSet={dimmedSet}
@@ -430,6 +546,9 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
             onClick={handleNodeClick}
           />
 
+          {globalEdges.length > 0 && (
+            <EdgeSet edges={globalEdges} positions={positionsMap} opacity={0.10} />
+          )}
           {focusEdges.length > 0 && (
             <EdgeSet
               edges={focusEdges}
@@ -439,21 +558,20 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
             />
           )}
 
-          <CameraFocuser target={focusPos} distance={selected ? 160 : 380} />
-
-          <OrbitControls
-            enableDamping dampingFactor={0.08}
-            rotateSpeed={0.7} zoomSpeed={1.2} panSpeed={1.0}
-            minDistance={30} maxDistance={3200}
-            makeDefault
+          <CinematicCamera
+            bounds={universeBounds}
+            autoOrbit={universe.autoOrbit}
+            focus={cameraFocus}
           />
 
           <EffectComposer>
             <Bloom intensity={0.45} luminanceThreshold={0.75} luminanceSmoothing={0.9} radius={0.6} mipmapBlur />
+            {universe.cinematic ? (
+              <DepthOfField target={dofTarget} focalLength={0.05} bokehScale={3} height={480} />
+            ) : null}
           </EffectComposer>
         </Canvas>
 
-        {/* Reset button, top-right of canvas */}
         <button onClick={handleReset} style={{
           position: "absolute", top: 16, right: 16, zIndex: 4,
           background: "rgba(0,8,20,0.75)", border: "1px solid rgba(0,240,255,0.35)",
@@ -462,7 +580,8 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
           cursor: "pointer", backdropFilter: "blur(6px)",
         }}>Reset view</button>
 
-        {/* Cursor-following hover tooltip */}
+        <UniverseControls value={universe} onChange={setUniverse} />
+
         {hovered && !selected && (() => {
           const node = nodeById.get(hovered.id);
           if (!node) return null;
@@ -486,7 +605,7 @@ export default function GraphThreeV3({ graphData, manifest }: Props) {
         })()}
       </div>
 
-      {/* ─── RIGHT INSPECTOR: opens on click, closes with X or Esc ───────── */}
+      {/* ─── RIGHT INSPECTOR ─────────────────────────────────────────────── */}
       {selected && (
         <aside style={{
           position: "absolute", top: 0, right: 0, bottom: 0, width: 360,
@@ -561,3 +680,6 @@ function btnStyle(active: boolean): React.CSSProperties {
     fontFamily: "monospace", fontSize: 11, cursor: "pointer", textAlign: "left",
   };
 }
+
+// Re-export types for GraphPageShell.
+export type { UniverseSettings, EdgesMode };

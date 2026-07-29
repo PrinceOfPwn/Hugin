@@ -26,6 +26,26 @@ export interface Entity {
   publishState: PublishState;
   evidenceId: string;
   provenance: Provenance[];
+  mass?: number;
+  charCount?: number;
+  orbitOf?: string | null;
+  orbitDistance?: number | null;
+  position?: { x: number; y: number; z: number };
+  firstSeenAt?: string | null;
+  lastUpdatedAt?: string | null;
+  // Kepler orbital elements — present only when orbitOf is set. Consumed by
+  // the cinematic renderer to draw closed-form elliptic satellite orbits.
+  orbit?: {
+    a: number;
+    e: number;
+    omega: number;
+    Omega: number;
+    incl: number;
+    M0: number;
+    n: number;
+  } | null;
+  // Top-3 mass nodes per galaxy — rendered larger and brighter.
+  isAttractor?: boolean;
 }
 
 export interface EvidenceRecord {
@@ -87,6 +107,7 @@ export interface DatasetManifest {
   // AI pipeline top-level fields
   aiModel?: string;
   topBridges?: string[];
+  layout_version?: string;
 }
 
 export interface Galaxy {
@@ -96,6 +117,11 @@ export interface Galaxy {
   color: string;
   count: number;
   supportCount: number;
+  totalMass?: number;
+  centroid?: { x: number; y: number; z: number };
+  // Deterministic per-galaxy unit vector — defines the preferred orbital plane
+  // for satellites of attractors inside this galaxy.
+  spinAxis?: { x: number; y: number; z: number };
 }
 
 export interface QualityReport {

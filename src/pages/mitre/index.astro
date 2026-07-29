@@ -1,0 +1,25 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import MitreMatrix from "../../components/MitreMatrix";
+import { mitreIndex } from "../../lib/mitre-index";
+
+const { meta } = mitreIndex;
+const description = `MITRE ATT&CK matrix: ${meta.coveredTechniques} techniques across ${
+  mitreIndex.tactics.filter((t) => t.cardCount > 0).length
+} tactics, sourced from ${meta.totalWithMitre} tagged entities.`;
+---
+
+<BaseLayout title="MITRE ATT&CK Matrix" description={description}>
+  <header class="wrap page-head">
+    <p class="eyebrow">ATT&amp;CK coverage</p>
+    <h1>MITRE matrix.</h1>
+    <p class="lede">
+      Cross-reference the knowledge base by ATT&amp;CK tactic and technique. Each cell
+      shows how many cards cover that (tactic, technique) pair; click to expand and
+      jump to individual entries. Sub-techniques inherit their parent's tactics.
+    </p>
+  </header>
+  <section class="wrap">
+    <MitreMatrix client:only="react" index={mitreIndex} routePrefix="/Hugin" />
+  </section>
+</BaseLayout>

@@ -1,18 +1,34 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
+import {
+  buildSpinRotation,
+  keplerPositionInto,
+  type OrbitalElements,
+} from "../lib/kepler";
 
 export type NodeDatum = {
   id: string;
   position: THREE.Vector3;
   color: string;
-  size: number;          // base size (world units) — actual point size is size * DPI * scale
+  size: number;          // base size (world units) — actual point size is size * (320/-mv.z)
   kind: string;
   galaxyId: string;
+  isAttractor?: boolean;
+};
+
+// New Kepler-based orbit descriptor. Client precomputes the 9-element rotation
+// matrix once per instance so useFrame can just call keplerPositionInto.
+export type OrbitDescriptor = {
+  nodeIndex: number;
+  parentIndex: number;
+  elements: OrbitalElements;
+  spinRot: Float32Array;   // 9-element rotation matrix (galaxy spin axis)
 };
 
 interface Props {
   nodes: NodeDatum[];
+  orbits?: OrbitDescriptor[];
   hoveredId: string | null;
   selectedId: string | null;
   dimmedSet: Set<string> | null;     // when non-null, nodes NOT in set render dim
@@ -21,11 +37,10 @@ interface Props {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  NodeCloud — a single THREE.Points that draws every entity as a soft glowing
-//  disc. Uses Points' built-in raycasting (reliable, camera-independent), and
-//  a minimal vertex/fragment shader that only changes the size + color per
-//  point. No custom raycast, no matrix scale tricks, no billboard math —
-//  Points are already screen-space-oriented.
+//  NodeCloud — one THREE.Points draw call for every entity. Vertex shader
+//  applies distance-based LOD; fragment shader draws a soft glowing disc.
+//  Satellite positions are updated per frame via a shared Kepler solver so
+//  the whole universe is in motion.
 // ═════════════════════════════════════════════════════════════════════════════
 
 const vert = /* glsl */`
@@ -34,6 +49,10 @@ const vert = /* glsl */`
   attribute vec3 aColor;
   varying vec3 vColor;
   varying float vState;
+  varying float vLodAlpha;
+
+  const float NEAR_DIST = 200.0;
+  const float FAR_DIST  = 1200.0;
 
   void main() {
     vColor = aColor;
@@ -41,9 +60,14 @@ const vert = /* glsl */`
 
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
 
-    // Size is world-space-projected so nodes stay clickable at any zoom.
-    // 320.0 is the divisor tuned for the default fov=55, adjust to taste.
-    float scale = aBaseSize * (320.0 / -mv.z);
+    // Distance-based LOD: near = full size + alpha, far = smaller + faded.
+    float dist = -mv.z;
+    float lodT = clamp((dist - NEAR_DIST) / (FAR_DIST - NEAR_DIST), 0.0, 1.0);
+    float lodSize  = mix(1.0, 0.45, lodT);
+    vLodAlpha      = mix(1.0, 0.5, lodT);
+
+    // Screen-space projection: 320.0 divisor tuned for the default fov=55.
+    float scale = aBaseSize * (320.0 / dist) * lodSize;
 
     // Boost hovered/selected
     if (vState > 1.5 && vState < 2.5) scale *= 1.9;         // selected
@@ -59,14 +83,13 @@ const frag = /* glsl */`
   precision highp float;
   varying vec3 vColor;
   varying float vState;
+  varying float vLodAlpha;
 
   void main() {
-    // Point is a screen-aligned quad; gl_PointCoord is 0..1 across it.
     vec2 uv = gl_PointCoord - 0.5;
     float d = length(uv);
     if (d > 0.5) discard;
 
-    // Soft radial gradient — center bright, edge fades
     float core = smoothstep(0.5, 0.0, d);
     float ring = smoothstep(0.5, 0.35, d) * smoothstep(0.15, 0.35, d);
 
@@ -84,13 +107,13 @@ const frag = /* glsl */`
       col = vColor * core * 1.15 + vColor * ring * 0.45;
     }
 
-    float alpha = vState > 2.5 ? core * 0.35 : core * 0.9;
+    float alpha = (vState > 2.5 ? core * 0.35 : core * 0.9) * vLodAlpha;
     gl_FragColor = vec4(col, alpha);
   }
 `;
 
 export default function NodeCloud({
-  nodes, hoveredId, selectedId, dimmedSet, onHover, onClick,
+  nodes, orbits, hoveredId, selectedId, dimmedSet, onHover, onClick,
 }: Props) {
   const pointsRef = useRef<THREE.Points>(null);
 
@@ -132,13 +155,14 @@ export default function NodeCloud({
     return [geo, mat];
   }, [nodes]);
 
-  // Points' built-in raycast is per-vertex distance-to-ray. Set the threshold
-  // wide so clicks are forgiving.
+  // Points' built-in raycast is per-vertex distance-to-ray. Widen threshold so
+  // clicks are forgiving; needs to be re-registered when nodes change (the
+  // geometry ref is new) — but the fn shape is identical, so the effect body
+  // is stable.
   useLayoutEffect(() => {
     const pts = pointsRef.current;
     if (!pts) return;
     pts.frustumCulled = false;
-    // wide click threshold — 10 world units perpendicular to the ray
     (pts as any).raycast = function (this: THREE.Points, raycaster: THREE.Raycaster, intersects: THREE.Intersection[]) {
       const threshold = 12;
       const ray = raycaster.ray;
@@ -168,16 +192,14 @@ export default function NodeCloud({
         }
       }
     };
-  }, []);
+  }, [geometry]);
 
-  // update state attribute on hover/select/dim changes
+  // Update state attribute on hover/select/dim changes.
   useEffect(() => {
     const pts = pointsRef.current;
     if (!pts) return;
     const attr = pts.geometry.getAttribute("aState") as THREE.BufferAttribute;
     const arr = attr.array as Float32Array;
-    const idIdx = new Map<string, number>();
-    for (let i = 0; i < nodes.length; i++) idIdx.set(nodes[i].id, i);
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
       let s = 0;
@@ -189,7 +211,29 @@ export default function NodeCloud({
     attr.needsUpdate = true;
   }, [hoveredId, selectedId, dimmedSet, nodes]);
 
-  useFrame(() => { /* no per-frame update needed */ });
+  // Per-frame Kepler position update for satellites. Zero allocations — a
+  // pre-alloc'd 3-float scratch is reused across all satellites.
+  const scratch = useMemo(() => new Float32Array(3), []);
+
+  useFrame(({ clock }) => {
+    if (!orbits || orbits.length === 0) return;
+    const pts = pointsRef.current;
+    if (!pts) return;
+    const attr = pts.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    const t = clock.getElapsedTime();
+    for (let k = 0; k < orbits.length; k++) {
+      const o = orbits[k];
+      const pi3 = o.parentIndex * 3;
+      const px = arr[pi3], py = arr[pi3 + 1], pz = arr[pi3 + 2];
+      keplerPositionInto(scratch, o.elements, px, py, pz, t, o.spinRot);
+      const i3 = o.nodeIndex * 3;
+      arr[i3]     = scratch[0];
+      arr[i3 + 1] = scratch[1];
+      arr[i3 + 2] = scratch[2];
+    }
+    attr.needsUpdate = true;
+  });
 
   const handleMove = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
@@ -218,3 +262,7 @@ export default function NodeCloud({
     />
   );
 }
+
+// Re-export the utility so consumers can also derive spin matrices without
+// pulling from ../lib/kepler directly.
+export { buildSpinRotation };
