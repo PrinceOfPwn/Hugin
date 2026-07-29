@@ -1,0 +1,476 @@
+---
+id: T-004
+name: PEB Walker via gs:[0x60]
+category: syscalls
+tier: A
+mitre: T1106
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires: []
+enables: [T-001, T-002, T-003, T-006, T-007, T-008, T-009, T-012, T-013, T-014, T-015, T-016, T-017]
+vault_references:
+  - dark_crystal/crowd/src/resolve.rs
+  - dark_crystal/crates/core/src/sys_indirect.rs
+  - dark_crystal/crates/core/src/sysindirect_map.rs
+  - dark_crystal/crowd/src/syscall_map.rs
+implements:
+  - file: dark_crystal/crowd/src/resolve.rs
+    key_functions:
+      - djb2_hash
+      - compute_hash
+      - gs_read_u64
+      - fs_read_u32
+      - is_wow64
+      - ntdll_base_and_name_hashes
+      - find_module_base
+      - resolve_export_by_name
+      - resolve_export_by_ordinal
+      - resolve_export_ssn
+      - find_syscall_stub64
+      - find_syscall_stub32
+      - matches_stub64
+      - matches_stub32
+      - resolve_ssn
+      - resolve_ssn_by_hash
+      - within_image
+    key_structs:
+      - Peb
+      - PebLdrData
+      - LdrDataTableEntry
+      - ListEntry
+      - UnicodeString
+      - ImageExportDirectory
+      - ListEntry32
+      - UnicodeString32
+    key_constants:
+      - "0x60 (TEB->ProcessEnvironmentBlock, x64)"
+      - "0x30 (TEB->ProcessEnvironmentBlock, x86)"
+      - "0xC0 (TEB32->WowTebOffset for is_wow64)"
+      - "0x5A4D (MZ signature)"
+      - "0x3C (e_lfanew offset)"
+      - "0x88 (IMAGE_OPTIONAL_HEADER64 DataDirectory[0] export RVA)"
+      - "0x8C (DataDirectory[0] size)"
+      - "0x78 (32-bit optional header DataDirectory[0] offset)"
+      - "0x0F 0x05 0xC3 (syscall;ret gadget)"
+      - "0x4C 0x8B 0xD1 0xB8 (canonical x64 stub: mov r10,rcx; mov eax,...)"
+    lines_of_interest:
+      - "L1-L28: djb2_hash + compute_hash (DJB2 with init 5381, *33+byte)"
+      - "L30-L96: 64-bit PEB/LDR struct definitions"
+      - "L98-L116: gs_read_u64 inline asm with nostack/readonly/pure"
+      - "L118-L158: ntdll_base_and_name_hashes — full InMemoryOrderModuleList walk"
+      - "L161-L194: find_module_base generic module resolver by hash"
+      - "L197-L228: resolve_export_by_name — PE export directory walker"
+      - "L231-L263: resolve_export_by_ordinal"
+      - "L285-L330: 32-bit path: fs_read_u32, is_wow64, 32-bit ntdll_base_and_name_hashes"
+      - "L335-L348: ImageExportDirectory struct"
+      - "L351-L412: resolve_export_ssn — Tartarus Gate Zw* RVA sort + gadget scan"
+      - "L415-L462: find_syscall_stub64 — ±512-byte stub scan with page-crossing guard"
+      - "L465-L475: matches_stub64 pattern check"
+      - "L485-L520: 32-bit find_syscall_stub32 + matches_stub32"
+      - "L523-L555: resolve_ssn / resolve_ssn_by_hash / within_image"
+  - file: dark_crystal/crates/core/src/sys_indirect.rs
+    key_functions:
+      - invoke_syscall
+      - execute_syscall_direct
+      - syscall1
+      - syscall2
+      - syscall3
+      - syscall4
+      - syscall5
+      - syscall7
+      - syscall8
+      - syscall9
+      - syscall10
+      - syscall11
+      - nt::nt_queue_apc_thread
+      - nt::nt_allocate_virtual_memory
+      - nt::nt_allocate_virtual_memory_ex
+      - nt::nt_write_virtual_memory
+      - nt::nt_read_virtual_memory
+      - nt::nt_protect_virtual_memory
+      - nt::nt_create_thread_ex
+      - nt::nt_query_information_process
+      - nt::nt_create_section
+      - nt::nt_map_view_of_section
+      - nt::nt_unmap_view_of_section
+      - nt::nt_close
+    key_structs: []
+    key_constants:
+      - "arg_count 1..11 dispatch ladder"
+      - "feature veh_syscalls"
+      - "feature recycled_gate"
+      - "feature advanced_stack"
+    lines_of_interest:
+      - "L11-L56: invoke_syscall — universal dispatcher (veh/hgate/indirect) with feature-gated fallback ladder"
+      - "L58-L113: execute_syscall_direct — arg-count to syscallN dispatch"
+      - "L115-L140: syscall1 — minimal syscall ABI inline asm (mov r10, rcx; syscall)"
+      - "L182-L210: syscall5 — home-area spill pattern without sub rsp"
+      - "L213-L280: syscall7..syscall11 — extended home-area spill"
+      - "L300-L437: nt::* wrappers — every NT API function the implant uses"
+      - "L358-L437: nt_create_thread_ex (11-arg max), nt_create_section, nt_map_view_of_section"
+  - file: dark_crystal/crates/core/src/sysindirect_map.rs
+    key_functions:
+      - syscall_map
+      - get_ssn_and_gadget
+      - get_ssn
+      - get_gadget
+    key_structs: []
+    key_constants:
+      - "static MAP: OnceLock<HashMap<u32, (u32, usize)>>"
+      - "21 obfuscated NT API names via crate::obf!()"
+    lines_of_interest:
+      - "L9-L46: OnceLock syscall_map initialization using obf!() for compile-time string concealment"
+      - "L36-L42: resolve_ssn(name) call per API name, filter (ssn!=0 && gadget!=0)"
+      - "L49-L58: get_ssn_and_gadget/get_ssn/get_gadget accessors"
+  - file: dark_crystal/crowd/src/syscall_map.rs
+    key_functions:
+      - syscall_map
+      - get_ssn_and_gadget
+      - get_ssn
+      - get_gadget
+    key_structs: []
+    key_constants:
+      - "static MAP: OnceLock<HashMap<u32, (u32, usize)>>"
+      - "40 plaintext NT API names (no obf!())"
+      - "Pool Party: NtDuplicateObject, NtSetInformationWorkerFactory, NtReleaseWorkerFactoryWorker"
+      - "NTFS EA: NtSetEaFile, NtQueryEaFile"
+      - "PPID: NtCreateUserProcess"
+      - "Self-delete/Herpaderping: NtWriteFile, NtSetInformationFile, NtFlushBuffersFile"
+    lines_of_interest:
+      - "L14-L66: OnceLock initialization with 40-entry API inventory (covers all T-007/T-017/T-013 use cases)"
+      - "L68-L80: hash-keyed accessors"
+min_windows: Windows 7 / Server 2008 R2 (PEB layout + canonical 4C 8B D1 B8 stub stable since Vista)
+needs_admin: no
+tags: [peb, inline-asm, module-resolution, zero-api, djb2, tartarus-gate, recycled-gate, cross-arch, oncelock, home-area-spill]
+---
+
+# PEB Walker via gs:[0x60] — Operator Playbook
+
+## TL;DR
+PEB Walker reads `gs:[0x60]` (x64) or `fs:[0x30]` (x86) to traverse the TEB → PEB → `PEB_LDR_DATA` → `InMemoryOrderModuleList` chain and resolve module bases + export addresses with zero Win32 API surface. In `dark_crystal`, this single file (`crowd/src/resolve.rs`) is the seed of the entire syscall stack: it locates `ntdll.dll`, walks its export directory, derives SSNs through Tartarus Gate RVA sorting (`resolve_export_ssn`), and finds RecycledGate gadgets (`find_syscall_stub64`). Every NT wrapper in `sys_indirect.rs::nt::*` and every entry in `sysindirect_map.rs`/`syscall_map.rs` ultimately depends on a `compute_hash()` lookup resolved through this file.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `dark_crystal/crowd/src/resolve.rs` | Core PEB walker, DJB2 hasher, PE export walker, Tartarus SSN resolver, RecycledGate gadget scanner — cross-architecture (x86_64 + x86) | `ntdll_base_and_name_hashes`, `find_module_base`, `resolve_export_by_name`, `resolve_export_by_ordinal`, `resolve_ssn`, `resolve_ssn_by_hash`, `gs_read_u64`, `djb2_hash`, `compute_hash` | ~555 lines |
+| `dark_crystal/crates/core/src/sys_indirect.rs` | Universal syscall dispatcher — `invoke_syscall` selects veh / hgate / indirect mode and falls through a feature-gated ladder; direct asm syscall stubs `syscall1..syscall11`; high-level `nt::*` wrappers | `invoke_syscall`, `syscall1..syscall11`, `nt::nt_allocate_virtual_memory`, `nt::nt_create_thread_ex`, `nt::nt_map_view_of_section`, plus 9 more | ~437 lines |
+| `dark_crystal/crates/core/src/sysindirect_map.rs` | `OnceLock<HashMap<u32,(u32,usize)>>` SSN+gadget cache. Uses `crate::obf!()` macro for compile-time string concealment of API names | `syscall_map`, `get_ssn_and_gadget`, `get_ssn`, `get_gadget` | ~60 lines |
+| `dark_crystal/crowd/src/syscall_map.rs` | Crowd variant of the same `OnceLock` cache with **plaintext API names** (no `obf!`) but a fuller 40-entry inventory covering Pool Party / NTFS EA / NtCreateUserProcess / file I/O / sync | `syscall_map`, `get_ssn_and_gadget`, `get_ssn`, `get_gadget` | ~80 lines |
+
+## How It Works
+
+Step-by-step (x64 path; x86 mirror uses `fs:[0x30]` and offset `0x78` for `DataDirectory[0]`):
+
+1. **Read PEB pointer** via `gs_read_u64(0x60)`. The inline asm template `mov {}, gs:[{:e}]` uses the `e` modifier on the offset operand so a 32-bit immediate is sign-extended into the 64-bit GS-segment reference. `options(nostack, readonly, pure)` tells the compiler this is a pure memory read with no side effects — no stack frame is emitted.
+2. **Cast to `*const Peb`** and dereference `(*peb).ldr` to obtain `*const PebLdrData`. The `Peb` struct intentionally skips the `BeingDebugged` byte at offset 0x02 (`reserved1: [u8;2]`, `being_debugged: u8`, `reserved2: u8`, `reserved3: [*const u8;2]` = 16 bytes after 4 padding) so `ldr` lands at offset 0x18 — its real PEB offset.
+3. **Walk `InMemoryOrderModuleList`** by setting `e = (*ldr).in_memory_order_module_list.flink` and `head = addr_of!((*ldr).in_memory_order_module_list)`. The loop terminates when `e as *const _ == head` (circular list sentinel).
+4. **Recover `LdrDataTableEntry` from each `flink`**: `flink` points *into* the `in_memory_order_links` field of the entry, not to the entry base. The code backs up by `core::mem::size_of::<[*const u8; 2]>()` (16 bytes on x64) — this is exactly the offset of `in_memory_order_links` from the entry start. This is the canonical `CONTAINING_RECORD` idiom from WDK.
+5. **Read `dll_base` and `base_dll_name`** from `(*entry).dll_base` and `(*entry).base_dll_name`. The name is a `UnicodeString` (`length` is bytes, divide by 2 for code unit count). Each u16 is lower-cased via `|0x20` so the comparison is case-insensitive without `CharLowerW`.
+6. **DJB2 hash compare**: `djb2_hash(&bytes) == djb2_hash(b"ntdll.dll")`. The hash algorithm is `((hash << 5) + hash) + byte` with init 5381, which simplifies to `hash * 33 + byte`. The file uses `((hash << 5).wrapping_add(hash)).wrapping_add(*b as u32)` — algebraically identical.
+7. **For export walking** (when called as `resolve_export_by_name`): the file reads `e_lfanew` at `base+0x3C` (the classic MZ→PE jump) and validates `*base == 0x5A4D`. The export directory RVA lives at `nt+0x88` which is `DataDirectory[0].VirtualAddress` in `IMAGE_OPTIONAL_HEADER64` (OptionalHeader is at +0x18, DataDirectory array starts at +0x70, [0] at +0x88). Size at `nt+0x8C`.
+8. **Walk names, ordinals, functions**: classic export-table triple-pointer walk — for each `i in 0..number_of_names`, get name RVA from `names[i]`, ordinal from `ords[i]`, and final function RVA from `funcs[ordinal]`. Byte-by-byte C-string compare against `target_bytes`.
+9. **Forwarded export detection**: if `rva >= export_rva && rva < export_rva + export_size`, the export is forwarded (the "function pointer" is actually a string like `NTDLL.RtlAllocateHeap`) and the function returns null. Callers must handle this — none of the SSN path uses this.
+10. **SSN derivation (Tartarus Gate)** in `resolve_export_ssn`: builds a `Vec<u32>` of all `Zw*` function RVAs (`slice[0] == b'Z' && slice[1] == b'w'`), sorts the vec with `sort_unstable()`, then finds the index of the target function's RVA in the sorted vec. **That index IS the SSN.** This is the canonical Tartarus Gate trick that survives EDR hooks on individual `Nt*` exports because it relies on the *unaltered Zw* RVA ordering* baked into ntdll at compile time.
+11. **Gadget hunt (RecycledGate)** in `find_syscall_stub64`: scans up to 512 bytes forward from the target export thunk looking for the canonical stub pattern `4C 8B D1 B8` (`mov r10, rcx; mov eax, ...`). When found, the SSN is read at offset +4. Then a 0..32-byte forward scan from the stub finds `0F 05 C3` (syscall; ret); the gadget address is the address of `0F 05` inside ntdll's `.text`.
+12. **Fallback gadget origin**: if the target's own stub is hooked, `resolve_export_ssn` re-scans from `zw_funcs[0]` (the first Zw* export, usually untouched) — a smart defensive move because EDRs that hook `Nt*` rarely also hook `Zw*` exports.
+13. **Bounds safety**: every pointer dereference in the SSN path is guarded by `within_image(p, len, start, end)` which checks `p >= start && p.saturating_add(len) <= end` where `start=ntdll` and `end=ntdll+size_of_image` (read at `nt_headers+0x50`). The page-crossing guard inside `matches_stub64` (`(p & 0xFFF) + 4 > 0x1000`) prevents dereferences that would land across a 4K page boundary into a potential guard page.
+14. **x86 mirror**: `fs_read_u32(0x30)` returns PEB; `peb+0x0C` is `Ldr`; `peb+0xC0` is `WowTebOffset` (read by `is_wow64()`). The 32-bit DataDirectory[0] offset is `0x78` (smaller optional header). The 32-bit stub discriminator is `B8` (mov eax), followed by either `BA` (native) or `33 C9` (xor ecx,ecx — wow64 transition indicator) at offset +5.
+
+## Code Architecture
+
+Call graph (who calls whom — note the strict top-down dependency from dispatcher to resolver):
+
+```
+caller (injection/evasion modules)
+   │
+   ├─► sys_indirect::nt::nt_allocate_virtual_memory(...)            [high-level API]
+   │       │
+   │       ├─► crate::compute_hash("NtAllocateVirtualMemory")      [T-004]
+   │       └─► sys_indirect::invoke_syscall(hash, argc, &args)     [T-001/T-002/T-003 dispatch]
+   │              │
+   │              ├─► sysindirect_map::syscall_map().get(&hash)     [T-004 cache lookup]
+   │              │       └─► (cached: hash → (ssn, gadget))
+   │              │
+   │              ├─► "veh"      → crate::evasion::veh::hooks::set_hw_bp()   [T-003 VEH Gate]
+   │              ├─► "hgate"    → execute_syscall_direct() → syscallN inline [T-002 Heaven's Gate]
+   │              └─► "indirect" →
+   │                     ├─► if feature="recycled_gate":
+   │                     │     crate::sys_recycled::recycled_invoke(hash, argc, args)  [T-001 RecycledGate]
+   │                     ├─► elif feature="advanced_stack":
+   │                     │     crate::evasion::advanced_stack::replace_and_syscall()  [T-016 stack spoof]
+   │                     └─► else:
+   │                           execute_syscall_direct() → syscallN inline asm     [direct fallback]
+   │
+   └─► sysindirect_map::syscall_map()    [ONE-TIME LAZY INIT]
+              │
+              ├─► for name in api_names:
+              │     ├─► crate::compute_hash(name)              [T-004 DJB2]
+              │     └─► crate::sys_resolve::resolve_ssn(name) [T-004 PEB walk + T-002 Tartarus]
+              │            │
+              │            └─► resolve_ssn_by_hash()
+              │                   │
+              │                   ├─► ntdll_base_and_name_hashes()    [PEB walk]
+              │                   │       └─► gs_read_u64(0x60)
+              │                   │       └─► djb2_hash("ntdll.dll")
+              │                   │
+              │                   └─► resolve_export_ssn()             [T-002 Tartarus Gate]
+              │                          ├─► ImageExportDirectory walk
+              │                          ├─► zw_funcs.sort_unstable()
+              │                          ├─► find_syscall_stub64()     [T-001 gadget scan]
+              │                          │       └─► matches_stub64()
+              │                          │       └─► within_image()
+              │                          └─► returns (ssn, gadget)
+              │
+              └─► HashMap<u32, (u32, usize)>::insert(hash, (ssn, gadget))
+```
+
+Data flow:
+- `compute_hash("NtXxx")` produces a `u32` key.
+- `syscall_map()` lazily populates `HashMap<u32, (u32, usize)>` (hash → SSN+gadget) on first call.
+- All `nt::*` wrappers compute the hash of the NT function name and call `invoke_syscall(hash, argc, args)`.
+- `invoke_syscall` looks up the SSN+gadget pair from the map and dispatches via the configured mode.
+
+Type hierarchy:
+- `Peb` (top) → `PebLdrData` (ldr) → `ListEntry` (in_memory_order_module_list) → `LdrDataTableEntry` (per module) → `UnicodeString` (base_dll_name) → buffer of `u16` UTF-16.
+- `ImageExportDirectory` → `address_of_names`/`address_of_name_ordinals`/`address_of_functions` arrays → resolved `*const u8` (function VA).
+- 32-bit mirror: `ListEntry32`, `UnicodeString32`.
+
+Feature gates that affect this code path:
+- `#[cfg(target_arch = "x86_64")]` / `#[cfg(target_arch = "x86")]` — select PEB read mechanism and struct layout. The `not(any(...))` arm of `resolve_ssn_by_hash` returns `(0, 0)` for unsupported arches (ARM64 will silently fail).
+- `#[cfg(feature = "veh_syscalls")]` — enables VEH branch in `invoke_syscall`.
+- `#[cfg(feature = "recycled_gate")]` — enables `crate::sys_recycled::recycled_invoke()` in the indirect path.
+- `#[cfg(feature = "advanced_stack")]` under `not(feature = "recycled_gate")` — enables stack-spoofing fallback.
+
+## Operational Profile
+
+### When to Use
+- **Always** — this is the foundation of every other syscall technique in the implant. Without T-004 you cannot bootstrap SSN/gadget resolution without Win32 API imports.
+- When you have a zero-API surface requirement: no `GetModuleHandle`, no `GetProcAddress`, no `LoadLibrary`, no `LdrGetProcedureAddress`.
+- For droppers/loaders that need to fire `NtCreateThreadEx` / `NtAllocateVirtualMemory` / `NtWriteVirtualMemory` before any CRT has been initialized.
+
+### When NOT to Use
+- Pure C2 / recon binaries that can afford a Win32 API surface (e.g. `client_rust` HTTP transport, browser hook) — the operational cost of `unsafe` + `asm!` is not justified there.
+- Pure Rust crates compiled without `core::arch::asm!` (stable since Rust 1.59, so this is rarely an issue).
+- Cross-platform targets that include ARM64 — the current code returns `(0, 0)` on non-x86 arches.
+
+### Kill Chain Position
+T-004 is the seed of the dropper. A typical `dark_crystal` chain looks like:
+
+```
+T-004 (PEB walk)  ─►  T-002 (Tartarus SSN sort)  ─►  T-001 (RecycledGate gadget)
+                                                           │
+                                                           ▼
+                              T-005 Ekko sleep  ◄──┐   T-007 injection  ─► T-016 evasion  ─►  T-017 persistence
+                              T-003 VEH gate       │   (T-008, T-009, T-012, T-013, T-014, T-015)
+                              T-006 Phantom stubs  ┘
+```
+
+T-004 indirectly feeds T-016 stack-spoof (`advanced_stack` needs `ntdll_base` to find `RtlVirtualUnwind` for RIP unwinding) and T-013 anti-VM (uses `find_module_base` for module-presence checks like `vmtools.dll` or `sbiedll.dll`).
+
+### Trade-offs
+
+## Rust Implementation Deep Dive
+
+### `unsafe` blocks
+
+1. **`resolve.rs::gs_read_u64()`** — single `asm!` block; reads `gs:[offset]` into a `u64`. `lateout(reg) out` lets the compiler pick any GP register; `in(reg) offset` is a separate constraint; `options(nostack, readonly, pure)` prevents stack frame setup. This is the textbook pattern for a zero-cost segment read.
+2. **`resolve.rs::ntdll_base_and_name_hashes()`** — entire body unsafe. Walks raw `*const Peb` pointers; calls `core::slice::from_raw_parts(name.buffer, len)` to materialize the UTF-16 name. No allocations, no cleanup needed.
+3. **`resolve.rs::find_module_base()`** — same shape, generic version accepting `module_name: &str`. The lower-case `Vec<u8>` allocation is short-lived (dropped at function exit).
+4. **`resolve.rs::resolve_export_by_name()`** — reads MZ magic, `e_lfanew`, walks export directory. The C-string length loop `while *cstr.add(len) != 0 { len += 1; }` is the classic cause of buffer overruns if `cstr` is not NUL-terminated; the `within_image` guard at the call site doesn't directly bound the name string — only the directory arrays. If ntdll's export name table is corrupt, this can AV.
+5. **`resolve.rs::resolve_export_by_ordinal()`** — same shape; ordinal bias handling (`ordinal - base`) is correct against `IMAGE_EXPORT_DIRECTORY.Base`. Returns null for out-of-range or forwarded ordinals.
+6. **`resolve.rs::resolve_export_ssn()`** — largest unsafe body; allocates a `Vec<u32>` of Zw* RVAs, sorts, derives SSN by index lookup, then scans for `0F 05 C3` gadget. The `zw_funcs.sort_unstable()` is the heart of Tartarus Gate.
+7. **`resolve.rs::find_syscall_stub64()`** — forward+backward stub scan within ±512 bytes; the `(p & 0xFFF) + 4 > 0x1000` check in `matches_stub64` prevents reading across a 4K page boundary (would AV on guard pages).
+8. **`sys_indirect.rs::syscall1..syscall11`** — 11 inline asm blocks, one per arg count. The convention `mov r10, rcx; syscall` matches the Windows x64 syscall ABI (RCX becomes R10 because the kernel expects R10, not RCX, for the first argument due to the `syscall` instruction clobbering RCX with the return address).
+9. **`sys_indirect.rs::syscall5/7/8/9/10/11`** — extra args are spilled into the caller's home area at `[rsp+0x28]`, `[rsp+0x30]`, etc. The code comment `// Reuse the caller-provided home/stack argument area instead of moving RSP` is intentional: it skips `sub rsp, X` and avoids stack pointer manipulation that advanced stack-spoofing detectors look for. The caller must already be post-prologue (RSP misaligned by 8 from the return address).
+
+### `core::arch::asm!` usage
+
+The two distinct asm patterns:
+
+**PEB read** (`resolve.rs::gs_read_u64`):
+```rust
+core::arch::asm!(
+    "mov {}, gs:[{:e}]",
+    lateout(reg) out,
+    in(reg) offset,
+    options(nostack, readonly, pure)
+);
+```
+- `{:e}` modifier: encode the offset register's 32-bit half. The `gs:[imm32]` form is what the assembler accepts.
+- `nostack`: no stack frame — the call is invisible to stack walkers.
+- `readonly, pure`: allows the compiler to CSE this if it appears multiple times.
+
+**Direct syscall** (`sys_indirect.rs::syscall1`):
+```rust
+asm!(
+    "mov r10, rcx",
+    "syscall",
+    in("rcx") a1,
+    in("eax") ssn,
+    lateout("rax") ret,
+    out("r11") _,
+    lateout("rcx") _,
+);
+```
+- Hard-coded `r10`/`rcx`/`rax`/`r11` — the Windows kernel ABI: R10 receives the first arg (because syscall clobbers RCX with RIP), EAX is the SSN, RAX gets the NTSTATUS return, R11 is clobbered by `syscall` (RFLAGS copy).
+- `lateout("rcx") _`: marks RCX as clobbered (it is) without binding it to a variable.
+- No `options(...)` → uses default `preserves_flags: false`, `nostack: false`. This means the asm block is allowed to clobber the flags and the stack pointer. It doesn't, but the compiler doesn't trust it.
+
+### FFI patterns
+
+- **No `extern "C"` declarations** — every type is hand-rolled as `#[repr(C)]`. This avoids `windows-sys`/`windows` crate dependencies that would leak API name strings via the import table.
+- `UnicodeString` mirrors `UNICODE_STRING` from ntdef.h; structurally identical to the PEB layout. The `length` field is bytes, not chars — the code correctly divides by 2 for UTF-16.
+- `LdrDataTableEntry` is a partial reconstruction of `LDR_DATA_TABLE_ENTRY`. The fields marked `reserved1..5` exist for layout fidelity; only `dll_base`, `base_dll_name`, and `in_memory_order_links` are actually dereferenced.
+- Handle ownership: `resolve.rs` never allocates or frees anything; it only reads memory mapped by the loader. No `Drop` impls needed. The `Vec<u32> zw_funcs` in `resolve_export_ssn` is owned and dropped at function exit.
+- `sys_indirect.rs::nt::*` wrappers take `*mut c_void` / `*mut usize` arguments that the caller owns. The wrappers do not allocate handles themselves; the caller is responsible for `NtClose()`-ing anything returned via out-pointer.
+
+### Initialization patterns
+
+- **`OnceLock<HashMap<u32, (u32, usize)>>`** in both `sysindirect_map.rs` and `crowd/src/syscall_map.rs`. First call lazily populates the map by iterating `api_names`, calling `resolve_ssn(name)`, and inserting `(hash, (ssn, gadget))`.
+- **Idempotent**: if the same function name appears twice, the second insert overwrites the first (HashMap semantics). Not an issue since `compute_hash` is deterministic.
+- **Lazy evaluation**: the map is never built if no syscall is ever invoked. This matters for short-lived dropper variants that only execute shellcode and exit.
+- **Compile-time string embedding**: `crowd/src/syscall_map.rs` uses `&[&str]` literals which become `.rdata` strings; `crates/core/src/sysindirect_map.rs` uses `crate::obf!("...")` which transforms them at compile time into stack-allocated byte arrays (T-021 obfuscation).
+
+### Memory layout
+
+- `Peb` (x64) — 32 bytes: 2 + 1 + 1 + 4 padding + 16 (two pointers) + 8 (ldr). `ldr` at offset 0x18 ✓ matches `_PEB.Ldr`.
+- `PebLdrData` — 48 bytes: 8 + 24 + 16. `in_memory_order_module_list` at offset 0x20 ✓ matches `_PEB_LDR_DATA.InMemoryOrderModuleList`.
+- `LdrDataTableEntry` — `reserved1: [*const u8; 2]` (16) + `in_memory_order_links: ListEntry` (16) = `in_memory_order_links` at offset 0x10 ✓ matches `_LDR_DATA_TABLE_ENTRY.InMemoryOrderLinks`. The `sub(size_of::<[*const u8; 2]>())` call in the walk computes exactly this back-step.
+- `UnicodeString` — 8 bytes (2+2+4 padding+8 ptr); structurally identical to `UNICODE_STRING`.
+- `ImageExportDirectory` — 40 bytes total; matches `IMAGE_EXPORT_DIRECTORY` exactly.
+
+### SSN resolution
+
+The `api_names` inventory in `crowd/src/syscall_map.rs` (40 entries) is the master list of every NT call the implant needs:
+
+```
+Memory:     NtAllocateVirtualMemory, NtAllocateVirtualMemoryEx, NtWriteVirtualMemory,
+            NtReadVirtualMemory, NtProtectVirtualMemory, NtFreeVirtualMemory
+Thread/Proc:NtCreateThreadEx, NtOpenProcess, NtQueryInformationProcess, NtRemoveProcessDebug,
+            NtTerminateProcess, NtCreateProcessEx, NtResumeThread, NtSuspendThread,
+            NtSetContextThread, NtGetContextThread, NtSetInformationProcess
+Section:    NtCreateSection, NtMapViewOfSection, NtUnmapViewOfSection
+APC:        NtQueueApcThread
+Sync:       NtCreateEvent, NtSetEvent, NtWaitForSingleObject
+File:       NtOpenFile, NtWriteFile, NtSetInformationFile, NtFlushBuffersFile
+NTFS EA:    NtSetEaFile, NtQueryEaFile                                  [T-017 persistence]
+WorkerPool: NtDuplicateObject, NtQueryObject, NtSetInformationWorkerFactory,
+            NtReleaseWorkerFactoryWorker                                 [T-007 Pool Party]
+ProcCreate: NtCreateUserProcess                                          [T-015 PPID spoof]
+Security:   NtSetSecurityObject
+Misc:       NtClose, NtDelayExecution, NtQuerySystemInformation
+```
+
+This maps cleanly to: standard memory ops, thread/section manipulation, process creation, APC queueing, NTFS EA (T-017 persistence), file I/O (T-013 self-delete / T-010 herpaderping), worker factory (T-007 Pool Party), synchronization (T-009 proxy DLL).
+
+### Error handling
+
+- `resolve_ssn_by_hash` returns `(0, 0)` on failure (PEB null, ntdll not found, export directory empty, no Zw* exports, no stub found).
+- `invoke_syscall` returns `-1` on hash miss in the syscall map; otherwise returns the raw NTSTATUS cast to `i32`.
+- The `nt::*` wrappers blindly propagate the return — there is no `STATUS_*` to `Result<>` mapping. Callers must bit-test `>= 0` (or `>= 0x80000000` unsigned for the error range) themselves.
+- No retries, no fallbacks inside the resolver itself — only the dispatcher (`sys_indirect.rs`) has a fallback ladder: veh → recycled_gate → advanced_stack → direct.
+
+## Cross-References Found in Code
+
+- `crowd/src/resolve.rs::resolve_export_ssn()` → implements **T-002 Tartarus Gate SSN resolution** via the `zw_funcs.sort_unstable()` block at L351-L412. The Zw* RVA sort is the defining Tartarus Gate trick.
+- `crowd/src/resolve.rs::find_syscall_stub64()` → provides the RecycledGate gadget address for **T-001 RecycledGate** (the `0F 05 C3` scan). The gadget is consumed by `crate::sys_recycled::recycled_invoke()` in `sys_indirect.rs` line `crate::sys_recycled::recycled_invoke(hash, arg_count, args)`.
+- `crates/core/src/sys_indirect.rs::invoke_syscall()` `"veh"` arm → calls `crate::evasion::veh::hooks::set_hw_bp()` implementing **T-003 VEH Syscall Gate**. The arm is gated by `#[cfg(feature = "veh_syscalls")]`.
+- `crates/core/src/sys_indirect.rs::invoke_syscall()` `"indirect"` arm → calls `crate::sys_recycled::recycled_invoke()` implementing **T-001 RecycledGate** when the `recycled_gate` feature is enabled.
+- `crates/core/src/sys_indirect.rs::invoke_syscall()` advanced_stack fallback → calls `crate::evasion::advanced_stack::replace_and_syscall()` implementing **T-016 stack spoofing** when `advanced_stack` is enabled and `recycled_gate` is not.
+- `crates/core/src/sysindirect_map.rs` line `let (ssn, gadget) = crate::sys_resolve::resolve_ssn(name);` → invokes this file's T-004 implementation through the `core` crate's path alias.
+- `crowd/src/syscall_map.rs` line `let (ssn, gadget) = crate::resolve::resolve_ssn(name);` → same dependency, crowd crate path.
+- `crates/core/src/sysindirect_map.rs` uses `crate::obf!()` macro → **T-021 obfuscation proc macro** for compile-time string concealment. The crowd version omits this — an OPSEC regression.
+- `crates/core/src/sys_indirect.rs::nt::*` → every wrapper calls `crate::compute_hash("NtXxx")` then `invoke_syscall(hash, argc, &args)`, both of which transitively depend on T-004 having populated the map.
+- `crowd/src/resolve.rs` `find_module_base()` → consumed by **T-013 anti-VM** modules that check for `vmtools.dll`, `sbiedll.dll`, `dbghelp.dll` presence via module-name hash. (Not shown in this file slice but referenced by the file manifest for `anti_vm.rs`.)
+- `crowd/src/resolve.rs` `resolve_export_by_name()` → consumed by **T-016 stack spoofing** (`advanced_stack`) and **T-009 ntdll unhook** modules that need to resolve non-Nt* exports like `RtlVirtualUnwind`, `RtlCaptureContext`.
+
+## Edge Cases & Failure Modes
+
+1. **Forwarded export encountered.**
+   - Failure path: `resolve_export_by_name` returns null when `rva >= export_rva && rva < export_rva + export_size`. The function pointer is actually a string like `NTDLL.RtlAllocateHeap`.
+   - Symptom: callers that expect a function pointer silently get null. The SSN path (`resolve_export_ssn`) is unaffected because it doesn't use this function.
+   - Workaround: caller must handle null, walk the forwarder string, re-resolve in the target module. Not currently implemented — operators must avoid using `resolve_export_by_name` for known forwarded exports.
+
+2. **Hooked ntdll with overwritten stub.**
+   - Failure path: `matches_stub64` fails on a `4C 8B D1 B8` pattern that an EDR patched to a JMP. `find_syscall_stub64` scans ±512 bytes but if no nearby clean stub exists, returns `(0, 0)`.
+   - Symptom: SSN found via Tartarus but gadget is 0; RecycledGate can't be used; `invoke_syscall` falls through to direct syscall (still works, just no stack-spoofing benefit).
+   - Fallback: `resolve_export_ssn` re-scans from `zw_funcs[0]` — the first Zw* export is usually untouched even on EDR'd boxes because EDRs hook the `Nt*` user-facing entry, not the `Zw*` kernel-facing one.
+
+3. **Page-crossing pointer dereference in `matches_stub64`.**
+   - Failure path: if `p` is near the end of a 4K page and `p + 4` would land in the next page (potentially a guard page), the dereference would AV.
+   - Symptom: crash in `resolve_ssn` deep inside `find_syscall_stub64`.
+   - Workaround: the explicit check `((p as usize & 0xFFF) + 4) > 0x1000 { return false; }` in `matches_stub64` prevents this. Note: the same protection exists in `matches_stub32` with `+7` instead of `+4`.
+
+4. **PEB null on edge hosts.**
+   - Failure path: `gs_read_u64(0x60)` returns 0 if the calling thread has no PEB (rare for kernel-spawned worker threads without user-mode initialization, or for threads hijacked early in process startup).
+   - Symptom: `ntdll_base_and_name_hashes` returns `(null, 0)`, syscall map is empty, every NT call returns -1.
+   - Workaround: none in code — operator must ensure resolver runs in a normally-initialized user-mode thread. The dispatcher's `invoke_syscall` will return -1 cleanly without crashing, but the entire dropper will be inert.
+
+5. **WOW64 detection mismatch on Win10/11.**
+   - Failure path: `is_wow64()` reads `fs:[0xC0]` which is `TEB32->WowTebOffset`. On newer Windows 10/11 with reduced WOW64 TEB usage, this can return stale or unexpected data.
+   - Symptom: 32-bit stub pattern mismatch; `find_syscall_stub32` picks wrong gate offset (`0x0A` for wow64 vs `0x0F` for native).
+   - Workaround: in 32-bit builds, prefer the x64 trampoline via Heaven's Gate if available (`"hgate"` mode in `sys_indirect.rs`).
+
+6. **Module not loaded yet.**
+   - Failure path: `find_module_base("wininet.dll")` returns null if wininet hasn't been imported by the host process. Browser modules only appear after `CoInitialize`/IE startup.
+   - Symptom: caller gets null and must fall back to `LoadLibrary` (which defeats the purpose of zero-API access).
+   - Workaround: trigger an import (e.g. call `CoCreateInstance(CLSID_InternetExplorer)`) before resolving. Or use `LdrLoadDll` via `resolve_export_by_name(ntdll, "LdrLoadDll")`.
+
+7. **DJB2 hash collision.**
+   - DJB2 32-bit hash has 2^32 space; with 40 entries the collision probability is ~1 in 10^8. Not actively defended against.
+   - Symptom: two different API names hash to the same key; second insert overwrites first; wrong SSN used.
+For high-assurance builds, switch to a 64-bit hash (FNV-1a or xxHash).
+
+8. **Missing `syscall11` support in dispatcher.**
+   - Failure path: `nt::nt_create_thread_ex` calls `invoke_syscall(hash, 11, &args)` but the original comment says "We don't have syscall11 yet" — the code has since been extended with `syscall11`, so this works. But future additions (e.g. 12+ args) would silently fail with `-1`.
+   - Workaround: keep the arg-count ladder up-to-date when adding new NT wrappers. Consider a macro to generate `syscallN` for any N.
+
+## OPSEC Notes
+
+**Artifacts left by this technique:**
+- **No file system artifacts.** No files written.
+- **No registry artifacts.** No keys touched.
+- **No network artifacts.** No sockets.
+- **Memory artifacts**: the `Vec<u32> zw_funcs` allocation inside `resolve_export_ssn` is short-lived (dropped at function exit). The `HashMap` in `syscall_map()` lives for the process lifetime and is identifiable by a `OnceLock` static. A memory forensic examiner can find the cached (hash → (ssn, gadget)) entries and back-resolve the hashes to API names.
+- **Stack artifacts**: `gs_read_u64` uses `options(nostack)` so no stack frame is created; the call is invisible to stack walkers. The `syscall1..syscall11` blocks do create stack frames (no `nostack` option), but they're tiny and look like normal compiler-emitted code.
+- **ETW-TI**: `resolve_export_ssn` reads memory but issues **no syscalls** — completely invisible to syscall telemetry. The first time a real syscall fires is when `invoke_syscall` is called with the resolved SSN. This is the technique's main stealth property.
+
+**Strings to clean up before shipping:**
+- `crowd/src/syscall_map.rs` lines 22-65: 40 plaintext API-name strings (`"NtAllocateVirtualMemory"`, `"NtCreateUserProcess"`, etc.) visible in `.rdata` as UTF-8 byte arrays. **Patch these with `obf!()`** before shipping to a target with mature EDR.
+- `crates/core/src/sysindirect_map.rs` already uses `crate::obf!()` — this is the safer variant to ship.
+
+**Cleanup functions**: none — this technique is purely informational (reads PEB and ntdll memory) and produces no kernel objects requiring cleanup. The only state is the `OnceLock<HashMap>` which lives for the process lifetime; if you're tearing down, you're tearing down the process.
+
+## Reusable Patterns
+
+### Pattern: Cross-Architecture TEB Read
+- **Use when**: needing process-global state without Win32 API calls (PEB, TEB, KUSER_SHARED_DATA, GDI/USER32 shared pieces).
+- **Code ref**: `crowd/src/resolve.rs::gs_read_u64()` and `fs_read_u32()`
+- **How**: `core::arch::asm!("mov {}, gs:[{:e}]", lateout(reg) out, in(reg) offset, options(nostack, readonly, pure))`. The `{:e}` modifier forces the offset register's 32-bit half (the `gs:[imm32]` form is what x86-64 accepts). `nostack` makes it safe inside hot paths because no prologue is emitted. For 32-bit, swap `gs`→`fs` and `u64`→`u32`.
+
+### Pattern: Hash-Driven Module Lookup
+- **Use when**: scanning a Windows linked list by string match without any string-compare API.
+- **Code ref**: `crowd/src/resolve.rs::find_module_base()`
+- **How**: lower-case every u16 code unit via `|0x20`, DJB2-hash the bytes, compare against a pre-computed target hash. Avoids `_wcsicmp`, `CompareStringW`, or any CRT function. The walk goes through `InMemoryOrderModuleList.flink` and converts each link back to the containing `LdrDataTableEntry` via `sub(size_of::<[*const u8; 2]>())` — the exact `CONTAINING_RECORD` macro idiom from WDM, expressed in Rust.
+
+### Pattern: Bounds-Checked Pointer Walk
+- **Use when**: walking arbitrary PE structures that could be hostile or partially mapped.
+- **Code ref**: `crowd/src/resolve.rs::within_image()` and `matches_stub64`
+- **How**: compute `start`/`end` from `image_base` + `size_of_image` (read at `nt_headers+0x50` on x64). For every read, check `p >= start && p.saturating_add(len) <= end`. Additionally, prevent 4K page crossing with `(p & 0xFFF) + needed > 0x1000` — this catches the AV-on-guard-page edge case that catches many hand-written PE parsers.
+
+### Pattern: OnceLock Lazy Syscall Cache
+- **Use when**: any module needs SSN+gadget pairs more than once across multiple call sites.
+- **Code ref**: `crates/core/src/sysindirect_map.rs::syscall_map()` and `crowd/src/syscall_map.rs::syscall_map()`
+- **How**: `static MAP: OnceLock<HashMap<u32, (u32, usize)>> = OnceLock::new(); MAP.get_or_init(|| { ... })`. Initialization happens on first call from the calling thread; subsequent reads are lock-free (OnceLock uses atomic Acquire-load on the inner `OnceCell`). The map is `&'static` so it never drops and never triggers a destructor that a defender could hook. The cache survives for the process lifetime — appropriate because SSNs don't change at runtime.
+
+### Pattern: Direct Syscall with Home-Area Spill
+- **Use when**: syscall ABI requires >4 args and you must avoid `sub rsp, X` (stack-spoofing-safe, anti-RE clean).
+- **Code ref**: `crates/core/src/sys_indirect.rs::syscall5()` / `syscall7()` / `syscall8()` / `syscall9()` / `syscall10()` / `syscall11()`
+- **How**: write args 5+ directly into `[rsp+0x28]` through `[rsp+0x58]` using `mov [rsp+X], {reg}` template operands. This reuses the caller's pre-allocated home area (`[rsp+0x20]`..`[rsp+0x38]` is the 32-byte shadow space + arg home slots). Benefit: no stack pointer movement means stack-walking heuristics that look for `sub rsp, X` patterns won't trigger. Caller must already be post-prologue (RSP misaligned by 8 from the return address).
+
+### Pattern: Tartarus Gate RVA Sort
+- **Use when**: deriving SSNs in an EDR-hooked environment where direct `Nt*` stub reads fail.
+- **Code ref**: `crowd/src/resolve.rs::resolve_export_ssn()` lines around `zw_funcs.sort_unstable()`
+- **How**: enumerate all `Zw*` exports, sort their function RVAs ascending, and the position of the target function in the sorted list IS its SSN. This relies on the fact that `ntdll`'s Zw* exports are emitted in ascending SSN order by `ntoskrnl`'s build pipeline. EDRs that hook individual `Nt*` exports rarely touch `Zw*` exports because Zw* is the kernel-mode entry, not user-facing.

@@ -1,0 +1,174 @@
+{
+  "timestamp": "2026-07-22T01:16:07.637028+00:00",
+  "model": "glm-5.2",
+  "total_jobs": 17,
+  "successful": 17,
+  "failed": 0,
+  "results": [
+    {
+      "job_id": "analysis-T008",
+      "status": "success",
+      "elapsed_s": 140.1,
+      "files": [
+        "techniques/T008-threadless-injection.md"
+      ],
+      "output_file": "analysis-T008.md"
+    },
+    {
+      "job_id": "analysis-T004",
+      "status": "success",
+      "elapsed_s": 143.6,
+      "files": [
+        "techniques/T004-peb-walker.md"
+      ],
+      "output_file": "analysis-T004.md"
+    },
+    {
+      "job_id": "analysis-T006",
+      "status": "success",
+      "elapsed_s": 144.7,
+      "files": [
+        "techniques/T006-phantom-stubs.md"
+      ],
+      "output_file": "analysis-T006.md"
+    },
+    {
+      "job_id": "analysis-T005",
+      "status": "success",
+      "elapsed_s": 165.7,
+      "files": [
+        "techniques/T005-ekko-rop-sleep.md",
+        "source-extracts/ekko_rop_sleep.rs"
+      ],
+      "output_file": "analysis-T005.md"
+    },
+    {
+      "job_id": "analysis-T007",
+      "status": "success",
+      "elapsed_s": 191.8,
+      "files": [
+        "techniques/T007-pool-party.md",
+        "source-extracts/pool_party_injection.rs"
+      ],
+      "output_file": "analysis-T007.md"
+    },
+    {
+      "job_id": "analysis-T009-T010",
+      "status": "success",
+      "elapsed_s": 198.2,
+      "files": [
+        "techniques/T009-process-ghosting.md",
+        "techniques/T010-process-herpaderping.md"
+      ],
+      "output_file": "analysis-T009-T010.md"
+    },
+    {
+      "job_id": "analysis-T012-source",
+      "status": "success",
+      "elapsed_s": 194.3,
+      "files": [
+        "techniques/T012-early-cascade.md",
+        "source-extracts/early_cascade_injection.rs"
+      ],
+      "output_file": "analysis-T012-source.md"
+    },
+    {
+      "job_id": "analysis-T015-T016",
+      "status": "success",
+      "elapsed_s": 165.9,
+      "files": [
+        "techniques/T015-ppid-spoofing.md",
+        "techniques/T016-edr-evasion.md"
+      ],
+      "output_file": "analysis-T015-T016.md"
+    },
+    {
+      "job_id": "analysis-T011-T012",
+      "status": "success",
+      "elapsed_s": 234.5,
+      "files": [
+        "techniques/T011-dirty-vanity.md",
+        "techniques/T012-early-cascade.md"
+      ],
+      "output_file": "analysis-T011-T012.md"
+    },
+    {
+      "job_id": "analysis-T013-T014",
+      "status": "success",
+      "elapsed_s": 239.1,
+      "files": [
+        "techniques/T013-remaining-injection.md",
+        "techniques/T014-nt-create-user-process.md"
+      ],
+      "output_file": "analysis-T013-T014.md"
+    },
+    {
+      "job_id": "analysis-T017",
+      "status": "success",
+      "elapsed_s": 136.9,
+      "files": [
+        "techniques/T017-persistence-suite.md"
+      ],
+      "output_file": "analysis-T017.md"
+    },
+    {
+      "job_id": "analysis-T018",
+      "status": "success",
+      "elapsed_s": 138.2,
+      "files": [
+        "techniques/T018-edo-tensei.md",
+        "source-extracts/edo_tensei_resurrection.rs"
+      ],
+      "output_file": "analysis-T018.md"
+    },
+    {
+      "job_id": "analysis-T019",
+      "status": "success",
+      "elapsed_s": 124.5,
+      "files": [
+        "techniques/T019-edo-dead-drop.md",
+        "source-extracts/edo_dead_drop_channels.rs"
+      ],
+      "output_file": "analysis-T019.md"
+    },
+    {
+      "job_id": "analysis-T020",
+      "status": "success",
+      "elapsed_s": 139.6,
+      "files": [
+        "techniques/T020-anti-analysis.md",
+        "source-extracts/api_hammering.rs"
+      ],
+      "output_file": "analysis-T020.md"
+    },
+    {
+      "job_id": "analysis-T021",
+      "status": "success",
+      "elapsed_s": 132.7,
+      "files": [
+        "techniques/T021-crypto-obfuscation.md",
+        "source-extracts/eth_tx_signing.rs"
+      ],
+      "output_file": "analysis-T021.md"
+    },
+    {
+      "job_id": "analysis-T023",
+      "status": "success",
+      "elapsed_s": 176.3,
+      "files": [
+        "techniques/T023-client-capabilities.md",
+        "source-extracts/kaguya_lotl.rs"
+      ],
+      "output_file": "analysis-T023.md"
+    },
+    {
+      "job_id": "analysis-T022",
+      "status": "success",
+      "elapsed_s": 246.0,
+      "files": [
+        "techniques/T022-networking.md"
+      ],
+      "output_file": "analysis-T022.md"
+    }
+  ]
+}

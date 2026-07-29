@@ -1,0 +1,343 @@
+---
+id: T-012
+name: Early Cascade APC Injection
+category: process-injection
+tier: S
+mitre: T1055.004
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires: [T-001, T-015, T-004]
+enables: [T-017, T-018, T-019]
+vault_references:
+  - techniques/T012-early-cascade.md
+  - src/dark_crystal/crowd/src/early_cascade.rs
+  - src/dark_crystal/crowd/src/early_bird.rs
+implements:
+  - file: dark_crystal/crowd/src/early_cascade.rs
+    key_functions:
+      - cascade_inject_into
+      - query_pid_from_handle
+      - cascade_inject
+      - cascade_inject_ppid
+      - cascade_inject_default
+    key_structs:
+      - ProcessBasicInformation
+    key_constants:
+      - CREATE_SUSPENDED (0x00000004)
+      - MEM_COMMIT_RESERVE (0x00003000)
+      - PAGE_READWRITE (0x04)
+      - PAGE_EXECUTE_READ (0x20)
+      - MEM_RELEASE (0x8000)
+    lines_of_interest:
+      - "L35-L41: NT memory/protection constant block"
+      - "L50-L125: cascade_inject_into — full 6-step NT injection sequence"
+      - "L107-L130: NtProtectVirtualMemory RW→RX flip (critical abort path)"
+      - "L134-L160: NtQueueApcThread — pre-LdrInitializeThunk APC queue"
+      - "L195-L218: query_pid_from_handle via ProcessBasicInformation class 0"
+      - "L222-L268: cascade_inject — Win32 CreateProcessW (only Win32 call)"
+      - "L282-L308: cascade_inject_ppid — delegates to crate::ppid::spawn_with_ppid_spoof"
+  - file: dark_crystal/crowd/src/early_bird.rs
+    key_functions:
+      - early_bird_inject
+      - early_bird_default
+      - early_bird_with_ppid
+    key_structs:
+      - PBI (inline, anonymous)
+    key_constants:
+      - CREATE_SUSPENDED (0x00000004)
+    lines_of_interest:
+      - "L18-L84: early_bird_inject — same 6-step sequence as cascade"
+      - "L70-L74: NtProtectVirtualMemory — non-fatal failure (warn-and-continue)"
+      - "L97-L108: NtQueueApcThread call (RecycledGate syscall)"
+      - "L113-L115: NtResumeThread — no NTSTATUS check in non-PPID path"
+      - "L128-L208: early_bird_with_ppid — inline PBI struct + crate::ppid delegate"
+min_windows: Windows 7+
+needs_admin: no
+tags: [injection, apc, pre-initialization, pure-nt, edr-evasion, indirect-syscalls, sacrificial-process, opsec-safe, wx-compliant, ppid-spoofable]
+---
+
+# Early Cascade APC Injection — Operator Playbook
+
+## TL;DR
+Early Cascade injects shellcode via `NtQueueApcThread` against a `CREATE_SUSPENDED` sacrificial process, queuing the APC so it dispatches during `ntdll!LdrInitializeThunk` — before CRT init, TLS callbacks, and any `DLL_PROCESS_ATTACH` runs. Every NT call routes through RecycledGate (T-001) so ETW-TI sees the kernel transition originating from `ntdll!.text` rather than implant memory. The `early_cascade.rs` file is the polished S-tier reference; `early_bird.rs` is its close-cousin predecessor with the same syscall surface but sloppier error handling.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `dark_crystal/crowd/src/early_cascade.rs` | Polished S-tier implementation: factored `cascade_inject_into` core, dedicated PID-query helper, strict W^X abort path, Win32-free PPID variant. | `cascade_inject()`, `cascade_inject_ppid()`, `cascade_inject_default()` | ~12K |
+| `dark_crystal/crowd/src/early_bird.rs` | Earlier "Early Bird" variant — same syscall path (NtQueueApcThread via RecycledGate) but inline PID query, non-fatal protection-flip failure, unchecked NtResumeThread. | `early_bird_inject()`, `early_bird_default()`, `early_bird_with_ppid()` | ~10K |
+
+The two files implement essentially the same technique — the only meaningful divergence is that `early_cascade.rs` aborts cleanly on `NtProtectVirtualMemory` failure whereas `early_bird.rs` continues with a dbg warning (leaving a RW page that will fault at APC dispatch). Both `early_bird_*` entrypoints route through `crate::recycled::*` (T-001), making them effectively identical in OPSEC profile despite the historical name difference.
+
+## How It Works
+
+The technique exploits the fact that a thread created in `CREATE_SUSPENDED` state still walks `ntdll!LdrInitializeThunk` when resumed — and APCs queued against it fire *inside* that initialization cascade, before the PE entry point. Combined with pure-NT syscalls via RecycledGate (T-001), the kernel transitions all appear to originate from `ntdll!.text`, defeating ETW-TI stack-based detection.
+
+**Step 1 — Sacrificial process creation.** The non-PPID path calls `winapi::um::processthreadsapi::CreateProcessW` directly with `CREATE_SUSPENDED` (0x4) and an `STARTUPINFOW`/`PROCESS_INFORMATION` pair. This is the *only* Win32 call in the entire technique. The PPID path (`cascade_inject_ppid`) instead delegates to `crate::ppid::spawn_with_ppid_spoof(target_exe, parent_pid, true)` — `true` = suspended — which (per T-015) uses `NtCreateUserProcess` with a `RTL_USER_PROCESS_PARAMETERS` populated for a spoofed parent. Raw `hProcess` / `hThread` handles are extracted via `pi.hProcess as usize` (downcast) and passed forward as `usize`.
+
+**Step 2 — Remote allocation (`NtAllocateVirtualMemory`).** `crate::recycled::nt_allocate_virtual_memory(h_proc_raw, &mut remote_addr, 0, &mut region_size, MEM_COMMIT_RESERVE, PAGE_READWRITE)` allocates exactly `shellcode.len()` bytes. The region starts as **RW** — never RWX. The `ZeroBits` argument is 0 (any address). The check `status < 0 || remote_addr.is_null()` covers both NTSTATUS failures and the rare success-but-null case. On failure: `nt_terminate_process(h_proc_raw, 1)`, `nt_close(h_thread_raw)`, `nt_close(h_proc_raw)`, then bail with the NTSTATUS.
+
+**Step 3 — Shellcode write (`NtWriteVirtualMemory`).** `crate::recycled::nt_write_virtual_memory(h_proc_raw, remote_addr, shellcode.as_ptr() as *const c_void, shellcode.len(), &mut written)` copies the payload in. The `written` out-parameter is captured (debug log compares it to `shellcode.len()`). On failure: `nt_free_virtual_memory` with `MEM_RELEASE` to release the page, then terminate+close.
+
+**Step 4 — Protection flip (`NtProtectVirtualMemory`).** `crate::recycled::nt_protect_virtual_memory(h_proc_raw, &mut base_prot, &mut prot_size, PAGE_EXECUTE_READ, &mut old_protect)` flips RW→RX. This is the W^X invariant — the page is never simultaneously writable and executable. **`early_cascade.rs` treats this step as fatal** (abort path frees memory + terminates + closes handles), explicitly noting in the comment that "if protection flip fails, the shellcode page stays RW — DEP won't protect it" and "abort to avoid leaving a RW+executable region that EDRs can flag". The `early_bird.rs` counterpart is *less safe*: it only logs a `mega_dbg!` warning and continues, which means an RX-failed page will fault when the APC dispatcher jumps to it, leaving a zombie process and a louder crash signature.
+
+**Step 5 — APC queue (`NtQueueApcThread` — NOT `QueueUserAPC`).** `crate::recycled::nt_queue_apc_thread(h_thread_raw, remote_addr as *mut c_void, null_mut(), null_mut(), 0)` queues a kernel APC against the suspended main thread. The four-arg signature matches the NT APC prototype: `Routine = remote_addr` (our shellcode), `Arg1/Arg2/Arg3 = null`. Crucially this is `NtQueueApcThread`, not `kernel32!QueueUserAPC` — no Win32 wrapper, no ETW user-mode provider firing, no `KernelObject` kernel-mode telemetry beyond the syscall itself. The comment block at L137-L152 explicitly calls out that "the APC dispatcher in ntdll fires our routine during the initialization cascade -- before LdrInitializeThunk completes".
+
+**Step 6 — Thread resume (`NtResumeThread`).** `crate::recycled::nt_resume_thread(h_thread_raw, &mut prev_count)` decrements the suspend count from 1→0. The `prev_count` out-param confirms the prior suspended state. As soon as the thread becomes runnable, the kernel's `KiUserApcDispatcher` path runs *before* the user-mode thread context resumes — the queued APC routine (shellcode) executes synchronously, inside `LdrInitializeThunk`'s `NtTestAlert` call, before CRT init / TLS callbacks / `DLL_PROCESS_ATTACH`. `early_cascade.rs` checks NTSTATUS and terminates the zombie on failure; `early_bird_inject` (non-PPID path) calls `nt_resume_thread(h_thread_raw, std::ptr::null_mut())` and discards the result — a latent bug if the syscall fails silently.
+
+**Step 7 — Handle cleanup.** Both handles closed via `crate::recycled::nt_close`. The shellcode process keeps running; the operator is responsible for lifecycle management.
+
+## Code Architecture
+
+```
+                 ┌────────────────────────────────────────┐
+                 │  Public API (early_cascade.rs)         │
+                 │   cascade_inject()                    │
+                 │   cascade_inject_ppid()                │
+                 │   cascade_inject_default()             │
+                 └───────────┬──────────────┬───────────┘
+                             │              │
+              Win32 path     │              │  NT-only path
+              (CreateProcessW)│              │  (crate::ppid::spawn_with_ppid_spoof)
+                             ▼              ▼
+                 ┌────────────────────┐  ┌─────────────────────┐
+                 │ winapi :: um ::    │  │ crate::ppid (T-015) │
+                 │ processthreadsapi  │  │   spawn_with_ppid_  │
+                 │ CreateProcessW     │  │   spoof              │
+                 └─────────┬──────────┘  └──────────┬──────────┘
+                           │                        │
+                           │   raw handles (usize)  │
+                           ▼                        ▼
+                 ┌───────────────────────────────────────────┐
+                 │  cascade_inject_into (private core)        │
+                 │    1. nt_allocate_virtual_memory (RW)       │
+                 │    2. nt_write_virtual_memory              │
+                 │    3. nt_protect_virtual_memory (RX flip)  │
+                 │    4. nt_queue_apc_thread                  │
+                 │    5. nt_resume_thread                     │
+                 │    6. nt_close (×2)                        │
+                 │                                           │
+                 │  Error path: nt_free_virtual_memory +     │
+                 │   nt_terminate_process + nt_close         │
+                 └───────────────────────┬───────────────────┘
+                                         │
+                                         ▼
+                       ┌──────────────────────────────────┐
+                       │  crate::recycled (T-001)         │
+                       │   — JMP into ntdll 0F 05 C3      │
+                       │     gadget for every NT call     │
+                       │   — SSN resolved via Hells/Halos │
+                       │     /Tartarus (T-002)             │
+                       └──────────────────────────────────┘
+```
+
+**Call graph (early_cascade.rs):**
+- `cascade_inject_default` → `cascade_inject` → `cascade_inject_into`
+- `cascade_inject_ppid` → `crate::ppid::spawn_with_ppid_spoof` (T-015) → `query_pid_from_handle` → `cascade_inject_into`
+- `cascade_inject_into` → `crate::recycled::{nt_allocate_virtual_memory, nt_write_virtual_memory, nt_protect_virtual_memory, nt_queue_apc_thread, nt_resume_thread, nt_free_virtual_memory, nt_terminate_process, nt_close}` (all T-001)
+- `query_pid_from_handle` → `crate::recycled::nt_query_information_process` (T-001) with class 0 (`ProcessBasicInformation`)
+
+**Call graph (early_bird.rs):** Identical pattern, but with the core 6-step inlined into each public function (no shared `cascade_inject_into` helper) and an inline `PBI` struct inside `early_bird_with_ppid`.
+
+**Data flow:** Shellcode (`&[u8]`) is borrowed for the duration of the call, never copied into a heap allocation in the implant's own address space — it's streamed directly through `nt_write_virtual_memory`. Raw handles flow as `usize` (not `HANDLE` or `OwnedHandle`) — the unsafe contract is that successful paths close both handles and failure paths close both handles and terminate the process. There is no RAII guard; correctness relies on the explicit `nt_close` calls in every exit branch.
+
+**Type hierarchy:** Only one named struct (`ProcessBasicInformation` in `query_pid_from_handle`), defined `#[repr(C)]` with six `usize` fields matching the Windows `PROCESS_BASIC_INFORMATION` layout on x64 (48 bytes total). The early_bird variant uses an inline anonymous `PBI { _pad: [usize; 4], unique_pid: usize, _inh: usize }` — same memory layout, different naming convention.
+
+**Feature gates:** None directly in this file. `#![allow(dead_code, non_snake_case)]` at the top of both files indicates they may be compiled out under certain configs. The `mega_dbg!` macro is presumably cfg-gated elsewhere (T-021 patterns) to strip debug strings from production builds.
+
+## Operational Profile
+
+### When to Use
+- Engagement requires code execution that fires before any EDR hook is in place (CRT, IAT, ETW-TI user-mode providers, mini-stack-walk callbacks).
+- Target is a same-architecture user-mode process (no cross-arch injection — `nt_write_virtual_memory` doesn't thunk).
+- You can accept a sacrificial process appearing in the process tree (mitigated by `cascade_inject_ppid`).
+- Operator controls the shellcode buffer (no reflectively-loaded PE — that's T-013 PE loader territory).
+
+### When NOT to Use
+- Cross-architecture injection (e.g., 64-bit implant injecting into 32-bit `syswow64` process): would need Wow64 thunking, which `NtQueueApcThread` doesn't handle natively.
+- When the sacrificial process must persist silently after execution — the spawned process is visible in Task Manager / `ps`.
+- When you need to inject into an already-running process — use `Early Bird` against a legitimately suspended thread, or Threadless (T-008) / Pool Party (T-007) instead.
+- When EDR performs *deep* static scanning of newly-committed RX regions in spawned processes (e.g., CrowdStrike Falcon's memory scanning at thread-create events). Pre-LdrInitializeThunk doesn't help against this — the scan happens post-APC-dispatch.
+
+### Kill Chain Position
+Example chain:
+- **T-004** (PEB walk) → **T-002** (Hells/Halos/Tartarus SSN resolution) → **T-001** (RecycledGate syscall surface) → **T-015** (PPID-spoofed spawn, optional) → **T-012** (Early Cascade injection) → **T-005** (Ekko ROP sleep) → **T-017** (persistence suite) / **T-019** (dead-drop C2)
+
+T-012 sits at the **execution delivery** stage — it's how the implant (dark_crystal core payload, already decoded by T-021) gets into a fresh address space. It is *enabled by* T-001 (without RecycledGate it loses its pre-LdrInitializeThunk OPSEC claim) and *consumed by* T-017/T-018/T-019 modules that need a running shellcode process to attach persistence/C2 logic to.
+
+### Trade-offs
+
+## Rust Implementation Deep Dive
+
+### `unsafe` blocks
+
+**`cascade_inject_into(h_proc_raw, h_thread_raw, shellcode, pid)` — single `unsafe fn` declaration, body executes unsafely throughout.**
+The function is itself declared `unsafe` rather than wrapping individual calls — appropriate here because every operation touches raw pointers / FFI to NT syscalls. The contract: caller passes valid open handles; on success both handles are closed by the function; on failure both are closed *and* the process is terminated. There is no path that leaks handles.
+
+**`query_pid_from_handle(h_proc: usize) -> u32` — `unsafe fn`.**
+Defines a stack-local `#[repr(C)] struct ProcessBasicInformation` with 6 `usize` fields. Calls `crate::recycled::nt_query_information_process` with `ProcessInformationClass = 0` (ProcessBasicInformation). Returns `pbi.unique_pid as u32` on `status == 0`, else `0u32`. Note: on x86 (4-byte `usize`), the struct layout would not match the real `PROCESS_BASIC_INFORMATION` because of the `KPRIORITY` (LONG, 4 bytes) field — but the implant targets x64 only (see min_windows).
+
+**`cascade_inject(...)` — `unsafe { ... }` block.**
+The only unsafe block in the function. Creates `STARTUPINFOW`/`PROCESS_INFORMATION` via `std::mem::zeroed()`, populates `si.cb`, calls `CreateProcessW`. Then delegates to `cascade_inject_into`.
+
+**`cascade_inject_ppid(...)` — two `unsafe` blocks.**
+First block (small): just calls `query_pid_from_handle(h_proc_raw)`. Second block (the actual injection): delegates to `cascade_inject_into` — handles consumed internally.
+
+### `core::arch::asm!` usage
+None directly in either file. The `asm!` is in `dark_crystal/crates/core/src/sys_recycled.rs` (T-001 RecycledGate) — that's where the `JMP ntdll_gadget` lives. The present files only invoke `crate::recycled::*` FFI functions.
+
+### FFI patterns
+
+- **Win32 (only in non-PPID path):** `winapi::um::processthreadsapi::CreateProcessW` + `STARTUPINFOW` + `PROCESS_INFORMATION` + `winapi::um::errhandlingapi::GetLastError`. Uses raw `winapi` crate (not the newer `windows` crate). Handle ownership: returned `hProcess` / `hThread` are owned by the caller — they are *not* wrapped in `OwnedHandle`; they flow as raw `usize` through `as` casts.
+- **NT syscalls:** Every NT call is a `crate::recycled::*` function. These are wrappers (defined in `dark_crystal/crowd/src/recycled.rs` per T-001) that invoke the syscall via indirect JMP into an `ntdll!.text` `0F 05 C3` gadget. The signatures match the Windows NT prototypes:
+  - `nt_allocate_virtual_memory(h_proc, base_addr *mut, zero_bits, region_size *mut, alloc_type, prot) -> i32`
+  - `nt_write_virtual_memory(h_proc, base_addr, buffer *const, len, written *mut) -> i32`
+  - `nt_protect_virtual_memory(h_proc, base_addr *mut, size *mut, new_prot, old_prot *mut) -> i32`
+  - `nt_queue_apc_thread(h_thread, routine, arg1, arg2, arg3) -> i32` — note arg3 is `0`, not `null_mut()`; this is the `0` integer, which is fine for an unused APC arg.
+  - `nt_resume_thread(h_thread, prev_count *mut) -> i32`
+  - `nt_close(handle) -> i32`
+  - `nt_terminate_process(h_proc, exit_status) -> i32`
+  - `nt_free_virtual_memory(h_proc, base_addr *mut, size *mut, free_type) -> i32`
+  - `nt_query_information_process(h_proc, class, buf *mut, len, ret_len *mut) -> i32`
+
+All return `i32` NTSTATUS. The convention `< 0` means failure — this is technically imprecise (NT_SUCCESS is `>= 0`, NTSTATUS is signed); the code's `status < 0` check covers the high bit set (`0x80000000+`) but misses the `0x40000000`–`0x7FFFFFFF` NTSTATUS_WARNING range — in practice none of these syscalls return warnings, so the check is safe.
+
+### Initialization patterns
+- `std::mem::zeroed()` for `STARTUPINFOW` / `PROCESS_INFORMATION` / `ProcessBasicInformation` — idiomatic for FFI structs where zero-init is required.
+- `Vec<u16>` for UTF-16 path with `chain(std::iter::once(0))` for NUL terminator.
+- No `OnceLock`/`LazyCell` in this file — those live in T-001 (syscall SSN resolution) and T-021 (config).
+
+### Error handling
+- `anyhow::Result<u32>` for `cascade_inject*` (newer idiomatic style).
+- `Result<u32, String>` for `early_bird_*` (older style; carries lossy error strings).
+- Every NT call has an explicit `if status < 0 { ...; anyhow::bail!(...) }` block with a `mega_dbg!` log + structured cleanup.
+- The cleanup sequence is identical at every failure point: `nt_free_virtual_memory` → `nt_terminate_process` → `nt_close(h_thread)` → `nt_close(h_proc)` → `bail!`. The only failure path that omits `nt_free_virtual_memory` is the very first allocation failure (nothing to free yet).
+- Comments are explicit about the *why* — e.g., the `NtProtectVirtualMemory` failure comment explains that an RW-only page would defeat DEP and flag EDRs.
+
+### Memory layout
+- `ProcessBasicInformation` (early_cascade.rs L201-L207): 6 × `usize` = 48 bytes on x64. Matches `PROCESS_BASIC_INFORMATION` layout exactly.
+- `PBI` (early_bird.rs L155-L157): `{ _pad: [usize; 4], unique_pid: usize, _inh: usize }` = 6 × `usize` = 48 bytes. Same layout.
+- The `_pad` style is uglier (anonymous placeholder) but binary-identical.
+
+### Syscall numbers
+None resolved in this file — SSN resolution is in `sys_resolve.rs` / `hells_gate.rs` (T-002). This file just consumes the `crate::recycled::*` API.
+
+## Cross-References Found in Code
+
+- `early_cascade.rs:1` (module docstring) → references **T-001** (RecycledGate) — "All NT calls go through RecycledGate (JMP into ntdll's `0F 05 C3` gadget)"
+- `early_cascade.rs:use crate::recycled::*` → **T-001** dependency on every NT call (`nt_allocate_virtual_memory`, `nt_write_virtual_memory`, `nt_protect_virtual_memory`, `nt_queue_apc_thread`, `nt_resume_thread`, `nt_close`, `nt_terminate_process`, `nt_free_virtual_memory`, `nt_query_information_process`)
+- `early_cascade.rs:cascade_inject_ppid()` L294 → calls **T-015** (`crate::ppid::spawn_with_ppid_spoof`) — PPID-spoofed process creation
+- `early_cascade.rs:cascade_inject()` L235 → calls **Win32 `CreateProcessW`** — the only non-NT call, deliberate Win32 for the non-PPID path (matches technique card exactly)
+- `early_cascade.rs:cascade_inject_default()` L312 → hardcoded path `C:\Windows\System32\svchost.exe` — sacrificial process choice (sensible, blendable)
+- `early_cascade.rs:use crate::mega_dbg!` → **T-021 patterns** (debug logging macro, presumably cfg-gated for production builds)
+- `early_bird.rs:1` (module docstring) → self-references as "the closest available implementation to Early Cascade Injection (Outflank's Shim Engine abuse)" — acknowledges the technique card's framing
+- `early_bird.rs:early_bird_with_ppid()` L143 → calls **T-015** (`crate::ppid::spawn_with_ppid_spoof`)
+
+No direct calls to T-002 (Hells Gate SSN resolution), T-005 (Ekko sleep), T-007 (Pool Party), T-008 (Threadless), T-009 (Process Ghosting), T-014 (NtCreateUserProcess) from these files. The injection surface is deliberately minimal.
+
+## Edge Cases & Failure Modes
+
+1. **`CreateProcessW` returns 0 (non-PPID path).**
+   - Failure path: L252 `if ok == 0 { anyhow::bail!(... GetLastError()) }`.
+   - Symptom: no process, no handles, immediate error.
+   - Workaround: caller should retry with a different sacrificial path or use the PPID path (`cascade_inject_ppid`) which goes through `crate::ppid` and may handle path resolution differently.
+
+2. **`NtAllocateVirtualMemory` returns NTSTATUS ≥ 0 but `remote_addr.is_null()`.**
+   - Caught by the `|| remote_addr.is_null()` short-circuit at L65.
+   - Symptom: rare edge case where the kernel returns success but a null base (e.g., constrained memory pressure on Win11 with custom mitigations).
+   - Workaround: code terminates the process and bails. Could retry with a smaller region or different process.
+
+3. **`NtWriteVirtualMemory` partial write (status ≥ 0, `written != shellcode.len()`).**
+   - Not currently checked — the code only checks `status < 0` and trusts `written` to be the full payload length.
+   - Symptom: silent corruption — shellcode truncated, will fault at APC dispatch.
+   - Workaround: add `if written != shellcode.len() { bail! }`. Operator patch needed.
+
+4. **`NtProtectVirtualMemory` fails (early_cascade path).**
+   - Code aborts cleanly (L120-L130): free + terminate + close + bail.
+   - Symptom: process terminated, no zombie.
+   - Workaround: explicitly handled. The comment notes that continuing would leave a RW page that would either fault (DEP) or flag EDRs scanning for RW-executable mismatches.
+
+5. **`NtProtectVirtualMemory` fails (early_bird path — L70-L74).**
+   - Code logs a warning and *continues* — different behavior from early_cascade.
+   - Symptom: RW page is queued as the APC routine; APC dispatcher will execute the RW page; on modern Windows with CET/DEP, this triggers an access violation in `KiUserApcDispatcher`; the process crashes loudly.
+   - Workaround: **prefer `cascade_inject_*` over `early_bird_*` for ops** — early_cascade's strict abort path is correct.
+
+6. **`NtQueueApcThread` fails.**
+   - Both files abort cleanly. Handles closed, process terminated, memory freed.
+   - Symptom: no shellcode executes, no zombie.
+   - Workaround: caller can retry with a different target.
+
+7. **`NtResumeThread` fails (early_cascade, L172-L184).**
+   - Aborts cleanly with `nt_terminate_process` + `nt_close`.
+   - Symptom: process terminated, shellcode memory is gone (process died with it).
+
+8. **`NtResumeThread` failure in `early_bird_inject` non-PPID path (L113-L115).**
+   - NTSTATUS discarded — `crate::recycled::nt_resume_thread(h_thread_raw, std::ptr::null_mut());` no check.
+   - Symptom: thread never resumes; shellcode never executes; process stays suspended indefinitely; **zombie svchost.exe in suspended state** — this is a *loud* EDR signal.
+   - Workaround: **always prefer `cascade_inject` over `early_bird_inject`** for ops, or patch `early_bird_inject` to check NTSTATUS.
+
+9. **Race: thread resumed externally between Step 5 (queue APC) and Step 6 (resume).**
+   - Not handled. If another process (debugger, EDR test harness) calls `NtResumeThread` on the sacrificial thread first, the queued APC may fire *before* our `nt_resume_thread` call returns — but the implant's `prev_count` will read `0`, indicating the thread was already runnable.
+   - Symptom: `prev_count == 0` returned from `nt_resume_thread`; shellcode may or may not have already executed.
+
+10. **Race: process exits between APC queue and resume.**
+    - Not handled. The `NtResumeThread` would return `STATUS_THREAD_IS_TERMINATING` or similar.
+    - Symptom: `nt_resume_thread` fails — caught by early_cascade's check; early_bird non-PPID path would silently leak.
+
+11. **`ProcessBasicInformation` struct size mismatch on x86.**
+    - The 6 × `usize` layout is only correct on x64 (`usize` = 8 bytes). On x86 (`usize` = 4 bytes), the struct is 24 bytes vs the real 24 bytes (with `KPRIORITY` = 4 bytes) — coincidentally correct on x86 because `BasePriority` fits in `usize`.
+    - Symptom: would actually work on both architectures, but only by accident.
+    - Workaround: use `windows_targets` / explicit `c_void` typing if x86 support is needed.
+
+## OPSEC Notes
+
+### Artifacts left
+- A new process running the sacrificial exe (default: `C:\Windows\System32\svchost.exe`) — visible in Task Manager / `tasklist` / Sysmon EID 1.
+- Memory: a private (not MEM_IMAGE) RX region in that process containing the shellcode — detectable by `pe-sieve`, Moneta, Hunt-Sleeping-Beacons scanning for private executable memory.
+- ETW-TI kernel telemetry: `NtAllocateVirtualMemory`, `NtWriteVirtualMemory`, `NtProtectVirtualMemory` (RW→RX is the *classic* shellcode signature), `NtQueueApcThread`, `NtResumeThread` — all observable in the kernel ETW provider. The mitigating factor: stack walk shows the calls originating from `ntdll!.text` (RecycledGate gadget), not from implant memory. ETW-TI's `NtProtectVirtualMemory` heuristic may still flag the RW→RX flip on a private region even with the spoofed return address.
+- Process tree shows `svchost.exe` parented by the implant process (non-PPID path) — use `cascade_inject_ppid` to parent it under `explorer.exe` or another benign process.
+
+### Telemetry cleaned up
+- Handles to the sacrificial process are closed via `NtClose` — no handle leak.
+- On failure paths: process is terminated, memory is freed, handles are closed — no zombie.
+- `mega_dbg!` strings compiled out under release builds (presumably via `cfg!(debug_assertions)` gate in `mega_dbg!` definition — verify in T-021 patterns).
+
+### Telemetry NOT cleaned up
+- The sacrificial process itself remains running post-injection. Operator must arrange cleanup (e.g., self-terminate the shellcode after a fixed lifetime, or use `crate::recycled::nt_terminate_process` from the shellcode before returning).
+- No PEB unlink of the new process — but it's a legitimate system binary (`svchost.exe`), so PEB-walking EDRs see a real Microsoft-signed image. The injected RX region in private memory is the giveaway, not the PEB.
+- No `LDR` module list manipulation — the sacrificial `svchost.exe` has its normal DLL list; only the private RX region is anomalous.
+
+### Best practice
+- Use `cascade_inject_ppid` (not `cascade_inject`) — gets you full NT-only process creation via T-015.
+- Choose a non-default sacrificial exe that *plausibly* runs in your context — `svchost.exe` running without `svchost.exe -k <group>` command line is a known EDR heuristic. Consider `notepad.exe`, `calc.exe`, or `RuntimeBroker.exe`.
+- Pair with **T-005 Ekko sleep** post-injection so the shellcode encrypts its own memory during idle windows — defeats Moneta / pe-sieve snapshots.
+- Pair with **T-009 PEB unlink** if the operator module ever loads additional DLLs into the sacrificial process.
+
+## Reusable Patterns
+
+### Pattern: NT-only failure-cleanup triple (`free + terminate + close`)
+- **Use when**: any NT-injection sequence where the operator must guarantee no handle/process leak on partial failure.
+- **Code ref**: `early_cascade.rs:cascade_inject_into()` failure paths at L75-L80, L99-L106, L120-L130, L153-L160, L177-L184.
+- **How**: The invariant is — once memory is allocated, every subsequent failure path must execute `nt_free_virtual_memory` (release the page) → `nt_terminate_process` (kill the zombie) → `nt_close(h_thread)` → `nt_close(h_proc)` before bailing. The first allocation step skips `nt_free_virtual_memory` (nothing allocated yet). This avoids the `early_bird.rs` bug where `early_bird_inject` continues on `NtProtectVirtualMemory` failure — early_cascade treats every NTSTATUS < 0 as fatal with full cleanup. Reuse this exact pattern in any new injection technique.
+
+### Pattern: PID extraction via `NtQueryInformationProcess` class 0
+- **Use when**: you have a raw `hProcess` handle and need the PID *without* invoking Win32 `GetProcessId` (which routes through kernel32 and may be hooked).
+- **Code ref**: `early_cascade.rs:query_pid_from_handle()` L195-L218.
+- **How**: Define a `#[repr(C)]` struct mirroring `PROCESS_BASIC_INFORMATION` (`{ exit_status, peb_base, affinity_mask, base_priority, unique_pid, inherited_from }` — all `usize`). Call `nt_query_information_process(h_proc, 0, &mut pbi as *mut _ as *mut u8, size_of::<PBI>() as u32, &mut ret_len)`. On `status == 0`, return `pbi.unique_pid as u32`. Returns `0` on failure (non-fatal — caller can fall back to `pi.dwProcessId` if available).
+
+### Pattern: Factored core-with-public-wrappers
+- **Use when**: a technique has multiple entrypoints (default target, custom target, PPID variant) that share the actual injection sequence.
+- **Code ref**: `early_cascade.rs` — `cascade_inject_into()` is the unsafe core; `cascade_inject()`, `cascade_inject_ppid()`, `cascade_inject_default()` are thin wrappers that handle process creation differently then delegate.
+- **How**: The public wrappers vary Step 1 (process creation) but delegate Steps 2–6 to the shared `cascade_inject_into(h_proc_raw, h_thread_raw, shellcode, pid)`. This avoids duplicating the 6-step sequence (which `early_bird.rs` unfortunately does — duplicating it three times with subtly different bugs in each copy). Always use the factored pattern; never the duplicated one.
+
+### Pattern: `usize` handle passing
+- **Use when**: passing Win32/NT handles across module boundaries in Rust without `OwnedHandle` / `HANDLE` wrapper noise.
+- **Code ref**: `early_cascade.rs:cascade_inject_into(h_proc_raw: usize, h_thread_raw: usize, ...)`.
+- **How**: Cast `pi.hProcess as usize` at the call site, accept `usize` in the callee, cast back to whatever the FFI expects inside `crate::recycled::*`. Trade-off: loses the type safety of `BorrowedHandle<'_>` lifetimes — but matches the codebase convention (T-001's `crate::recycled::*` accepts `usize`). The contract is documented on the function ("Handles are consumed (closed on error paths, caller closes on success)") — be vigilant that this contract is upheld on every code path.
+
+### Pattern: W^X-compliant shellcode staging
+- **Use when**: writing shellcode to a remote process — never have the page simultaneously W and X.
+- **Code ref**: `early_cascade.rs:cascade_inject_into()` Steps 2–4 — allocate `PAGE_READWRITE`, write shellcode, then `nt_protect_virtual_memory` flip to `PAGE_EXECUTE_READ`.
+- **How**: This is the textbook W^X pattern and defeats both DEP-violation scans and RWX-page telemetry. The *critical* detail is the abort-on-failure path in Step 4: if `NtProtectVirtualMemory` returns NTSTATUS < 0, the page is stuck at RW — never execute it. Free + terminate + bail. `early_bird.rs`'s warn-and-continue behavior here is wrong; don't copy it.

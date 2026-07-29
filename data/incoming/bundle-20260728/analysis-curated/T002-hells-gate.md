@@ -1,0 +1,430 @@
+---
+id: T-002
+name: Hell's Gate / Halo's Gate / Tartarus Gate + FreshyCalls
+category: syscalls
+tier: S
+mitre: T1106
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires: [T-004]
+enables: [T-001, T-006, T-003, T-005, T-007, T-009, T-012, T-013, T-014, T-015, T-016, T-017]
+vault_references:
+  - dark_crystal/crowd/src/hells_gate.rs
+  - dark_crystal/crowd/src/resolve.rs
+  - dark_crystal/crates/core/src/sys_resolve.rs
+implements:
+  - file: dark_crystal/crowd/src/hells_gate.rs
+    key_functions:
+      - resolve_ssn
+      - resolve_all
+      - read_ssn_from_stub
+      - is_hooked
+      - halos_gate
+      - tartarus_gate
+      - parse_exports
+      - find_ntdll_base
+      - find_syscall_ret_gadget
+      - find_gadget_near
+      - find_any_gadget
+      - get_image_end
+      - djb2_hash
+    key_structs:
+      - RuntimeFunctionEntry
+    key_constants:
+      - NTDLL_HASH=0x1edab0ed
+      - HALOS_MAX_DISTANCE=20
+      - CLEAN_STUB_PREFIX=[0x4C,0x8B,0xD1,0xB8]
+      - JMP_REL32=0xE9
+      - EXPORT_DIR_OFFSET=0x88
+      - EXCEPTION_DIR_OFFSET=0xA0
+      - EXCEPTION_DIR_SIZE_OFFSET=0xA4
+    lines_of_interest:
+      - L85-L122: find_ntdll_base() PEB walk via gs:[0x60]
+      - L145-L191: parse_exports() filtering Nt* (not Ntdll*) and sorting by RVA
+      - L202-L226: read_ssn_from_stub() clean stub validation
+      - L240-L244: is_hooked() 0xE9 trampoline detection
+      - L257-L287: halos_gate() ±20 neighbor walk arithmetic
+      - L321-L378: tartarus_gate() Exception Directory cross-reference
+      - L386-L401: find_syscall_ret_gadget() scans 64 bytes for 0F 05 C3
+      - L427-L467: resolve_ssn() three-stage cascade entry
+      - L478-L528: resolve_all() three-pass batch resolution
+  - file: dark_crystal/crowd/src/resolve.rs
+    key_functions:
+      - resolve_export_ssn
+      - resolve_ssn
+      - resolve_ssn_by_hash
+      - find_syscall_stub64
+      - find_syscall_stub32
+      - matches_stub64
+      - matches_stub32
+      - ntdll_base_and_name_hashes
+      - find_module_base
+      - resolve_export_by_name
+      - resolve_export_by_ordinal
+      - djb2_hash
+      - compute_hash
+      - within_image
+    key_structs:
+      - ListEntry
+      - UnicodeString
+      - LdrDataTableEntry
+      - PebLdrData
+      - Peb
+      - ListEntry32
+      - UnicodeString32
+      - ImageExportDirectory
+    key_constants: []
+    lines_of_interest:
+      - L194-L259: resolve_export_ssn() FreshyCalls Zw* RVA sort + 0F 05 C3 gadget scan
+      - L261-L307: find_syscall_stub64() ±512 byte Halo's-style neighbor walk
+      - L363-L401: find_syscall_stub32() WoW64-aware x86 stub scanner
+      - L406-L427: resolve_ssn_by_hash() public cascade entry
+  - file: dark_crystal/crates/core/src/sys_resolve.rs
+    key_functions:
+      - djb2_hash
+      - ntdll_base_and_name_hashes
+      - resolve_export_ssn
+      - find_syscall_stub64
+      - find_syscall_stub32
+      - matches_stub64
+      - matches_stub32
+      - resolve_ssn
+      - resolve_ssn_by_hash
+      - within_image
+      - gs_read_u64
+      - fs_read_u32
+      - is_wow64
+    key_structs:
+      - ListEntry
+      - UnicodeString
+      - LdrDataTableEntry
+      - PebLdrData
+      - Peb
+      - ListEntry32
+      - UnicodeString32
+      - ImageExportDirectory
+    key_constants: []
+    lines_of_interest:
+      - L46-L92: ntdll_base_and_name_hashes() 64-bit PEB walk
+      - L195-L243: resolve_export_ssn() generic walker with ssn_and_gate closure
+      - L246-L282: find_syscall_stub64() ±512 byte stub scan
+      - L286-L294: matches_stub64() prefix validation with page guard
+min_windows: "Windows 7 (FreshyCalls valid Win7+; Tartarus x64-only via PE exception directory)"
+needs_admin: "no"
+tags: [syscalls, ssn-resolution, edr-bypass, pe-parsing, freshycalls, hellsgate, halosgate, tartarusgate, indirect-syscall, recycled-gate]
+---
+
+# Hell's Gate / Halo's Gate / Tartarus Gate + FreshyCalls — Operator Playbook
+
+## TL;DR
+A four-stage SSN (System Service Number) resolution cascade that defeats EDR inline hooks on ntdll syscall stubs. Stage P1 (FreshyCalls, in `crowd/src/resolve.rs::resolve_export_ssn`) sorts all `Zw*` exports by RVA — since Windows assigns SSNs in RVA order, the sort index *is* the SSN, with zero bytes read from any potentially-hooked stub. Stage 1 (Hell's Gate, `hells_gate.rs::read_ssn_from_stub`) reads the canonical `4C 8B D1 B8 XX XX 00 00` stub directly. Stage 2 (Halo's Gate, `hells_gate.rs::halos_gate`) walks ±20 neighbor exports to infer SSN by ordinal proximity when the target stub is trampolined. Stage 3 (Tartarus Gate, `hells_gate.rs::tartarus_gate`) cross-references the PE Exception Directory (`RuntimeFunctionEntry`) with the export table and assigns SSNs purely by RVA order, defeating full-coverage hooking. The cascade also surfaces `0F 05 C3` (syscall;ret) gadget addresses that feed RecycledGate (T-001). Worth the complexity because every NT-direct technique in the vault depends on this output.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `dark_crystal/crowd/src/hells_gate.rs` | Stage 1/2/3 cascade: Hell's, Halo's, Tartarus + gadget finder | `resolve_ssn()`, `resolve_all()`, `halos_gate()`, `tartarus_gate()`, `find_syscall_ret_gadget()` | ~610 LOC |
+| `dark_crystal/crowd/src/resolve.rs` | Stage P1 (FreshyCalls) + generic export resolver (by name/ordinal) + RecycledGate stub scanner | `resolve_export_ssn()`, `resolve_ssn()`, `resolve_export_by_name()`, `resolve_export_by_ordinal()`, `find_module_base()` | ~430 LOC |
+| `dark_crystal/crates/core/src/sys_resolve.rs` | Older Stage 1-only resolver used by `sys_indirect.rs` direct dispatcher; pure Hell's Gate with neighbor stub scanning | `resolve_ssn()`, `resolve_ssn_by_hash()`, `find_syscall_stub64()`, `ntdll_base_and_name_hashes()` | ~360 LOC |
+
+## How It Works
+
+### Stage P1 — FreshyCalls (Zw* RVA Sort)
+File: `crowd/src/resolve.rs::resolve_export_ssn` (L194-L259)
+
+1. `ntdll_base_and_name_hashes()` (L99-L122, 64-bit) reads `gs:[0x60]` to get the PEB, then walks `PEB->Ldr->InMemoryOrderModuleList` computing DJB2 hash of each module's `BaseDllName` (case-folded via `| 0x20`) until it matches `djb2_hash(b"ntdll.dll")` (= `0x1edab0ed`). Returns the ntdll base pointer.
+2. `resolve_export_ssn()` parses the PE export directory at offset `nt_headers + 0x88` (DataDirectory[0]) — `ImageExportDirectory` struct (L173-L186) is walked by name via `address_of_names`, `address_of_name_ordinals`, `address_of_functions`.
+3. **FreshyCalls core**: During the export-name loop, every export starting with bytes `Z`,`w` is collected into `zw_funcs: Vec<u32>` with its RVA (L226-L228). After the loop, `zw_funcs.sort_unstable()` (L237) sorts by RVA.
+4. The target function's RVA is matched against `zw_funcs`; the sorted *index* becomes the SSN (L240-L245):
+   ```rust
+   for (i, &rva) in zw_funcs.iter().enumerate() {
+       if rva == target_func_rva { ssn = i as u32; break; }
+   }
+   ```
+5. Gadget hunt: scan up to 512 bytes forward from `target_ptr` looking for `0F 05 C3` (syscall; ret). If not found there, fall back to scanning from `zw_funcs[0]` (L247-L266). This is the RecycledGate dispatch gadget.
+6. Returns `(ssn, gadget)`. **Critical**: no bytes from any `Nt*`/`Zw*` *stub body* are read for SSN extraction — only the export *name* and *RVA*. This makes FreshyCalls immune to inline hooks that rewrite stub bodies.
+
+### Stage 1 — Hell's Gate (Direct Stub Read)
+File: `crowd/src/hells_gate.rs::read_ssn_from_stub` (L202-L226)
+
+1. `find_ntdll_base()` (L85-L122) uses inline asm `mov {}, gs:[0x60]` to fetch PEB, walks InMemoryOrderModuleList, hashes each `BaseDllName` with DJB2 in-loop, matches `NTDLL_HASH = 0x1edab0ed`.
+2. `parse_exports(base)` (L145-L191) validates `MZ` (0x5A4D) and `PE` (0x4550) signatures, reads export directory at `nt_headers + EXPORT_DIR_OFFSET (0x88)`, filters exports starting with `Nt` but excluding `Ntdll`, collects `(name, va)` pairs, sorts by address (= RVA order = SSN assignment order).
+3. `read_ssn_from_stub(addr)` checks bytes `[0..4]` against `CLEAN_STUB_PREFIX = [0x4C, 0x8B, 0xD1, 0xB8]` (`mov r10, rcx; mov eax, imm32`). Verifies bytes `[6..8]` are `0x00 0x00` (SSN fits in u16). Returns `Some(ssn_lo | (ssn_hi << 8))` extracted from bytes `[4..6]`.
+4. `is_hooked(addr)` (L240-L244) — secondary diagnostic, returns true if first byte is `0xE9` (JMP rel32 trampoline).
+
+### Stage 2 — Halo's Gate (Neighbor Walk)
+File: `crowd/src/hells_gate.rs::halos_gate` (L257-L287)
+
+1. Operates on the *sorted* `exports: &[(String, *const u8)]` list from `parse_exports()`. The target's `idx` is its position in this sorted list.
+2. For `distance in 1..=HALOS_MAX_DISTANCE (=20)`:
+   - **Down**: `exports[idx + distance]` — if its stub is clean (passes `read_ssn_from_stub`), `target_SSN = neighbor_SSN - distance` (saturating, returns None if `neighbor_ssn < distance`).
+   - **Up**: `exports[idx - distance]` — if clean, `target_SSN = neighbor_SSN + distance`.
+3. Returns `Some(ssn)` on first clean neighbor hit, `None` if none found within ±20.
+
+Key insight: this works because Windows assigns SSNs to syscall stubs in RVA order, so a clean neighbor at sorted-index-distance `d` has SSN exactly `±d` from the target.
+
+### Stage 3 — Tartarus Gate (Exception Directory Cross-Reference)
+File: `crowd/src/hells_gate.rs::tartarus_gate` (L321-L378)
+
+1. Reads the PE Exception Directory at `nt_headers + EXCEPTION_DIR_OFFSET (0xA0)` with size at `+0xA4`.
+2. Builds a `HashSet<u32>` of all `RuntimeFunctionEntry.begin_address` values — these are RVAs of *every* function in ntdll that has unwind metadata (real function entry points, not data exports).
+3. Takes `parse_exports()` output (Nt* sorted by RVA), filters to only those whose RVA appears in `exc_entries`. This validates each export is a genuine function entry, not a forwarded/data export.
+4. Assigns SSNs sequentially by sorted RVA index: `validated[0] → SSN 0`, `validated[1] → SSN 1`, etc. (L371-L374).
+5. Fallbacks: if Exception Directory is empty (L335-L343) or filter yields empty (L357-L363), falls back to pure RVA ordering of all Nt* exports.
+
+### Gadget Acquisition (feeds T-001 RecycledGate)
+File: `crowd/src/hells_gate.rs::find_syscall_ret_gadget` (L386-L401)
+
+Scans up to 64 bytes forward from a stub for `0F 05 C3` (syscall; ret). `find_gadget_near()` (L519-L542) walks neighbors ±20 looking for a clean stub with an intact gadget. `find_any_gadget()` (L551-L561) scans every export as last resort.
+
+### Three-stage resolve (single function)
+`resolve_ssn(func_name)` (L427-L467) cascade:
+1. Hell's Gate direct read — if success, locate gadget.
+2. Halo's Gate neighbor walk — if success, locate nearby gadget.
+3. Tartarus Gate exception-directory map — if name found, use `find_any_gadget()`.
+
+### Three-pass batch resolve
+`resolve_all()` (L478-L528): Pass 1 Hell's on every export → Pass 2 Halo's on unresolved → Pass 3 Tartarus for remaining. Each pass only attempts unresolved indices, so cost scales with hook coverage.
+
+## Code Architecture
+
+### Call graph (across all three files)
+```
+resolve.rs::resolve_ssn(name)
+    └─ resolve_ssn_by_hash(djb2_hash(name))
+       └─ ntdll_base_and_name_hashes() [PEB walk — T-004]
+       └─ resolve_export_ssn() [Stage P1 FreshyCalls + gadget]
+          └─ within_image() [bounds check]
+
+hells_gate.rs::resolve_ssn(name)
+    ├─ find_ntdll_base() [PEB walk — T-004, inline DJB2]
+    ├─ parse_exports() [PE export parser, filters Nt* not Ntdll*]
+    ├─ read_ssn_from_stub() [Stage 1 Hell's Gate]
+    │  └─ validates CLEAN_STUB_PREFIX
+    ├─ find_syscall_ret_gadget() [feeds T-001]
+    ├─ halos_gate() [Stage 2]
+    │  └─ read_ssn_from_stub() on neighbors
+    └─ tartarus_gate() [Stage 3]
+       ├─ parse_exports() (reuse)
+       └─ RuntimeFunctionEntry walk
+
+sys_resolve.rs::resolve_ssn(name)
+    └─ resolve_ssn_by_hash()
+       └─ ntdll_base_and_name_hashes()
+       └─ resolve_export_ssn() [closure-based Hell's Gate, no FreshyCalls]
+          └─ find_syscall_stub64() / find_syscall_stub32()
+             └─ matches_stub64() / matches_stub32()
+```
+
+### Data flow
+- **Input**: target syscall name (e.g., `"NtAllocateVirtualMemory"`) → DJB2 hash → PEB walk → ntdll base.
+- **Internal**: PE export table parsed, Nt*/Zw* entries filtered and sorted by RVA.
+- **Output**: `(ssn: u16|u32, gadget_addr: usize)` — the SSN for syscall dispatch, and a `0F 05 C3` gadget address inside ntdll used by RecycledGate indirect dispatch (T-001).
+
+### Type hierarchy
+- `Peb` → `PebLdrData` → `ListEntry` (doubly-linked) → `LdrDataTableEntry` (with `dll_base`, `base_dll_name: UnicodeString`)
+- `ImageExportDirectory` is the in-memory PE export table layout
+- `RuntimeFunctionEntry` (x64 only) is the `IMAGE_RUNTIME_FUNCTION_ENTRY` for exception unwind data, used exclusively by Tartarus
+
+### Feature gates
+- All x64 paths are `#[cfg(target_arch = "x86_64")]`
+- All x86 paths are `#[cfg(target_arch = "x86")]` with WoW64 detection via `fs:[0xC0]`
+- Tartarus Gate `RuntimeFunctionEntry` is x64-only; on x86 it returns `HashMap::new()` (L382-L385), forcing fallback to pure RVA sort
+
+## Operational Profile
+
+### When to Use
+- **Always** for any NT-direct syscall work — the cost is one-time at implant init.
+- Engagement against EDR with userland hooking (CrowdStrike, SentinelOne, Defender for Endpoint) — FreshyCalls alone defeats hook-based SSN interception.
+- Engagement against EDR with full stub rewriting — Tartarus fallback handles this.
+- Whenever the chain calls NT APIs directly (T-007 through T-017 all depend on this).
+
+### When NOT to Use
+- Targets where ntdll itself is integrity-checked from a clean shadow copy (e.g., some PPL/ELAM scenarios) — the gadgets and stubs may be re-imaged.
+- Cross-architecture work — Tartarus is x64-only; on x86 you fall back to RVA sort without exception-directory validation.
+- Targets with kernel-mode syscall callbacks (PsSetCreateProcessNotifyRoutine, ObRegisterCallbacks) — these are not fooled by userland SSN resolution; you need T-003 VEH Gate or kernel techniques.
+
+### Kill Chain Position
+This is the foundation. Reference chain:
+
+T-004 (PEB walk) → **T-002 (SSN cascade)** → T-001 (RecycledGate dispatch) → T-012 (Early Cascade) → T-005 (Ekko sleep) → T-017 (persistence)
+
+Every NT syscall in the implant (allocate, write, protect, create thread, create process, etc.) flows through here.
+
+## Rust Implementation Deep Dive
+
+### `unsafe` blocks
+
+1. **`crowd/src/hells_gate.rs::find_ntdll_base()` L85-L122** — Inline `core::arch::asm!("mov {}, gs:[0x60]", lateout(reg) peb, options(nostack, readonly, pure))`. Reads TEB→PEB. Then dereferences `*(*peb).ldr` and walks the list. `pure` and `readonly` options promise no memory writes, allowing the optimizer to CSE the PEB read.
+2. **`crowd/src/hells_gate.rs::read_ssn_from_stub(addr)` L202-L226** — Dereferences 8 raw bytes from a code pointer. Page-crossing protection is implicit because the canonical stub is always 8-byte aligned within a 16-byte block.
+3. **`crowd/src/hells_gate.rs::halos_gate()` L257-L287** — Calls `read_ssn_from_stub` on neighbor pointers; arithmetic `neighbor_ssn - distance as u16` is checked with `if neighbor_ssn >= distance as u16` (L269) to prevent underflow.
+4. **`crowd/src/hells_gate.rs::tartarus_gate()` L321-L378** — Reads `RuntimeFunctionEntry` array via `exc_base.add(i)`. HashSet allocation under unsafe context. Two fallback paths (L335-L343, L357-L363) handle missing/empty exception directory.
+5. **`crowd/src/hells_gate.rs::parse_exports()` L145-L191** — PE header traversal, `from_raw_parts` over export name C-strings. Length computed by `while *cstr.add(len) != 0` (L171-L173).
+6. **`crowd/src/hells_gate.rs::find_syscall_ret_gadget()` L386-L401** — 64-byte linear scan with `*p == 0x0F && *p.add(1) == 0x05 && *p.add(2) == 0xC3` pattern match.
+7. **`crowd/src/resolve.rs::resolve_export_ssn()` L194-L259** — Generic PE export walk with closure-based SSN extraction (though the crowd version ignores the closure and implements FreshyCalls inline).
+8. **`crowd/src/resolve.rs::find_syscall_stub64()` L261-L307** — RecycledGate-style ±512 byte neighbor scan with `matches_stub64()` prefix check, then 32-byte forward scan for `0F 05 C3` to find the syscall;ret gadget at variable offsets (Win10 `0x12`, Win11 variant `0x14`).
+9. **`crowd/src/resolve.rs::ntdll_base_and_name_hashes()` L99-L122** — PEB walk; same pattern as hells_gate but using `LdrDataTableEntry` struct dereference rather than raw offset arithmetic.
+10. **`crates/core/src/sys_resolve.rs::gs_read_u64(offset)` L73-L82** — Generic gs-segment reader; reused for any TEB-relative access.
+11. **`crates/core/src/sys_resolve.rs::fs_read_u32(offset)` L130-L139** — 32-bit TEB/PEB/TEB→WoW64 access.
+
+### Inline asm usage
+- `mov {}, gs:[{:e}]` (x64) — lateout(reg), in(reg) offset, options(nostack, readonly, pure). Used in `sys_resolve.rs::gs_read_u64` and `resolve.rs::gs_read_u64` (duplicate). The `{:e}` format forces 32-bit operand encoding for the offset, matching the GS-relative addressing form.
+- `mov {}, gs:[0x60]` (x64) — literal offset version in `hells_gate.rs::find_ntdll_base`. Simpler than the parameterized version.
+- `mov {0:e}, fs:[{1}]` (x86) — out(reg), in(reg), options(nostack, readonly, pure). Used for `fs_read_u32`. The `{0:e}` syntax forces 32-bit register encoding on x86.
+
+No clobbers specified beyond defaults — `nostack` asserts no stack manipulation, `readonly` asserts no memory writes, `pure` allows CSE.
+
+### FFI patterns
+- All NT structures are `#[repr(C)]` Rust structs (`Peb`, `PebLdrData`, `LdrDataTableEntry`, `ListEntry`, `UnicodeString`, `ImageExportDirectory`, `RuntimeFunctionEntry`). No `extern "C"` declarations — this is pure memory layout, not FFI.
+- No handle ownership / RAII — all returned values are raw pointers (`*const u8`) or copy types (`u32`, `usize`).
+- The `Vec<u8>` in `ntdll_base_and_name_hashes` (`resolve.rs` L120) allocates per-iteration; minor perf concern but not OPSEC-relevant since allocations are tiny (≤ ~30 bytes).
+
+### Initialization patterns
+- No `OnceLock`/`LazyCell` in these files — resolution is called fresh each time. `resolve_all()` is the intended batch API for one-shot population of a `HashMap<String, (u16, usize)>` that callers can cache.
+- The `djb2_hash` constant `5381` is hardcoded in three places (sys_resolve.rs L13, resolve.rs L17 + L24, hells_gate.rs L71). No shared constant.
+
+### Error handling
+- `hells_gate.rs::resolve_ssn()` returns `anyhow::Result<(u16, usize)>` with `anyhow::anyhow!` for: null ntdll base (L432), empty exports (L438), function not found (L445-L450), all-gates-failed (L462-L465).
+- `resolve.rs::resolve_ssn()` returns `(u32, usize)` — no Result, returns `(0, 0)` on failure. **Caller must check for zero SSN.**
+- `sys_resolve.rs::resolve_ssn()` — same `(u32, usize)` tuple, same zero-on-failure contract.
+
+### Memory layout
+- `ImageExportDirectory` (40 bytes, `#[repr(C)]`) — must match `IMAGE_EXPORT_DIRECTORY` exactly. Field order: characteristics, time_date_stamp, major/minor_version, name, base, number_of_functions, number_of_names, address_of_functions/names/name_ordinals.
+- `RuntimeFunctionEntry` (12 bytes, `#[repr(C)]`) — `IMAGE_RUNTIME_FUNCTION_ENTRY`: begin_address, end_address, unwind_info_address.
+- `LdrDataTableEntry` layout in `resolve.rs` uses named fields including `reserved1: [*const u8; 2]` ahead of `in_memory_order_links`. This is the canonical Windows `_LDR_DATA_TABLE_ENTRY` layout. `hells_gate.rs::find_ntdll_base` instead uses raw offset arithmetic (`+0x20`, `+0x48`) without the struct — both work, struct is safer.
+
+### Syscall number resolution summary
+| Stage | File | Method | Hook-immune? |
+|---|---|---|---|
+| P1 FreshyCalls | `resolve.rs::resolve_export_ssn` | Zw* RVA sort index | Yes (no stub bytes read) |
+| 1 Hell's | `hells_gate.rs::read_ssn_from_stub` | Direct stub read `4C 8B D1 B8 SSN` | No |
+| 2 Halo's | `hells_gate.rs::halos_gate` | ±20 neighbor arithmetic | Yes (reads clean neighbors only) |
+| 3 Tartarus | `hells_gate.rs::tartarus_gate` | Exception dir + RVA sort | Yes (no stub bytes read) |
+| (alt) Hell's with neighbor scan | `resolve.rs::find_syscall_stub64`, `sys_resolve.rs::find_syscall_stub64` | ±512 byte stub scan | Partial (assumes hooks are local) |
+
+## Cross-References Found in Code
+
+### Hard dependencies (T-XXX techniques this code uses)
+- **`crowd/src/hells_gate.rs:find_ntdll_base()` L85-L122** → implements **T-004 (PEB Walker)**. Uses `gs:[0x60]` for PEB, walks `InMemoryOrderModuleList` with DJB2 hashing of `BaseDllName`. The whole T-002 chain depends on this module-resolution step.
+- **`crowd/src/resolve.rs:ntdll_base_and_name_hashes()` L99-L122** → also implements **T-004 (PEB Walker)** with the same pattern but using the `LdrDataTableEntry` struct.
+- **`crowd/src/resolve.rs:find_module_base()` L130-L160** → T-004 generalized to any module by name (case-folded). Used by other techniques that need to resolve kernel32, user32, etc.
+
+### Soft enables (T-XXX techniques this code unlocks)
+- **`crowd/src/hells_gate.rs:find_syscall_ret_gadget()` L386-L401** → enables **T-001 (RecycledGate)**. The gadget address returned alongside the SSN is consumed by RecycledGate's indirect dispatch — the `0F 05` instruction executes the syscall from inside ntdll's own image, satisfying stack-based EDR heuristics that expect syscalls to originate from `MEM_IMAGE` in ntdll.
+- **`crowd/src/hells_gate.rs:resolve_all()` L478-L528** → enables **T-006 (Phantom Stubs)**. Phantom stubs need SSNs but execute from MEM_IMAGE-backed memory they allocate themselves; the SSN map from `resolve_all()` populates them.
+- **`crowd/src/resolve.rs:resolve_export_by_name()` / `resolve_export_by_ordinal()`** → enables any technique that needs non-syscall export resolution (e.g., `MiniDumpWriteDump` for T-023 LSASS dump, `CreateThread` callbacks for T-013 callback injection).
+- All NT-direct syscall consumers in `dark_crystal/crowd/src/{pool_party,threadless,early_cascade,early_bird,ghost,herpaderping,dirty_vanity,hypnosis,waiting_thread,mapping_inject,module_stomp,func_stomp,overload,callback_exec,fiber_exec,pe_loader,nt_create_process,ppid}.rs` → these implement **T-007 injection suite** and depend on SSNs from T-002.
+- **T-009 EDR evasion suite** (`ntdll_unhook_inject.rs`, `amsi_hbp.rs`, `etw.rs`, `peb_unlink.rs`, `ki_step_over.rs`, `arg_spoof.rs`, `block_handle.rs`, `policy.rs`) — most call NT APIs directly via resolved SSNs.
+- **T-005 Ekko sleep obfuscation** uses NtContinue, RtlCreateTimer, etc., all routed through SSNs from T-002.
+- **T-016 persistence** (schtask via NtCreateProcess, NTFS EA via NtSetEaFile, etc.) consumes the same SSN map.
+
+### Intra-crate module references
+- `crowd/src/chain.rs` (per the technique card) references this as "CASCADE RESOLVER P1" (FreshyCalls) and "CASCADE RESOLVER P4" (exception-based). The chain composer likely calls `resolve.rs::resolve_ssn` for FreshyCalls and `hells_gate.rs::resolve_ssn` for the full cascade.
+- `crates/core/src/sys_indirect.rs` (per file manifest) consumes `sys_resolve.rs::resolve_ssn` for the direct/indirect dispatcher — older code path without the full cascade.
+
+## Edge Cases & Failure Modes
+
+1. **All Nt* stubs are heavily rewritten (no clean neighbor within ±20)**
+   - Code path: `halos_gate()` returns `None` at L287 after exhausting `1..=20`
+   - Symptom: `resolve_ssn()` falls through to Stage 3 Tartarus at L455
+   - Workaround: Tartarus handles this case via RVA-only sort (no stub reads)
+
+2. **No Exception Directory present (rare non-x64 or stripped image)**
+   - Code path: `tartarus_gate()` L335-L343, `if exc_rva == 0 || exc_size == 0` branch
+   - Symptom: falls back to assigning SSNs by sorted RVA of all Nt* exports without exception-directory validation
+   - Caveat: includes any forwarded/data exports masquerading as Nt*, possibly corrupting the index assignment
+
+3. **Exception directory filter yields empty set (no Nt* export has unwind data)**
+   - Code path: `tartarus_gate()` L357-L363, `if validated.is_empty()` branch
+   - Symptom: falls back to unfiltered Nt* sort, same as case 2
+   - This shouldn't happen in practice but is defensive
+
+4. **Function name not in Nt* export list (typo, or non-NT function requested)**
+   - Code path: `resolve_ssn()` L440-L450, `target_idx = None` branch
+   - Symptom: returns `Err(anyhow::anyhow!("function '{}' not found in ntdll exports"))`
+   - Workaround: caller must use a real Nt* name; for Zw* calls use FreshyCalls via `resolve.rs::resolve_ssn` which accepts either name (DJB2 hash matches the export name string)
+
+5. **ntdll base not found via PEB walk (corrupted PEB, hardened process)**
+   - Code path: `find_ntdll_base()` L119 returns `core::ptr::null()`
+   - Symptom: `resolve_ssn()` L432 returns `Err(anyhow::anyhow!("failed to locate ntdll base via PEB"))`
+   - Workaround: KnownDlls `NtOpenSection` fallback (per card, in `chain.rs` — not in analyzed files)
+
+6. **Page boundary crossing during stub read**
+   - Code path: `resolve.rs::matches_stub64()` L313-L316, `if ((p as usize & 0xFFF) + 4) > 0x1000` returns false
+   - Symptom: stub at end of a page is skipped, scan continues
+   - This is a safety check — prevents reading across a page boundary into an unmapped or guard page
+
+7. **SSN underflow in Halo's Gate**
+   - Code path: `halos_gate()` L269, `if neighbor_ssn >= distance as u16`
+   - Symptom: if a "down" neighbor has SSN < distance (e.g., SSN=3 at distance=5), arithmetic would underflow; code skips to next neighbor
+   - Workaround: implicit — moves on to next distance or eventually falls to Tartarus
+
+8. **Gadget not found in ±64 bytes from clean stub (Win11 variant layout)**
+   - Code path: `find_syscall_ret_gadget()` L386-L401 returns 0
+   - Symptom: `resolve_ssn()` L451-L456 calls `find_any_gadget()` to scan all exports
+   - Workaround: scans every Nt* export until one yields a gadget; if none found, returns `(ssn, 0)` — caller must validate `gadget != 0` before using RecycledGate dispatch
+
+9. **Forwarded export in `resolve_export_by_name`/`resolve_export_by_ordinal`**
+   - Code path: `resolve.rs` L218-L220 and L253-L255, checks `rva >= export_rva && rva < export_rva + export_size`
+   - Symptom: returns `null` for forwarded exports (e.g., NTDLL forwarding to KERNELBASE)
+   - Workaround: caller must check null and resolve from the forwarder module
+
+10. **32-bit WoW64 process — FreshyCalls Zw* walk still works**
+    - Code path: `resolve.rs::resolve_export_ssn` is shared across arch via cfg
+    - Symptom: Zw* sort works on x86 too, but Tartarus's `RuntimeFunctionEntry` is x64-only
+    - Workaround: Tartarus returns `HashMap::new()` on x86 (L382-L385), forcing RVA-only fallback
+
+## OPSEC Notes
+
+### Artifacts left
+- No filesystem artifacts — pure in-memory.
+- No handle opens — no `OpenProcess`, no `NtOpenSection`.
+- PEB read via `gs:[0x60]` produces no syscall; ETW cannot observe it.
+- PE header parsing via raw pointer dereferences — no API calls.
+
+### Telemetry surface
+- **Stack scan visibility**: `find_syscall_stub64()` and `find_syscall_ret_gadget()` perform linear byte scans across ntdll's `.text` section. Some advanced EDRs (notably EDR-EI from Elastic) pattern-match on instruction sequences that read code from `MEM_IMAGE` regions — the `*p == 0x4C` comparisons may trigger heuristics.
+- **Allocation**: `resolve.rs::ntdll_base_and_name_hashes` and `hells_gate.rs::parse_exports` both build `Vec<u8>` and `Vec<(String, *const u8)>` per call. These heap allocations are visible to `RtlRegisterHeap`-based telemetry. Cache via OnceLock to eliminate.
+- **HashSet in Tartarus**: `tartarus_gate()` allocates a `HashSet<u32>` with `entry_count` capacity (potentially ~2000 entries). One-time cost; not a concern if cached.
+
+### Cleanup
+- None required — no persistent state modified. All reads are from `MEM_IMAGE` ntdll pages with existing `PAGE_READONLY` protection.
+
+### Detection vectors
+1. ETW-TI (Threat Intelligence) providers can hook `RtlpNotImageExecutable` checks and detect byte-scanning patterns.
+2. Kernel callbacks (PsSetLoadImageNotifyRoutine) fire when ntdll is loaded — but the PEB walk happens post-load so this is moot.
+3. CFG (Control Flow Guard) — not relevant since no indirect calls are made here; only raw memory reads.
+4. Memory access patterns visible to Page Heap / Guard Page heuristics if a defender sets a guard page inside ntdll's `.text` section.
+
+## Reusable Patterns
+
+### Pattern: DJB2 Hash + PEB Walk for Module Resolution
+- **Use when**: Need to locate a loaded module without `GetModuleHandle`/`LdrLoadDll` API calls
+- **Code ref**: `crowd/src/resolve.rs::ntdll_base_and_name_hashes()` L99-L122, `crowd/src/hells_gate.rs::find_ntdll_base()` L85-L122, `crowd/src/resolve.rs::find_module_base()` L130-L160
+- **How**: Read `gs:[0x60]` (PEB on x64) or `fs:[0x30]` (PEB on x86). Walk `PEB->Ldr->InMemoryOrderModuleList`. For each `LdrDataTableEntry`, hash `BaseDllName.Buffer` (UTF-16, case-folded via `| 0x20`) with DJB2 seed=5381. Compare against precomputed hash. Return `DllBase` on match. The `addr_of!((*ldr).in_memory_order_module_list) as *const ListEntry` is the loop head sentinel; entries are accessed by subtracting the offset of `in_memory_order_links` from the list link pointer (`entry = (e as *const u8).sub(size_of::<[*const u8; 2]>())`).
+
+### Pattern: PE Export Directory Walk with Hash-Based Name Match
+- **Use when**: Need to resolve an export without `GetProcAddress` API call
+- **Code ref**: `crowd/src/resolve.rs::resolve_export_ssn()` L194-L259, `crowd/src/hells_gate.rs::parse_exports()` L145-L191
+- **How**: Validate `MZ` (0x5A4D) at base, read `e_lfanew` at +0x3C, validate `PE\0\0` (0x4550) at `nt_headers`. Read Export Directory RVA at `nt_headers + 0x88` (x64) or `+0x78` (x86). Walk `AddressOfNames` array (RVAs to ASCII strings), hash each, compare. On match, use the index into `AddressOfNameOrdinals` to get the unbiased ordinal, then index into `AddressOfFunctions` to get the function RVA. Add to base for VA.
+
+### Pattern: SSN Resolution via RVA Sort (FreshyCalls)
+- **Use when**: EDR has rewritten syscall stub bodies; you cannot read SSN bytes directly
+- **Code ref**: `crowd/src/resolve.rs::resolve_export_ssn()` L226-L245
+- **How**: Collect RVAs of all `Zw*` exports during the standard export walk. `sort_unstable()` the RVAs. The index of the target function's RVA in the sorted array *is* its SSN — Windows assigns SSNs in export RVA order. `Zw*` exports are alternate entry points to the same syscalls as `Nt*`, so the sort works identically. No bytes are ever read from any stub, defeating any inline hook.
+
+### Pattern: Exception Directory Cross-Reference for Function Validation
+- **Use when**: Need to distinguish real function entry points from forwarded/data exports in a PE
+- **Code ref**: `crowd/src/hells_gate.rs::tartarus_gate()` L321-L378
+- **How**: Parse `IMAGE_DIRECTORY_ENTRY_EXCEPTION` (DataDirectory[3], at `nt_headers + 0xA0` on x64). Iterate `RuntimeFunctionEntry` array (12 bytes each: begin_address, end_address, unwind_info_address). Collect all `begin_address` values into a `HashSet<u32>`. Filter export list to only entries whose RVA is in the set. This validates each export is a real function with unwind metadata, not a forwarded export or data symbol.
+
+### Pattern: Gadget Forward-Scan with Bounds Check
+- **Use when**: Need to find a `0F 05 C3` (syscall; ret) gadget inside ntdll for indirect syscall dispatch
+- **Code ref**: `crowd/src/hells_gate.rs::find_syscall_ret_gadget()` L386-L401, `crowd/src/resolve.rs::find_syscall_stub64()` L261-L307
+- **How**: From a stub pointer, scan forward up to 64 bytes (or 512 in the longer variant). Check `*p == 0x0F && *p.add(1) == 0x05 && *p.add(2) == 0xC3`. Use `within_image(p, 3, start, end)` to prevent reading past the image end. The gadget address is the location of `0x0F` — RecycledGate jumps to this address to execute the syscall from inside ntdll's image, satisfying stack-origin heuristics.
+
+### Pattern: Three-Pass Cascade Resolution (Graceful Degradation)
+- **Use when**: Resolution must succeed across a range of EDR hooking intensities
+- **Code ref**: `crowd/src/hells_gate.rs::resolve_all()` L478-L528
+- **How**: Pass 1 attempts the cheapest method (direct read) on every target, collecting unresolved indices. Pass 2 attempts the medium-cost method (neighbor walk) only on unresolved. Pass 3 attempts the most expensive method (full export+exception enumeration, cached) on the remaining. Each pass only operates on failures from the prior, so cost scales with hook coverage rather than total target count.

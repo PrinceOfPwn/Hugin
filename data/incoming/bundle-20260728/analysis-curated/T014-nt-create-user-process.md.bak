@@ -1,0 +1,379 @@
+---
+id: T-014
+name: NtCreateUserProcess (Direct NT Process Creation)
+category: process-injection
+tier: S
+mitre: [T1055, T1055.001, T1055.004, T1134, T1574]
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires: [T-001, T-004, T-015]
+enables: [T-013, T-007, T-008, T-016, T-005]
+vault_references: [dark_crystal/crowd/src/nt_create_process.rs]
+implements:
+  - file: dark_crystal/crowd/src/nt_create_process.rs
+    key_functions:
+      - create_suspended
+      - create_and_inject
+      - create_default_suspended
+      - inject_into_svchost
+      - open_parent_handle
+      - build_nt_image_path
+    key_structs:
+      - PsCreateInfo
+      - PsAttribute
+      - PsAttributeList
+      - ClientId
+    key_constants:
+      - PS_ATTRIBUTE_IMAGE_NAME
+      - PS_ATTRIBUTE_PARENT_PROCESS
+      - PS_ATTRIBUTE_MITIGATION_OPTIONS
+      - PS_ATTRIBUTE_CLIENT_ID
+      - BLOCK_NON_MS_BINARIES_ALWAYS_ON
+      - PROCESS_CREATE_FLAGS_SUSPENDED
+      - PROCESS_CREATE_PROCESS
+      - PS_CREATE_INFO_SIZE
+      - MAX_ATTRIBUTES
+    lines_of_interest:
+      - "L40-L55: PS_ATTRIBUTE_* constants from ReactOS/Windows Internals"
+      - "L66-L80: mitigation + creation flag constants"
+      - "L97-L103: PsCreateInfo struct (88 bytes, Win10+ x64 layout)"
+      - "L107-L115: PsAttribute struct definition"
+      - "L120-L126: PsAttributeList with MAX_ATTRIBUTES=4"
+      - "L135-L160: open_parent_handle() — NtOpenProcess with PROCESS_CREATE_PROCESS"
+      - "L165-L180: build_nt_image_path() — \\??\\ prefix handling"
+      - "L185-L310: create_suspended() — main PS_ATTRIBUTE_LIST builder + syscall"
+      - "L315-L420: create_and_inject() — Early Bird APC injection chain"
+      - "L425-L450: convenience wrappers for svchost.exe"
+min_windows: "Windows 10 x64 (uses Win10+ PS_CREATE_INFO_SIZE=88 layout)"
+needs_admin: "conditional (no for own-user processes; PPID spoof needs PROCESS_CREATE_PROCESS on parent)"
+tags: [injection, process-creation, ppid-spoofing, block-dll, pure-nt, early-bird, nt-syscall, indirect-syscall]
+---
+
+# NtCreateUserProcess — Operator Playbook
+
+## TL;DR
+`nt_create_process.rs` is the S-tier pure-NT process spawn path: a single `NtCreateUserProcess` syscall replaces the entire `CreateProcessW` + `InitializeProcThreadAttributeList` + `UpdateProcThreadAttribute` song-and-dance. PPID spoofing, Block-DLL mitigation, and suspend flag are packed into one `PS_ATTRIBUTE_LIST` and dispatched via `crate::recycled::nt_create_user_process()` (T-001 RecycledGate) — no kernel32/kernelbase IAT footprint, no Win32 ETW `Process/Start` telemetry from the usermode layer. The `create_and_inject()` wrapper glues this onto an Early Bird APC injection (T-013) so the spawn-flip-write-protect-queue-resume chain is one Rust call.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `dark_crystal/crowd/src/nt_create_process.rs` | Pure-NT process creation + Early Bird APC injection. Defines `PsCreateInfo`, `PsAttribute`, `PsAttributeList`, `ClientId`; builds the attribute list with up to 4 entries (IMAGE_NAME, CLIENT_ID, PARENT_PROCESS, MITIGATION_OPTIONS) and dispatches via RecycledGate. | `create_suspended()`, `create_and_inject()`, `create_default_suspended()`, `inject_into_svchost()` | ~10K |
+
+## How It Works
+
+1. **NT image path normalization** — `build_nt_image_path(image_path)` (private helper) inspects the input string. If it doesn't already start with `\??\`, it prepends `\??\` (e.g., `C:\Windows\System32\svchost.exe` → `\??\C:\Windows\System32\svchost.exe`). Then it builds a wide UTF-16 buffer with a null terminator and constructs a stack `UNICODE_STRING` (`Length` = byte count without null, `MaximumLength` = full buffer bytes, `Buffer` = pointer). The `(Vec<u16>, UNICODE_STRING)` pair is returned so the backing buffer lives long enough.
+
+2. **RTL_USER_PROCESS_PARAMETERS build** — `create_suspended()` calls `ntapi::ntrtl::RtlCreateProcessParametersEx` with:
+   - `ImagePathName` = the NT image path
+   - `CommandLine` = same image path
+   - All other fields (DllPath, CurrentDirectory, Environment, WindowTitle, DesktopInfo, ShellInfo, RuntimeData) = `null_mut()`
+   - Flags = `RTL_USER_PROC_PARAMS_NORMALIZED`
+   
+   The result is a heap `RTL_USER_PROCESS_PARAMETERS` block. On failure (`status != 0 || params.is_null()`), the function bails with the NTSTATUS hex in the error string.
+
+3. **PS_CREATE_INFO initialization** — `PsCreateInfo { size, state, _pad: [u8; 76] }` is `zeroed()`, then `size` is set to `PS_CREATE_INFO_SIZE = 88` (the Windows 10+ x64 sizeof). `state = 0` corresponds to `PsCreateInitialState` (already zero). The 76-byte padding covers all union members across Win10/Win11 22H2+.
+
+4. **PS_ATTRIBUTE_LIST assembly** — Up to 4 `PsAttribute` entries are populated (each is 4 usize: `attribute`, `size`, `value`, `return_length`). Insertion order is significant because `total_length` is computed as `size_of::<usize>() + attr_count * size_of::<PsAttribute>()` after the loop:
+   - **IMAGE_NAME** (`PS_ATTRIBUTE_IMAGE_NAME = 0x0002_0005`): `size` = `nt_image_us.Length`, `value` = `nt_image_us.Buffer as usize`. Always inserted first.
+   - **CLIENT_ID** (`PS_ATTRIBUTE_CLIENT_ID = 0x0001_0003`): `size` = `size_of::<ClientId>()`, `value` = `&mut client_id as *mut ClientId as usize`. This is an output attribute — NtCreateUserProcess writes the new PID/TID into it.
+   - **PARENT_PROCESS** (`PS_ATTRIBUTE_PARENT_PROCESS = 0x0006_0000`, optional): when `parent_pid` is `Some(_)`. `Some(0)` triggers auto-resolution via `crate::ppid::find_pid_by_name("explorer.exe")` (T-015). The parent is opened with `PROCESS_CREATE_PROCESS = 0x0080` access via `open_parent_handle()`, which calls `crate::recycled::nt_open_process()` with a stack-built 6-field `OBJECT_ATTRIBUTES` and a 2-field `CLIENT_ID` array.
+   - **MITIGATION_OPTIONS** (`PS_ATTRIBUTE_MITIGATION_OPTIONS = 0x0002_0010`, optional): when `block_dll` is true. `mitigation_flags = BLOCK_NON_MS_BINARIES_ALWAYS_ON = 0x0000_1000_0000_0000` (bit 44 of the 64-bit mitigation policy word). The attribute's `value` is a pointer to the `mitigation_flags` local — NtCreateUserProcess dereferences it.
+
+5. **NtCreateUserProcess dispatch** — `crate::recycled::nt_create_user_process()` (T-001 RecycledGate) is invoked with:
+   - `ProcessHandle`/`ThreadHandle` out pointers
+   - `PROCESS_ALL_ACCESS = 0x001F_FFFF` for process, `THREAD_ALL_ACCESS = 0x001F_FFFF` for thread
+   - Both ObjectAttributes pointers = `null_mut()` (no security descriptor, no name)
+   - `ProcessFlags = PROCESS_CREATE_FLAGS_SUSPENDED = 0x0000_0001` (always suspended)
+   - `ThreadFlags = 0`
+   - `ProcessParameters` = the RTL_USER_PROCESS_PARAMETERS built in step 2
+   - `CreateInfo` = pointer to the `PsCreateInfo`
+   - `AttributeList` = pointer to the `PsAttributeList`
+
+6. **Cleanup on success** — `RtlDestroyProcessParameters(params)` releases the RTL_USER_PROCESS_PARAMETERS block; `crate::recycled::nt_close(h_parent)` releases the parent handle if one was opened. The new process and thread handles leak back to the caller — they own them now.
+
+7. **Injection chain (create_and_inject)** — After `create_suspended()` returns `(h_process, h_thread, pid)` with Block-DLL enabled:
+   - `crate::recycled::nt_allocate_virtual_memory(h_process, &mut remote_addr, 0, &mut region_size, 0x3000 /* MEM_COMMIT|MEM_RESERVE */, 0x04 /* PAGE_READWRITE */)`
+   - `crate::recycled::nt_write_virtual_memory(h_process, remote_addr, shellcode.as_ptr(), shellcode.len(), &mut written)`
+   - `crate::recycled::nt_protect_virtual_memory(h_process, &mut base_prot, &mut prot_size, 0x20 /* PAGE_EXECUTE_READ */, &mut old_protect)` — *non-fatal on failure*; the code logs and continues assuming RW may execute
+   - `crate::recycled::nt_queue_apc_thread(h_thread, remote_addr, null, null, 0)` — the APC routine is the shellcode address; this is classic Early Bird (T-013)
+   - `crate::recycled::nt_resume_thread(h_thread, null)` — APC fires before `LdrInitializeThunk` returns to the PE entry point
+   - Cleanup: `nt_close(h_thread)` and `nt_close(h_process)` after resume
+
+## Code Architecture
+
+### Call Graph
+
+```
+create_and_inject()        create_default_suspended()    inject_into_svchost()
+        │                          │                              │
+        │                          │                              │
+        ▼                          ▼                              ▼
+create_suspended()  ◄──────────────┴──────────────────────────────┘
+   │
+   ├─ build_nt_image_path()        (file-local)
+   ├─ RtlCreateProcessParametersEx (ntapi::ntrtl)
+   ├─ open_parent_handle()         (file-local)
+   │     └─ crate::recycled::nt_open_process()
+   │     └─ crate::ppid::find_pid_by_name()        ◄── T-015 PPID Spoofing
+   ├─ crate::recycled::nt_create_user_process()    ◄── T-001 RecycledGate
+   ├─ RtlDestroyProcessParameters                  (ntapi::ntrtl)
+   └─ crate::recycled::nt_close()
+
+create_and_inject() then:
+   ├─ crate::recycled::nt_allocate_virtual_memory()
+   ├─ crate::recycled::nt_write_virtual_memory()
+   ├─ crate::recycled::nt_protect_virtual_memory()
+   ├─ crate::recycled::nt_queue_apc_thread()       ◄── T-013 Early Bird
+   ├─ crate::recycled::nt_resume_thread()
+   ├─ crate::recycled::nt_free_virtual_memory()    (failure path only)
+   ├─ crate::recycled::nt_terminate_process()      (failure path only)
+   └─ crate::recycled::nt_close()                   (both paths)
+```
+
+### Data Flow
+
+User input (`image_path: &str`, `shellcode: &[u8]`, `parent_pid: Option<u32>`, `block_dll: bool`) → stack-allocated `UNICODE_STRING` and `PsCreateInfo`/`PsAttributeList`/`ClientId` → RecycledGate syscall → out-bound `(h_process: usize, h_thread: usize, pid: u32)` → caller-owned NT handles (no RAII; caller is responsible for `nt_close`).
+
+For `create_and_inject()`: handles are consumed internally — the APC is queued, the thread is resumed, and the handles are closed before returning the PID. The process is now running shellcode as the first thing it executes.
+
+### Type Hierarchy
+
+```
+PsCreateInfo          (88 bytes, repr C)   ──┐
+PsAttributeList       (8 + 4*32 = 136 bytes) │  passed by mut ptr to NtCreateUserProcess
+  └─ [PsAttribute; 4]                       │
+        ├─ attribute: usize                  │
+        ├─ size: usize                      │
+        ├─ value: usize (or *ValuePtr)      │
+        └─ return_length: *mut usize        │
+ClientId              (16 bytes, Default)   ──┘  written by NT kernel as PS_ATTRIBUTE_CLIENT_ID output
+```
+
+### Feature Gates
+
+The file has `#![allow(dead_code, non_snake_case)]` at the top — non-snake-case is required because the NT API convention uses CamelCase (`RtlCreateProcessParametersEx`, `PROCESS_CREATE_FLAGS_*`). No `cfg()` gates; the module is unconditionally compiled into the `crowd` crate. `#[allow(unused_imports)]` on `crate::mega_dbg` import keeps the debug macro optional at compile time.
+
+## Operational Profile
+
+### When to Use
+
+- You need to spawn a sacrificial process with **PPID spoofing + Block-DLL + suspend in a single syscall** — this is the cheapest usermode way to get all three at once.
+- EDR with `CreateProcessW` hooks in `kernelbase!CreateProcessInternalW` (CrowdStrike, SentinelOne, Microsoft Defender for Endpoint). Direct `NtCreateUserProcess` skips the entire Win32 process-creation IAT.
+- You're going to Early Bird APC inject (the `create_and_inject()` wrapper already does this for you).
+- You want the spawned process to **not** load EDR hook DLLs — `BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON` (bit 44 of mitigation flags) prevents non-MS-signed modules from loading.
+- Engagement on Win10 x64 or newer (PS_CREATE_INFO_SIZE=88 is Win10+ layout).
+
+### When NOT to Use
+
+- You need to spawn a process with a security descriptor, token impersonation, or job object assignment — the code passes `null_mut()` for both ProcessObjectAttributes and ThreadObjectAttributes.
+- You need `PROC_THREAD_ATTRIBUTE_JOB_LIST`, `PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY` extension, or AppContainer/sandbox attributes — `MAX_ATTRIBUTES = 4` is hard-coded.
+- Pre-Win10 targets — `PS_CREATE_INFO_SIZE = 88` will not match the legacy 80-byte layout.
+- You require handle inheritance — `PROCESS_CREATE_FLAGS_INHERIT_HANDLES` is defined but the actual call uses only `PROCESS_CREATE_FLAGS_SUSPENDED`.
+- The target EDR uses `ObRegisterCallbacks` (kernel-level PS notify) — the syscall is still observable at the kernel boundary; NtCreateUserProcess does not make you invisible to kernel telemetry, only to usermode hooks.
+
+### Kill Chain Position
+
+This is a **stage 2 spawn+inject primitive** that lives between syscall resolution and final payload execution:
+
+```
+T-004 (PEB walk) ──► T-002 (Hells/Halos/Tartarus Gate SSN) ──► T-001 (RecycledGate)
+                                                                          │
+                                                                          ▼
+                                                            T-014 (NtCreateUserProcess)
+                                                                          │
+                                                            ┌─────────────┼─────────────┐
+                                                            ▼             ▼             ▼
+                                              T-013 (Early Bird APC)  T-007 (Pool Party)  T-008 (Threadless)
+                                                                          │
+                                                                          ▼
+                                                            T-005 (Ekko ROP Sleep) ──► T-017 (Persistence)
+```
+
+PPID auto-resolution pulls in T-015 (`crate::ppid::find_pid_by_name`). Block-DLL pulls in T-016 EDR Evasion Suite (mitigation policy).
+
+### Trade-offs
+
+| Dimension | Rating | Notes |
+|---|---|---|
+| Stealth | 8/10 | Skips Win32 `CreateProcessW` hooks and `kernelbase!CreateProcessInternalW` ETW TI events; PPID spoof hides ancestry; Block-DLL stops EDR DLL injection. Loses points because kernel `PsSetCreateProcessNotifyRoutine` callbacks still fire and ETW Threat Intelligence kernel logger still sees the syscall. |
+| Reliability | 7/10 | `create_suspended()` and `create_and_inject()` both have detailed cleanup paths (`nt_free_virtual_memory` + `nt_terminate_process` + `nt_close` on alloc/write/APC failures). Non-fatal `NtProtectVirtualMemory` fallback at L~380 means the chain survives RX-protection failures but leaves RW pages that may trip CFI. |
+| Complexity | 9/10 | Manual `PS_ATTRIBUTE_LIST` construction, manual `RTL_USER_PROCESS_PARAMETERS` build, raw `OBJECT_ATTRIBUTES`/`CLIENT_ID` stack arrays. Six unsafe functions, zero RAII guards. Caller owns returned handles. |
+| Version range | Win10 x64+ | `PS_CREATE_INFO_SIZE = 88` is the Win10+ x64 layout; older Windows would need 80 bytes and the union layout would differ. |
+| Privilege needed | Conditional | No admin for spawning own-user processes; PPID spoof requires `PROCESS_CREATE_PROCESS = 0x0080` on the parent, which usually means same-user/LPE. |
+
+## Rust Implementation Deep Dive
+
+### unsafe blocks
+
+Every function in this file is `unsafe fn` (correctly — they all touch raw NT syscalls and pointer dereferences). Notable unsafe contexts:
+
+- **`open_parent_handle(parent_pid: u32) -> Result<usize>`** — casts stack arrays `oa: [usize; 6]` and `cid: [parent_pid as usize, 0usize]` to `*mut c_void` and passes them to `nt_open_process` as `OBJECT_ATTRIBUTES` and `CLIENT_ID` pointers. The `oa[0] = size_of::<[usize; 6]>()` line is the `OBJECT_ATTRIBUTES.Length` field; the rest is zeroed (NULL `ObjectName`, NULL `SecurityDescriptor`, NULL `SecurityQualityOfService`). This is the minimal valid OBJECT_ATTRIBUTES.
+- **`create_suspended()`** — multiple unsafe operations: `RtlCreateProcessParametersEx` FFI call, `zeroed()` for `PsCreateInfo`/`PsAttribute` array, `&mut client_id as *mut ClientId as usize` (taking a pointer to a stack local and stuffing it into a usize — valid as long as `client_id` outlives the syscall, which it does because it's a local of `create_suspended`).
+- **`create_and_inject()`** — `shellcode.as_ptr() as *const c_void` for `nt_write_virtual_memory`, plus all the cleanup paths.
+
+### `core::arch::asm!` usage
+
+**None in this file.** All assembly syscalls are encapsulated in `crate::recycled::*` (T-001 RecycledGate). This is the right design — the asm! lives in `sys_recycled.rs` / `recycled.rs`, and this file is pure Rust + FFI. Modifying this file does not require touching inline asm.
+
+### FFI patterns
+
+- `ntapi::ntrtl::{RtlCreateProcessParametersEx, RtlDestroyProcessParameters, RTL_USER_PROC_PARAMS_NORMALIZED}` — the `ntapi` crate provides the bindings. The `*mut *mut c_void as *mut _` cast for the `ProcessParameters` out-pointer is a workaround for `ntapi`'s `PRTL_USER_PROCESS_PARAMETERS *` typedef expectations.
+- `winapi::shared::ntdef::UNICODE_STRING` — used for the image path string. The struct is `{ Length: u16, MaximumLength: u16, Buffer: *mut u16 }`. The `Buffer` pointer borrows from the `_wide_buf` Vec returned by `build_nt_image_path`. The tuple `(Vec<u16>, UNICODE_STRING)` returned from `build_nt_image_path` is critical — it keeps the wide buffer alive while the `UNICODE_STRING` is in use. An operator modifying this code MUST NOT split the tuple.
+- `crate::recycled::nt_*` — T-001 RecycledGate wrappers. All return `i32` NTSTATUS (signed — `status < 0` checks in `create_and_inject` correctly treat NTSTATUS as signed negative for failure).
+
+### Initialization patterns
+
+- `std::mem::zeroed()` for `PsCreateInfo`, `attributes: [PsAttribute; MAX_ATTRIBUTES]`, `ClientId`. This is the standard "give NT a zero-initialized struct" pattern.
+- No `OnceLock` / `LazyCell` in this file — all initialization is per-call. SSN resolution (T-002 Hells Gate) lives in `crate::recycled` and is initialized once at first syscall.
+
+### Error handling
+
+- All functions return `anyhow::Result<T>`.
+- NTSTATUS codes are formatted as `0x{:08x}` in error strings using `status as u32` cast (correctly preserving the unsigned representation of NTSTATUS).
+- Failure paths in `create_and_inject()`:
+  - Alloc failure → `nt_terminate_process(h_process, 1)` + `nt_close(h_thread)` + `nt_close(h_process)` + return Err
+  - Write failure → `nt_free_virtual_memory(h_process, &mut base, &mut sz, 0x8000 /* MEM_RELEASE */)` + `nt_terminate_process` + `nt_close` x2 + return Err
+  - Protect failure → **non-fatal**, just logs via `mega_dbg!`
+  - APC queue failure → `nt_free_virtual_memory` + `nt_terminate_process` + `nt_close` x2 + return Err
+- A subtle bug to watch: on the protect failure path, the code continues with `PAGE_READWRITE` pages, then queues the APC to RW memory. On systems with NX-enforced W^X, the APC will fault on execution. The comment acknowledges this with "some configurations may allow execution from RW pages" — an operator should consider making this fatal on modern systems.
+
+### Memory layout
+
+- `PsCreateInfo`: `size: usize` (8 bytes) + `state: u32` (4 bytes) + 4-byte alignment padding + `_pad: [u8; 76]` = 88 bytes total. Matches `PS_CREATE_INFO_SIZE = 88`.
+- `PsAttribute`: 4 × `usize` = 32 bytes on x64. `#[derive(Copy, Clone)]` because the `attributes` array needs to be initialized via `zeroed()` then mutated by index.
+- `PsAttributeList`: `total_length: usize` + `[PsAttribute; 4]` = 8 + 128 = 136 bytes max. The actual `total_length` value computed in code is `size_of::<usize>() + attr_count * size_of::<PsAttribute>()` = 8 + (attr_count × 32), which matches what the kernel expects.
+
+### Syscall numbers
+
+This file does not resolve SSNs itself. All syscall number resolution happens in `crate::recycled` (T-001 RecycledGate) which calls into `crate::sys_resolve` / `crate::hells_gate` (T-002). The SSN for `NtCreateUserProcess`, `NtOpenProcess`, `NtAllocateVirtualMemory`, etc. are looked up by DJB2 hash from ntdll's export table (T-004 PEB Walker) and cached.
+
+## Cross-References Found in Code
+
+| Reference | Source | Target Technique | Reason |
+|---|---|---|---|
+| `crate::recycled::nt_create_user_process` | `nt_create_process.rs:create_suspended()` | T-001 RecycledGate | The actual syscall dispatch goes through RecycledGate's ntdll gadget |
+| `crate::recycled::nt_open_process` | `nt_create_process.rs:open_parent_handle()` | T-001 RecycledGate | Opening parent for PPID spoof |
+| `crate::recycled::nt_close` | `nt_create_process.rs:create_suspended()`, `create_and_inject()` | T-001 RecycledGate | Handle cleanup |
+| `crate::recycled::nt_allocate_virtual_memory` | `nt_create_process.rs:create_and_inject()` | T-001 RecycledGate | Allocating shellcode buffer in target |
+| `crate::recycled::nt_write_virtual_memory` | `nt_create_process.rs:create_and_inject()` | T-001 RecycledGate | Writing shellcode bytes |
+| `crate::recycled::nt_protect_virtual_memory` | `nt_create_process.rs:create_and_inject()` | T-001 RecycledGate | RW → RX flip |
+| `crate::recycled::nt_queue_apc_thread` | `nt_create_process.rs:create_and_inject()` | T-013 Remaining Methods (Early Bird APC) | Queues APC to main thread before resume |
+| `crate::recycled::nt_resume_thread` | `nt_create_process.rs:create_and_inject()` | T-001 RecycledGate | Triggers APC delivery |
+| `crate::recycled::nt_free_virtual_memory` | `nt_create_process.rs:create_and_inject()` | T-001 RecycledGate | Failure-path cleanup |
+| `crate::recycled::nt_terminate_process` | `nt_create_process.rs:create_and_inject()` | T-001 RecycledGate | Failure-path cleanup |
+| `crate::ppid::find_pid_by_name("explorer.exe")` | `nt_create_process.rs:create_suspended()` | T-015 PPID Spoofing | Auto-PPID resolution when `Some(0)` is passed |
+| `PS_ATTRIBUTE_PARENT_PROCESS = 0x0006_0000` | constant | T-015 PPID Spoofing | NT attribute for parent process spoofing |
+| `PS_ATTRIBUTE_MITIGATION_OPTIONS = 0x0002_0010` + `BLOCK_NON_MS_BINARIES_ALWAYS_ON = 0x0000_1000_0000_0000` | constants | T-016 EDR Evasion Suite (Block-DLL policy) | Mitigation policy flag set on the new process |
+| `mega_dbg!` macro | all functions | (debug logging utility, no T-id) | Compile-time-gated debug output |
+
+## Edge Cases & Failure Modes
+
+1. **`RtlCreateProcessParametersEx` returns nonzero NTSTATUS**
+   - Symptom: `create_suspended()` returns `Err("RtlCreateProcessParametersEx failed: NTSTATUS 0x...")`
+   - Cause: usually malformed image path or out of memory
+   - Workaround: caller should fall back to a known-good Win32 path like `C:\Windows\System32\svchost.exe`
+
+2. **`NtOpenProcess(parent)` fails with `STATUS_ACCESS_DENIED` (0xC0000022)**
+   - Code path: `open_parent_handle()` checks `status != 0 || h_parent == 0` and returns Err
+   - Cause: the parent process (typically explorer.exe) does not grant `PROCESS_CREATE_PROCESS = 0x0080` to the caller's token. Usually means the caller is at a different integrity level than the parent.
+   - Workaround: pass `parent_pid = None` to skip PPID spoofing entirely, or escalate first (T-017 escalation suite)
+
+3. **`find_pid_by_name("explorer.exe")` returns `None`**
+   - Code path: `create_suspended()` returns `Err("explorer.exe not found for PPID auto-spoof")`
+   - Cause: server core, RDP session without shell, or process name spoofing by EDR
+   - Workaround: pass `Some(<actual_pid>)` instead of `Some(0)`
+
+4. **`NtProtectVirtualMemory` returns nonzero NTSTATUS for RW→RX flip**
+   - Code path: explicitly non-fatal — the code logs `mega_dbg!("... RX failed (0x{:08x}) -- continuing")` and proceeds to queue the APC
+   - Symptom: shellcode is on `PAGE_READWRITE` pages; on systems with NX enforcement, the APC will cause an access violation when it tries to execute
+   - Workaround: an operator should consider making this fatal on modern Windows 10/11 (the silent failure mode is a footgun). Also consider WXOR-only fallback to `PAGE_EXECUTE_READWRITE` (`0x40`) which is more permissive but more reliably mapped.
+
+5. **`NtCreateUserProcess` returns 0 status but null handles**
+   - Code path: explicit check `if h_process == 0 || h_thread == 0` returns `Err("NtCreateUserProcess returned null handles")`
+   - Cause: extremely unlikely given a 0 NTSTATUS; would indicate a kernel bug or a hooked path
+   - Workaround: retry with `block_dll = false` to rule out mitigation policy rejection
+
+6. **`PS_ATTRIBUTE_LIST` size mismatch**
+   - The code computes `total_length = size_of::<usize>() + attr_count * size_of::<PsAttribute>()`. If the kernel expects the `TotalLength` field to include only the populated attributes (not the full `[PsAttribute; 4]`), the value is correct. If the kernel expects the buffer size, the value is wrong.
+   - In practice on Win10/11 x64 this is correct: NT uses `TotalLength` to walk the variable-length attribute array.
+   - Workaround: none needed; just be aware that adding a 5th attribute would require bumping `MAX_ATTRIBUTES`.
+
+7. **`PROCESS_CREATE_FLAGS_INHERIT_HANDLES` defined but unused**
+   - The `create_suspended()` call passes `null_mut()` for ProcessObjectAttributes, so handle inheritance is irrelevant
+   - If an operator needs handle inheritance (e.g., to pass a pipe handle to the child), they must build `OBJECT_ATTRIBUTES` with `OBJ_INHERIT` and pass it as the ProcessObjectAttributes parameter — currently impossible without modifying the function signature
+
+8. **Caller leaks handles after `create_suspended()`**
+   - `create_suspended()` returns `(usize, usize, u32)` — caller owns both handles. There is no RAII wrapper.
+   - Symptom: handle table leak if caller forgets `nt_close`
+   - Workaround: wrap the return in a `struct NtHandles { proc: usize, thread: usize }` implementing `Drop` that calls `crate::recycled::nt_close`
+
+## Variant Ideas
+
+- **Token-impersonation variant**: pass `PS_ATTRIBUTE_TOKEN` (0x0002_0002) attribute to assign a stolen primary token. Pairs with `nt_open_process_token` + `nt_duplicate_token_ex`. Enables same-integrity process spawning under a different identity — useful for lateral movement.
+- **Job-object variant**: extend `MAX_ATTRIBUTES` to 5 and add `PS_ATTRIBUTE_JOB_LIST` (0x0000_0001?) to associate the new process with a job. Useful for cleanup-on-exit semantics.
+- **Dynamic code generation variant**: instead of `PAGE_EXECUTE_READ`, allocate with `PAGE_EXECUTE_READWRITE` and let the shellcode self-modify. Pairs with `PROCESS_CREATION_MITIGATION_POLICY_BLOCK_DYNAMIC_CODE` *disabled* (or via the ACG-toggle path in T-016 policy.rs).
+- **Hypnosis-style variant**: spawn the process, write shellcode to the new process's `LdrInitializeThunk` APC slot directly (bypassing `NtQueueApcThread`) to avoid the `KiUserApcDispatcher` walk. This is closer to the early-cascade path (T-012) — would require manipulating `PTEB->Reserved2[0]` (the APC loader entry).
+- **AppContainer variant**: pass `PS_ATTRIBUTE_APPCONTAINER` and an AppContainer SID to spawn sandboxed. Useful for browser-based phishing scenarios in T-023.
+- **SYSTEM parent variant**: open `csrss.exe` (PID 4-ish) or `services.exe` with `PROCESS_CREATE_PROCESS` to inherit a SYSTEM token (requires SeDebugPrivilege). Combined with T-017 escalation.
+- **Handle inheritance variant**: build a real `OBJECT_ATTRIBUTES` with `OBJ_INHERIT` and a `SECURITY_DESCRIPTOR` to pass pipes/events to the child — enables invisible IPC for client_rust RAT scenarios.
+- **Fail-fast variant**: make `NtProtectVirtualMemory` failure fatal (return `Err` immediately) on Win10+ where NX is enforced. The current non-fatal behavior is a correctness trap.
+- **Hollowing integration**: combine with `process_hollow.rs` (T-013 process hollowing) — spawn suspended, map/unmap the original image, write the hollowed PE, then resume. The PPID spoof + Block-DLL combo strengthens the standard hollowing chain.
+
+## OPSEC Notes
+
+### Artifacts Left
+
+- **Process object in NT namespace**: visible via `NtQuerySystemInformation(SystemProcessInformation)`. No Win32-side `CreateProcessW` ETW event, but kernel `PsSetCreateProcessNotifyRoutineEx` callbacks still fire.
+- **Parent-child relationship**: with PPID spoofing to explorer.exe, the parent PID in the PEB is the spoofed one, not the actual creator. Note: kernel `PS_CREATE_NOTIFY_INFO` `CreatingThreadId`/`ParentProcessId` still record the *real* creator in the kernel EPROCESS — spoofing only changes what usermode sees via `NtQueryInformationProcess(ProcessBasicInformation)`.
+- **Mitigation policy on the new process**: `BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON` is queryable via `NtQueryInformationProcess(ProcessMitigationPolicy)`. An EDR doing process attribute inspection will see this and may flag it as anomalous.
+- **Handle to parent (transient)**: `open_parent_handle()` opens explorer.exe with `PROCESS_CREATE_PROCESS = 0x0080`, then `nt_close()`s it after `NtCreateUserProcess` returns. This handle is visible to EDR kernel callbacks (`ObRegisterCallbacks` for PsProcessType) for the duration of the syscall.
+- **`RTL_USER_PROCESS_PARAMETERS` allocation**: `RtlCreateProcessParametersEx` allocates from the process heap. `RtlDestroyProcessParameters` is called immediately after `NtCreateUserProcess`, but the allocation pattern (and any heap metadata leakage) is visible to heap instrumentation.
+- **APC on main thread**: the `nt_queue_apc_thread` call leaves a queued APC entry visible in `NtQueryInformationThread(ThreadApcState)` until it fires. EDR hooking `NtQueueApcThread` (kernel callback `PsSetCreateThreadNotifyRoutine` is not the relevant one here) can see this directly.
+
+### Cleanup
+
+- `RtlDestroyProcessParameters(params)` — frees RTL_USER_PROCESS_PARAMETERS
+- `crate::recycled::nt_close(h_parent)` — releases parent handle (in `create_suspended()` only, after the syscall)
+- `crate::recycled::nt_close(h_thread)` + `crate::recycled::nt_close(h_process)` — in `create_and_inject()`, after resume. The process continues running with the shellcode executing.
+- **No cleanup of the new process on success** — by design, the process is supposed to keep running.
+- **Failure path cleanup** in `create_and_inject()`: `nt_free_virtual_memory` + `nt_terminate_process` + `nt_close` x2 — comprehensive and correct.
+
+### What's NOT cleaned up
+
+- The injected shellcode remains in the target process for the lifetime of that process. No self-erasing logic.
+- The thread APC entry is consumed by delivery; no residue.
+- The parent process's open handle (explorer.exe) is closed, but the `PROCESS_CREATE_PROCESS` access check itself may be logged by EDR audit hooks.
+
+## Reusable Patterns
+
+### Pattern: PS_ATTRIBUTE_LIST stack builder
+- **Use when**: any direct `NtCreateUserProcess` call; also adaptable for `NtCreateThreadEx` (which uses a similar `PS_ATTRIBUTE_LIST`)
+- **Code ref**: `nt_create_process.rs:create_suspended()` (the attribute population loop)
+- **How**: declare `[PsAttribute; MAX_ATTRIBUTES]` zeroed, populate by index with `attr_count` cursor, compute `total_length` after the loop as `size_of::<usize>() + attr_count * size_of::<PsAttribute>()`. Always include IMAGE_NAME first (kernel requires this), CLIENT_ID last (output). Order of PARENT/MITIGATION is interchangeable. Pattern is reusable for any NT API that takes `PS_ATTRIBUTE_LIST`.
+
+### Pattern: NT path normalization
+- **Use when**: any NT path input that may come from a user as either `C:\...` or `\??\C:\...`
+- **Code ref**: `nt_create_process.rs:build_nt_image_path()`
+- **How**: check `image_path.starts_with("\\??\\")`, prepend if missing. Build UTF-16 with trailing null. Compute `Length` = (len-1)*2 (excludes null), `MaximumLength` = len*2 (includes null). Return `(Vec<u16>, UNICODE_STRING)` tuple so the buffer outlives the string. Critical: don't destructure the tuple while the `UNICODE_STRING` is in use.
+
+### Pattern: Stack-array OBJECT_ATTRIBUTES
+- **Use when**: `NtOpenProcess` / `NtOpenThread` / `NtCreateProcess` calls where you need a minimal valid OBJECT_ATTRIBUTES with no name and no security descriptor
+- **Code ref**: `nt_create_process.rs:open_parent_handle()` — `let mut oa: [usize; 6] = zeroed(); oa[0] = size_of::<[usize; 6]>();`
+- **How**: OBJECT_ATTRIBUTES on x64 is 48 bytes (6 usize): `Length`, `RootDirectory`, `ObjectName` (UNICODE_STRING ptr), `Attributes`, `SecurityDescriptor`, `SecurityQualityOfService`. Set `Length` only, leave the rest zeroed. Pass as `oa.as_mut_ptr() as *mut c_void`. Saves declaring the full struct.
+
+### Pattern: Cleanup-on-failure NT handle triple
+- **Use when**: any chain that opens a process + thread + allocates memory, where failure mid-chain needs full unwind
+- **Code ref**: `nt_create_process.rs:create_and_inject()` failure paths (alloc/write/APC failures)
+- **How**: on each failure: `nt_free_virtual_memory(h_process, &mut base, &mut sz, 0x8000 /* MEM_RELEASE */)` → `nt_terminate_process(h_process, 1)` → `nt_close(h_thread)` → `nt_close(h_process)` → `return Err(...)`. Note `MEM_RELEASE = 0x8000` (not `MEM_DECOMMIT = 0x4000`) — must use RELEASE when the region was reserved+committed together.
+
+### Pattern: Convenience svchost.exe wrappers
+- **Use when**: an engagement needs a quick "spawn svchost as explorer's child with Block-DLL" without specifying parameters every call
+- **Code ref**: `nt_create_process.rs:create_default_suspended()` and `inject_into_svchost()`
+- **How**: hardcode `"C:\\Windows\\System32\\svchost.exe"` as image path, pass `Some(0)` for parent_pid (auto-resolves to explorer.exe), `block_dll = true`. Returns the same shape as the underlying functions. Good for chain composition: `inject_into_svchost(payload)` is a one-liner.
+
+### Pattern: Suspend-first injection (Early Bird)
+- **Use when**: you want shellcode to run *before* the legitimate PE entry point — lets you hook or replace functionality at startup, before any EDR hook DLL initializes
+- **Code ref**: `nt_create_process.rs:create_and_inject()` step 5+6
+- **How**: create with `PROCESS_CREATE_FLAGS_SUSPENDED = 0x0001`, allocate/write/protect in the suspended process, `nt_queue_apc_thread(h_thread, shellcode_addr, null, null, 0)`, then `nt_resume_thread(h_thread, null)`. APC fires from `KiUserApcDispatcher` before `LdrInitializeThunk` returns control to the entry point. The shellcode's first instruction is the first thing the new process executes after the loader stub.

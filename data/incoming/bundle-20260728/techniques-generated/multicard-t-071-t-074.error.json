@@ -1,0 +1,10 @@
+{
+  "job_id": "multicard-t-071-t-074",
+  "model": "kimi-k3",
+  "status": "error",
+  "http_status": 504,
+  "error": "Invalid JSON response: <html>\r\n<head><title>504 Gateway Time-out</title></head>\r\n<body>\r\n<center><h1>504 Gateway Time-out</h1></center>\r\n</body>\r\n</html>\r\n",
+  "elapsed_s": 600.8,
+  "response": null,
+  "adaptive_rounds": 1
+}

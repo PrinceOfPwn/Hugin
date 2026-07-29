@@ -1,0 +1,375 @@
+---
+id: T-006
+name: Phantom Stubs (MEM_IMAGE Syscall Stubs)
+category: syscalls
+tier: A
+mitre: T1055, T1027, T1562.001
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires:
+  - T-001
+  - T-002
+  - T-004
+enables:
+  - T-005
+  - T-007
+  - T-009
+  - T-013
+  - T-016
+  - T-017
+vault_references:
+  - dark_crystal/crowd/src/phantom.rs
+implements:
+  - file: dark_crystal/crowd/src/phantom.rs
+    key_functions:
+      - build_phantom_stubs
+      - get_phantom
+      - refresh_phantom_stubs
+      - alloc_mem_image_region
+      - alloc_private_rx
+      - PhantomStub::build
+    key_structs:
+      - PhantomStub
+    key_constants:
+      - STUB_SIZE (8 bytes)
+      - MAX_STUBS (64)
+      - STUB_REGION_SIZE (512)
+      - BACKING_DLL (r"C:\Windows\System32\version.dll")
+    lines_of_interest:
+      - L19-L23: STUB_SIZE / MAX_STUBS / STUB_REGION_SIZE constants
+      - L27: BACKING_DLL constant (Microsoft-signed backing image)
+      - L36-L62: PhantomStub struct + build() stub byte layout
+      - L70-L76: PHANTOM_MAP + STUB_REGION OnceLock singletons
+      - L83-L137: build_phantom_stubs() main flow — SEC_IMAGE map + VP dance + stub write
+      - L106-L114: PAGE_WRITECOPY (0x08) bugfix for MEM_IMAGE pages (Win10 RS3+)
+      - L163-L194: refresh_phantom_stubs() — in-place SSN rewrite after Windows Update
+      - L202-L260: alloc_mem_image_region() — NtOpenFile/NtCreateSection/NtMapViewOfSection chain
+      - L217-L221: Vec<u16> leak to keep UNICODE_STRING.Buffer alive
+      - L263-L274: alloc_private_rx() fallback allocation path
+min_windows: Windows 7 (NT 6.1) — PAGE_WRITECOPY on SEC_IMAGE backed pages works on all versions; RS3+ is where PAGE_READWRITE would fail
+needs_admin: no
+tags:
+  - syscalls
+  - mem-image
+  - sec-image
+  - signed-dll
+  - module-overloading
+  - virtualprotect-writecopy
+  - once-lock
+  - etw-ti-evasion
+---
+
+# Phantom Stubs — Operator Playbook
+
+## TL;DR
+Phantom Stubs creates 8-byte executable syscall trampolines (`B8 SSN_lo SSN_hi 00 00 0F 05 C3`) inside a `MEM_IMAGE`-backed region carved out of `C:\Windows\System32\version.dll` via `NtCreateSection(SEC_IMAGE)` + `NtMapViewOfSection`. ETW-TI and memory scanners see the syscall source as a Microsoft-signed module, not as private RWX shellcode. Worth the complexity because the backing image never has to be loaded as a real module — the section view is enough to fool the heuristics.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `dark_crystal/crowd/src/phantom.rs` | Generates, stores, and refreshes 8-byte MEM_IMAGE-backed syscall stubs | `build_phantom_stubs()`, `get_phantom(hash)`, `refresh_phantom_stubs()`, `alloc_mem_image_region()`, `alloc_private_rx()`, `PhantomStub::build(ssn)` | ~317 lines |
+
+This is a single-file technique with no submodules. All state lives behind two `OnceLock`s (`PHANTOM_MAP`, `STUB_REGION`).
+
+## How It Works
+
+### Stage 1 — Acquire a MEM_IMAGE-backed region
+1. `build_phantom_stubs()` (L83) calls `alloc_mem_image_region(BACKING_DLL, STUB_REGION_SIZE)` (L202) with `BACKING_DLL = r"C:\Windows\System32\version.dll"` (L27).
+2. Inside `alloc_mem_image_region()` (L202-L260):
+   - Path is rewritten as `\??\C:\Windows\System32\version.dll` and widened into a leaked `Vec<u16>` (L217-L221) — the leak is intentional so the `UNICODE_STRING.Buffer` pointer outlives the `us` stack frame.
+   - `OBJECT_ATTRIBUTES` is initialized with `OBJ_CASE_INSENSITIVE` (`0x40`).
+   - `NtOpenFile` is invoked via `crate::recycled::invoke(crate::resolve::compute_hash("NtOpenFile"), 6, ...)` with access mask `0x80100080` (= `GENERIC_READ | SYNCHRONIZE | FILE_READ_ATTRIBUTES`) and share mode `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE` (`0x7`).
+   - `NtCreateSection` is invoked via `crate::recycled::nt_create_section(...)` with `SectionPageProtection = PAGE_READONLY (0x02)` and `AllocationAttributes = SEC_IMAGE (0x1000000)`. The file handle is closed immediately after.
+   - `NtMapViewOfSection` is invoked via `crate::recycled::nt_map_view_of_section(...)` with `ProcessHandle = (-1isize) as usize` (`NtCurrentProcess()`), `ViewUnmap` (`2`, not `ViewShare=1` — avoids leaking the view into child processes), and `Win32Protect = PAGE_READONLY (0x02)`.
+   - The section handle is closed after mapping succeeds; the view remains mapped.
+3. The mapped base address is returned as `Option<usize>`. This is the `MEM_IMAGE`-tagged region.
+
+### Stage 2 — Flip protection to PAGE_WRITECOPY (the bugfix that makes it work)
+4. Back in `build_phantom_stubs()`, `VirtualProtect(region_base, STUB_REGION_SIZE, 0x08 /* PAGE_WRITECOPY */, &mut old)` is called (L106-L114).
+   - **Critical detail**: SEC_IMAGE-backed pages on Win10 RS3+ (build 16299+) reject `PAGE_READWRITE (0x04)`. `PAGE_WRITECOPY (0x08)` is required — it triggers copy-on-write semantics that Windows allows for image-backed pages.
+   - The comment at L109-L114 explicitly documents this: *"Must use PAGE_WRITECOPY (0x08) instead, which allows copy-on-write semantics for image-backed pages."*
+5. If `VirtualProtect` returns `0`, the code attempts a fallback `alloc_private_rx()` (L263) — but as documented at L120-L124, the fallback path is incomplete and returns an empty `HashMap` rather than continuing. This is a known limitation.
+
+### Stage 3 — Write stubs into the region
+6. `crate::syscall_map::syscall_map()` is read (L126) to obtain the `HashMap<u32, (u32, usize)>` of `hash → (SSN, gadget_ptr)` — this map is populated by T-002 (Hells/Halo's/Tartarus) via T-004 (PEB walker).
+7. For each `(hash, (ssn, _gadget))` pair (L128-L136), up to `MAX_STUBS = 64`:
+   - `PhantomStub::build(ssn)` constructs the 8-byte stub (see below).
+   - `std::ptr::copy_nonoverlapping(stub.bytes.as_ptr(), ptr as *mut u8, STUB_SIZE)` writes the stub at `region_base + (idx * 8)`.
+   - `(ptr, ssn)` is inserted into the local `HashMap` keyed by `hash`.
+
+### Stage 4 — Lock down as RX
+8. `VirtualProtect(region_base, STUB_REGION_SIZE, 0x20 /* PAGE_EXECUTE_READ */, ...)` is called (L138-L145) to make the region executable and read-only.
+9. If RX restoration fails (returns `0`), an empty `HashMap` is returned — the region is unusable.
+10. The local `HashMap` is stored in the `PHANTOM_MAP` OnceLock.
+
+### Stage 5 — Dispatch lookup (runtime)
+11. `get_phantom(hash) -> Option<(usize, u32)` (L149) is a pure lookup: `PHANTOM_MAP.get().and_then(|m| m.get(&hash).copied())` returning `(stub_ptr, ssn)`.
+12. The caller invokes the syscall by jumping to `stub_ptr`. The stub executes:
+    ```
+    mov eax, SSN        ; B8 xx xx 00 00   (5 bytes)
+    syscall             ; 0F 05            (2 bytes)
+    ret                 ; C3               (1 byte)
+    ```
+    The `syscall` instruction's return address on the kernel side points into the `MEM_IMAGE` region backed by `version.dll`.
+
+### Stage 6 — Refresh after Windows Update
+13. `refresh_phantom_stubs()` (L163) re-applies `PAGE_WRITECOPY` (L171), then for each entry in `PHANTOM_MAP`:
+    - Calls `crate::syscall_map::get_ssn_and_gadget(hash)` to get the new SSN.
+    - Rebuilds `PhantomStub::build(new_ssn)` and `copy_nonoverlapping`s it over the existing stub bytes.
+14. Restores `PAGE_EXECUTE_READ` (0x20) via `VirtualProtect` (L186-L194).
+15. **Known limitation (L158-L161 doc comment)**: The SSN values cached in `PHANTOM_MAP` are not updated in place (no interior mutability on `OnceLock<HashMap>`). The *executable bytes* are correct, but `get_phantom()` still returns the *old* SSN value. Callers must use the stub pointer, not the returned SSN, for kernel invocation.
+
+## Code Architecture
+
+### Call Graph
+```
+phantom::build_phantom_stubs()
+  ├─ phantom::alloc_mem_image_region(BACKING_DLL, STUB_REGION_SIZE)
+  │    ├─ crate::recycled::invoke(crate::resolve::compute_hash("NtOpenFile"), 6, ...)
+  │    │      └─ T-001 (RecycledGate) + T-004 (PEB walker for hash)
+  │    ├─ crate::recycled::nt_create_section(...)
+  │    │      └─ T-001
+  │    ├─ crate::recycled::nt_map_view_of_section(...)
+  │    │      └─ T-001
+  │    └─ crate::recycled::nt_close(h_file) / nt_close(h_section)
+  │           └─ T-001
+  ├─ winapi::um::memoryapi::VirtualProtect (PAGE_WRITECOPY)     [fallback to alloc_private_rx]
+  ├─ crate::syscall_map::syscall_map()                          └─ T-004 + T-002
+  ├─ phantom::PhantomStub::build(ssn)                           (pure data)
+  ├─ std::ptr::copy_nonoverlapping (write stub bytes)
+  └─ winapi::um::memoryapi::VirtualProtect (PAGE_EXECUTE_READ)
+
+phantom::refresh_phantom_stubs()
+  ├─ winapi::um::memoryapi::VirtualProtect (PAGE_WRITECOPY)
+  ├─ crate::syscall_map::get_ssn_and_gadget(hash)               └─ T-004
+  ├─ phantom::PhantomStub::build(new_ssn)
+  ├─ std::ptr::copy_nonoverlapping (rewrite stub bytes)
+  └─ winapi::um::memoryapi::VirtualProtect (PAGE_EXECUTE_READ)
+```
+
+### Data Flow
+- **Input**: `crate::syscall_map::syscall_map()` (`HashMap<u32, (u32, usize)>` of hash → (SSN, gadget_ptr)).
+- **Transform**: SSN value → 8-byte executable stub via `PhantomStub::build(ssn)`.
+- **Output**: `PHANTOM_MAP: OnceLock<HashMap<u32, (usize, u32)>>` (hash → (stub_ptr, SSN)) + `STUB_REGION: OnceLock<usize>` (region base).
+
+### Type Hierarchy
+```rust
+#[repr(C, align(8))]
+struct PhantomStub {           // 8 bytes, 8-byte aligned
+    bytes: [u8; STUB_SIZE],    // [0xB8, ssn_lo, ssn_hi, 0x00, 0x00, 0x0F, 0x05, 0xC3]
+}
+
+static PHANTOM_MAP:  OnceLock<HashMap<u32, (usize, u32)>>  // hash → (stub_ptr, ssn)
+static STUB_REGION:  OnceLock<usize>                        // base of MEM_IMAGE region
+```
+
+### Feature Gates
+None. This file is unconditional in `crowd`. The `#[allow(dead_code)]` at L17 hints that some configurations may compile it without ever calling it — but there are no `cfg()` gates inside the module.
+
+## Operational Profile
+
+### When to Use
+- **Mature ETW-TI deployments**: When the target SOC relies on `Microsoft-Windows-Threat-Intelligence` to flag syscalls originating from non-image memory, Phantom Stubs makes the syscall RIP look like it lives inside a Microsoft-signed DLL.
+- **Long-dwell engagements**: When Windows Update patches may shift SSNs, `refresh_phantom_stubs()` lets you rewrite stubs in place without rebuilding the dispatch table.
+- **Stack-spoofing chains**: Pair with T-009 (advanced call stack spoofing) so both the *return address* and the *syscall RIP* appear to originate from legitimate modules.
+
+### When NOT to Use
+- **Dropper phase / short-lived implants**: The SEC_IMAGE mapping dance is heavier than a direct `nt_allocate_virtual_memory(MEM_COMMIT, RWX)`. If you only need one or two syscalls, RecycledGate (T-001) is leaner.
+- **EDR with strong signed-module integrity verification**: Some EDRs hash-check `version.dll`'s `.text` section. CoW on the mapped view creates a private page that diverges from the on-disk image — detectable by `NtQueryVirtualMemory(MemoryImageInformation)` cross-checks against the file.
+- **Constrained memory environments**: `STUB_REGION_SIZE = 512` bytes plus the full image view of `version.dll` (typically ~50 KB mapped) is non-trivial if you are trying to stay under a hard limit.
+- **When you need >64 syscalls**: `MAX_STUBS = 64` silently truncates the syscall map (see Edge Cases #3).
+
+### Kill Chain Position
+Phantom Stubs sits at the **dispatch layer** — same tier as T-001 (RecycledGate), T-002 (Hells/Halo's/Tartarus Gate), and T-003 (VEH Gate). It is an alternative to RecycledGate for *where* the `syscall` instruction executes.
+
+Example chain:
+```
+T-004 (PEB walk + DJB2) → T-002 (Hells Gate SSN resolution)
+                         → T-006 (Phantom Stubs dispatch table built)
+                         → T-009 (Advanced stack spoof on top)
+                         → T-012 (Early Cascade injection using phantom stubs)
+                         → T-005 (Ekko ROP sleep)
+                         → T-017 (Persistence suite)
+```
+
+### Trade-offs
+
+## Rust Implementation Deep Dive
+
+### `unsafe` Blocks (every one, by file:line and purpose)
+
+1. **L85-L92 — `match alloc_mem_image_region(BACKING_DLL, STUB_REGION_SIZE)`**:
+   - Reason: `alloc_mem_image_region` is `unsafe fn` because it does FFI to NT syscalls via `crate::recycled::invoke`. Returns `Option<usize>`.
+   - Failure path: `None` → falls back to `alloc_private_rx(STUB_REGION_SIZE).unwrap_or(0)`.
+
+2. **L106-L114 — `VirtualProtect(..., 0x08 /* PAGE_WRITECOPY */, &mut old)`**:
+   - Reason: Win32 FFI. The bugfix is here — `0x08` not `0x04`.
+   - On `vp_ok == 0`: tries `alloc_private_rx` but returns empty HashMap. **The fallback allocation is leaked** — never freed, never used.
+
+3. **L131-L133 — `std::ptr::copy_nonoverlapping(stub.bytes.as_ptr(), ptr as *mut u8, STUB_SIZE)`**:
+   - Reason: raw pointer write into the mapped MEM_IMAGE region. `ptr = region_base + offset` where `offset = idx * STUB_SIZE`. Assumes `region_base` is valid and writable (just VP'd to WRITECOPY).
+
+4. **L138-L145 — `VirtualProtect(..., 0x20 /* PAGE_EXECUTE_READ */, &mut dummy)`**:
+   - Reason: Win32 FFI to lock down as RX. If `vp_rx_ok == 0`, returns empty HashMap — region may be left writable which is unsafe (no caller cleanup path).
+
+5. **L202 (whole function) — `unsafe fn alloc_mem_image_region`**:
+   - Multiple unsafe operations: `wide.leak()`, `std::mem::zeroed()` for `OBJECT_ATTRIBUTES`, `crate::recycled::invoke` call, `crate::recycled::nt_create_section` call, `crate::recycled::nt_map_view_of_section` call, `crate::recycled::nt_close` calls.
+
+6. **L263 (whole function) — `unsafe fn alloc_private_rx`**:
+   - Single Win32 call to `VirtualAlloc(null_mut(), size, 0x3000 /* MEM_COMMIT | MEM_RESERVE */, 0x04 /* PAGE_READWRITE */)`. Caller is expected to flip to RX after writing.
+
+7. **L171-L178 (refresh) — `VirtualProtect(..., 0x08 /* PAGE_WRITECOPY */, ...)`**: Same as #2 but on refresh path.
+
+8. **L181-L183 (refresh) — `std::ptr::copy_nonoverlapping(stub.bytes.as_ptr(), ptr as *mut u8, STUB_SIZE)`**: In-place stub rewrite.
+
+9. **L186-L194 (refresh) — `VirtualProtect(..., 0x20 /* PAGE_EXECUTE_READ */, ...)`**: Restores RX. If this fails the code logs only under `#[cfg(debug_assertions)]` (L196) — release builds silently continue with possibly-writable region.
+
+### `core::arch::asm!` Usage
+**None in this file.** Phantom Stubs is pure data: the stub bytes (`B8 ?? ?? 00 00 0F 05 C3`) are written as a byte array, not as inline asm. The `syscall` instruction is executed at runtime when the stub pointer is called — but the call mechanism (RecycledGate indirect call or VEH gate dispatch) lives in `crate::recycled` and `crate::veh_gate`, not here.
+
+### FFI Patterns
+- `winapi::um::memoryapi::VirtualProtect` — used 4 times (build-WRITECOPY, build-RX, refresh-WRITECOPY, refresh-RX). All use `&mut old: u32` for the old protection out-param.
+- `winapi::um::memoryapi::VirtualAlloc` — used once in `alloc_private_rx` with `0x3000` (MEM_COMMIT | MEM_RESERVE) and `0x04` (PAGE_READWRITE).
+- `winapi::shared::ntdef::UNICODE_STRING` and `OBJECT_ATTRIBUTES` — used inside `alloc_mem_image_region`. The `InitializeObjectAttributes` macro is invoked at L222-L228 to set up `OBJECT_ATTRIBUTES` with `OBJ_CASE_INSENSITIVE (0x40)`.
+- NT API calls go through `crate::recycled::*` (T-001) — `invoke`, `nt_create_section`, `nt_map_view_of_section`, `nt_close`. The Phantom module never calls into ntdll directly.
+
+### Handle Ownership
+- `h_file` (opened by NtOpenFile) → closed after `NtCreateSection` succeeds (L235).
+- `h_section` (created by NtCreateSection) → closed after `NtMapViewOfSection` succeeds (L255).
+- The mapped view itself (`base`) is **never explicitly unmapped** — it lives for the process lifetime. This is intentional (stubs must persist) but is a small leak if `build_phantom_stubs()` is called and fails later (e.g., VP fails on the WRITECOPY step).
+
+### Initialization Patterns
+- `OnceLock::get_or_init` at L84 — guarantees `build_phantom_stubs()` is idempotent. Subsequent calls are no-ops.
+- `STUB_REGION.set(region_base)` at L98 — single-shot set. If `set` is called more than once (it isn't, due to OnceLock outer guard), it returns `Err`.
+
+### Memory Layout
+- `PhantomStub` is `#[repr(C, align(8))]` with `bytes: [u8; 8]`. Total size = 8 bytes, alignment = 8.
+- `STUB_REGION_SIZE = 8 * 64 = 512` bytes — small enough to fit in a single page on most systems (page size is 4096).
+- The mapped section view from `NtMapViewOfSection` is **the entire `version.dll` image** — typically much larger than 512 bytes. Only the first 512 bytes are used; the rest is wasted but provides the MEM_IMAGE backing for the whole page.
+
+### Syscall Numbers
+- `PhantomStub::build(ssn)` only writes the low 16 bits of the SSN:
+  ```rust
+  bytes[1] = (ssn & 0xFF) as u8;
+  bytes[2] = ((ssn >> 8) & 0xFF) as u8;
+  bytes[3] = 0x00;
+  bytes[4] = 0x00;
+  ```
+  This supports SSNs 0x0000–0xFFFF, which covers all real Windows syscalls (max observed is ~0x0500 on Win11). Beyond 0xFFFF would require setting `bytes[3]` and `bytes[4]`.
+
+### Error Handling
+- `alloc_mem_image_region` returns `Option<usize>` — `None` cascades to fallback.
+- `alloc_private_rx` returns `Option<usize>` — `None` propagates as `0` to `region_base`.
+- `VirtualProtect` calls return `BOOL` (0 = failure). Failure on the WRITECOPY step triggers fallback; failure on the RX step returns empty HashMap.
+- `crate::recycled::invoke` / `nt_create_section` / `nt_map_view_of_section` return `NTSTATUS` (0 = success). Non-zero NTSTATUS early-returns `None`.
+- **No `Result` types, no panics on failure** — failures silently return empty state. This is correct OPSEC (no crash logs) but makes debugging harder.
+
+## Cross-References Found in Code
+
+| Reference | Target Technique | How |
+|---|---|---|
+| `crate::recycled::invoke(crate::resolve::compute_hash("NtOpenFile"), 6, ...)` | T-001 (RecycledGate) + T-004 (PEB Walker / DJB2) | Phantom uses RecycledGate to invoke NtOpenFile indirectly; the hash `"NtOpenFile"` is resolved by the PEB walker. |
+| `crate::recycled::nt_create_section(...)` | T-001 (RecycledGate) | NT section creation via indirect syscall. |
+| `crate::recycled::nt_map_view_of_section(...)` | T-001 (RecycledGate) | Section view mapping via indirect syscall. |
+| `crate::recycled::nt_close(h_file)` / `nt_close(h_section)` | T-001 (RecycledGate) | Handle close. |
+| `crate::syscall_map::syscall_map()` | T-004 (Syscall SSN+gadget map) | Reads the pre-populated syscall map built by T-002 + T-004. |
+| `crate::syscall_map::get_ssn_and_gadget(hash)` | T-004 | Refresh lookup for in-place stub rewrite. |
+| `BACKING_DLL = version.dll` | T-013 (Module Overloading) | The technique of mapping a legitimate DLL's SEC_IMAGE to back private memory is Module Overloading. Phantom Stubs is a specialized consumer of that pattern. |
+| `winapi::um::memoryapi::VirtualProtect` | (Win32 direct) | Phantom uses direct Win32 calls for VP/VirtualAlloc. The NT syscalls go through RecycledGate but VP/VirtualAlloc go through Win32 — a small inconsistency an operator may want to fix (use `NtProtectVirtualMemory` via RecycledGate instead). |
+
+No references to T-005 (Ekko), T-007 (injection), T-016 (evasion), etc. appear in this file — but they are all *consumers* of phantom stubs via the universal dispatcher in `crate::sys_indirect` (T-004 dispatch).
+
+## Edge Cases & Failure Modes
+
+1. **`VirtualProtect` PAGE_WRITECOPY fails on the SEC_IMAGE region**
+   - Code path: L106-L124. The fallback `alloc_private_rx(STUB_REGION_SIZE)` is called but the returned `Option<usize>` is bound to `fallback` and the function immediately returns an empty `HashMap` without writing stubs into the fallback region.
+   - Symptom: `build_phantom_stubs()` succeeds silently, but `get_phantom(hash)` always returns `None`. Subsequent syscalls fall through to other dispatch modes (RecycledGate / VEH).
+
+2. **SSN > 0xFFFF**
+   - Code path: `PhantomStub::build()` L45-L49 hardcodes `bytes[3] = 0x00` and `bytes[4] = 0x00`.
+   - Symptom: Syscalls numbered ≥ 0x10000 would execute with a truncated SSN. Practically impossible today (max is ~0x500) but a future Windows version could break this.
+   - Workaround: Change the build function to `bytes[3] = ((ssn >> 16) & 0xFF) as u8; bytes[4] = ((ssn >> 24) & 0xFF) as u8;`.
+
+3. **`syscall_map()` has more than 64 entries**
+   - Code path: L128-L136. The loop has `if idx >= MAX_STUBS { break; }`.
+   - Symptom: Stubs are only built for the first 64 entries (in `HashMap` iteration order — non-deterministic). Any subsequent hash lookups return `None`.
+   - Workaround: Increase `MAX_STUBS` and `STUB_REGION_SIZE` accordingly. Or filter to only include syscalls actually needed.
+
+4. **`refresh_phantom_stubs()` returns stale SSN values via `get_phantom()`**
+   - Code path: L163-L194 (refresh rewrites stub bytes) but `PHANTOM_MAP` entries (which include the SSN) are not mutated.
+   - Symptom: After refresh, callers that use the returned SSN value (instead of the stub pointer) will invoke the *old* syscall number. Callers using the stub pointer are correct.
+   - Workaround: Either (a) replace `OnceLock<HashMap<u32, (usize, u32)>>` with `OnceLock<RwLock<HashMap<u32, (usize, u32)>>>` for interior mutability, or (b) document that callers must use the stub pointer (which the doc comment at L156-L161 partially does).
+
+5. **`build_phantom_stubs()` called when `syscall_map()` is empty**
+   - Code path: L128 loop body never executes. `HashMap` is empty, region is allocated and locked down but unused.
+   - Symptom: Wasted MEM_IMAGE region. `get_phantom()` always returns `None`.
+   - Workaround: Add a guard at L126: `if all_stubs.is_empty() { return HashMap::new(); }` before allocating.
+
+6. **`NtMapViewOfSection` returns STATUS_IMAGE_MACHINE_TYPE_MISMATCH** (e.g., on ARM64 if `version.dll` architecture doesn't match)
+   - Code path: L247-L255. `map_status != 0` triggers `return None`.
+   - Symptom: Silent fallback to private region (and then the broken fallback path from #1).
+   - Workaround: Pick a DLL that is guaranteed to match the host architecture, or implement WoW64 path selection.
+
+7. **`NtCreateSection` with `SEC_IMAGE` fails on systems with strict image-load policies**
+   - Some hardened environments block `NtCreateSection(SEC_IMAGE)` for non-CsrApi-listed image loads.
+   - Symptom: `section_status != 0` → returns None → fallback path.
+   - Workaround: Use `SEC_IMAGE_NO_EXECUTE` (`0x1200000`) if only MEM_IMAGE backing (not RX) is needed; but then the stubs won't execute. Better: use a known-loadable backing DLL that's already in the working set.
+
+8. **Double-call to `build_phantom_stubs()` after refresh**
+   - `OnceLock::get_or_init` short-circuits. The refresh will not persist on a re-init.
+   - Symptom: None — this is correct behavior.
+
+## OPSEC Notes
+
+### Artifacts Left
+- **Mapped section view** of `version.dll` in the process's virtual address space — queryable via `NtQueryVirtualMemory(MemoryImageInformation)` and `VirtualQueryEx`. The view's `AllocationProtect` is `PAGE_READONLY (0x02)` and the underlying image is `version.dll`. A defender correlating "which DLLs this process has mapped vs. which DLLs are in its PEB Ldr list" will spot the orphan section view (version.dll is mapped but not loaded as a module).
+- **PAGE_EXECUTE_READ private CoW page** — when `VirtualProtect(PAGE_WRITECOPY)` triggers copy-on-write and then `VirtualProtect(PAGE_EXECUTE_READ)` flips it back, the page becomes a *private* `MEM_IMAGE` page. `NtQueryVirtualMemory` reports it as `MEM_IMAGE` with `Type = MEM_IMAGE` and `State = MEM_COMMIT` but the page is private (not shared). This is the same fingerprint Module Overloading leaves.
+- **Two stray handle closes** — `NtClose(h_file)` and `NtClose(h_section)` go through RecycledGate. ETW-TI sees the closes but not what they closed.
+
+### Telemetry
+- `Microsoft-Windows-Kernel-Process` (4) — section create/map events at L232, L244.
+- `Microsoft-Windows-Kernel-Memory` — VirtualProtect events at L106, L138, L171, L186.
+- `Microsoft-Windows-Threat-Intelligence` — *will see the syscall RIP as inside `version.dll`* (this is the goal). However, if the SOC has signatures for "phantom stub bytes inside version.dll's mapped view," the `B8 ?? ?? 00 00 0F 05 C3` byte pattern is distinctive.
+
+### Cleanup
+- **None implemented.** The mapped view is never unmapped. There is no `free_phantom_stubs()` function. An operator uninstalling the implant must manually call `NtUnmapViewOfSection` on `STUB_REGION.get()`. 
+  ```rust
+  pub fn teardown_phantom_stubs() {
+      if let Some(base) = STUB_REGION.get().copied() {
+          let _ = crate::recycled::nt_unmap_view_of_section(
+              (-1isize) as usize, base as *mut _, 0);
+      }
+  }
+  ```
+
+### Detectable Strings
+- `r"C:\Windows\System32\version.dll"` is hardcoded as a string constant at L27. String is in plaintext — trivially detectable by YARA. Consider using the `obf!` macro from `dark_crystal/crates/obf` (T-021) to obfuscate this string.
+
+## Reusable Patterns
+
+### Pattern: OnceLock with `get_or_init` returning a constructed HashMap
+- **Use when**: One-shot initialization of a module-level lookup table that should never be re-built.
+- **Code ref**: `phantom.rs:build_phantom_stubs()` L83-L84.
+- **How**: `static FOO: OnceLock<HashMap<K, V>> = OnceLock::new();` then `FOO.get_or_init(|| { ... construct HashMap ... })`. The closure runs exactly once across all callers. The catch: interior mutability is lost — you can't update values later. Phantom uses a separate `refresh_phantom_stubs()` that mutates the in-memory bytes (not the HashMap) to work around this.
+
+### Pattern: Intentional `Vec::leak()` to keep FFI buffer alive
+- **Use when**: A Win32/NT structure (`UNICODE_STRING`, `OBJECT_ATTRIBUTES`, `LIST_ENTRY`) holds a raw pointer to a buffer that must outlive the stack frame that constructed it.
+- **Code ref**: `phantom.rs:alloc_mem_image_region()` L217-L221.
+- **How**: `let leaked = wide.leak();` converts `Vec<u16>` into `&'static mut [u16]`. The pointer is valid for the process lifetime. Trade-off: the memory is never freed, but it's allocated once (inside a `OnceLock`-guarded init) so the leak is bounded.
+
+### Pattern: PAGE_WRITECOPY for SEC_IMAGE backed pages
+- **Use when**: You need to write to a page that is backed by a SEC_IMAGE section view (MEM_IMAGE memory).
+- **Code ref**: `phantom.rs:build_phantom_stubs()` L106-L114.
+- **How**: `VirtualProtect(ptr, size, 0x08 /* PAGE_WRITECOPY */, &mut old)` instead of `0x04 /* PAGE_READWRITE */`. On Win10 RS3+ (build 16299+), RW on image-backed pages returns `STATUS_INVALID_PAGE_PROTECTION` (`0xC000004D`). WRITECOPY triggers copy-on-write and is allowed. After writing, flip back to `PAGE_EXECUTE_READ (0x20)`.
+
+### Pattern: `(-1isize) as usize` for `NtCurrentProcess()`
+- **Use when**: You need to pass the current process handle to an NT API and want to avoid the `GetCurrentProcess()` syscall (which is detectable).
+- **Code ref**: `phantom.rs:alloc_mem_image_region()` L244.
+- **How**: The NT kernel treats handle `-1` (i.e., `(HANDLE)-1`) as a sentinel meaning "current process." Casting `(-1isize) as usize` produces `0xFFFFFFFFFFFFFFFF` on 64-bit, which is the kernel's expected `NtCurrentProcess()` value. Saves one syscall and avoids a `GetCurrentProcess` instrumentation point.
+
+### Pattern: ViewUnmap flag to prevent child-process leakage
+- **Use when**: Mapping a section view you don't want duplicated into child processes via `CreateProcess` inherit-handle semantics.
+- **Code ref**: `phantom.rs:alloc_mem_image_region()` L248.
+- **How**: Pass `ViewUnmap (2)` as the `AllocationType`/`InheritDisposition` parameter to `NtMapViewOfSection` instead of `ViewShare (1)`. ViewShare maps the view into the section object itself (inherited by children that duplicate the section handle); ViewUnmap keeps the view private to the current process.

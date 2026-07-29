@@ -1,0 +1,9 @@
+{
+  "job_id": "analysis-T001",
+  "model": "glm-5.2",
+  "status": "error",
+  "http_status": null,
+  "error": "HTTPSConnectionPool(host='genai.melioffice.com', port=443): Read timed out. (read timeout=120.0)",
+  "elapsed_s": 120.4,
+  "response": null
+}

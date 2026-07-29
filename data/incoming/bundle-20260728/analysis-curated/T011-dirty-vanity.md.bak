@@ -1,0 +1,284 @@
+---
+id: T-011
+name: Dirty Vanity (Process Reflection)
+category: process-injection
+tier: A
+mitre: T1055, T1055.012
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires: [T-001, T-015]
+enables: [T-005, T-017]
+vault_references: [dark_crystal/crowd/src/dirty_vanity.rs]
+implements:
+  - file: dark_crystal/crowd/src/dirty_vanity.rs
+    key_functions: [reflect_and_inject, reflect_from_explorer]
+    key_structs: [ClientId, RtlpProcessReflectionInformation, ClientIdNt, ObjAttr]
+    key_constants: [RTL_CLONE_PROCESS_FLAGS_INHERIT_HANDLES, RTL_CLONE_PROCESS_FLAGS_NO_SYNCHRONIZE, 0x00FA, 0x00003000, 0x04, 0x20, 0x8000]
+    lines_of_interest: ["L40-L48: RtlpProcessReflectionInformation struct", "L50-L57: RtlCreateProcessReflectionFn type alias", "L72-L80: reflect_and_inject public API", "L95-L106: NtOpenProcess with minimal 0x00FA access mask", "L111-L120: NtAllocateVirtualMemory RW allocation", "L129-L137: NtWriteVirtualMemory shellcode write", "L140-L148: NtProtectVirtualMemory RW→RX flip", "L150-L171: GetModuleHandleA/GetProcAddress resolve RtlCreateProcessReflection", "L173-L188: RtlCreateProcessReflection invocation with shellcode as StartRoutine", "L190-L222: handle cleanup and NTSTATUS check"]
+min_windows: Windows Vista (6.0)
+needs_admin: no
+tags: [injection, reflection, kernel-callback-bypass, opsec, indirect-syscall, minimal-access, rw-to-rx, no-parent-child, rtl-create-process-reflection]
+---
+
+# Dirty Vanity (Process Reflection) — Operator Playbook
+
+## TL;DR
+Dirty Vanity clones a target (typically `explorer.exe`) via the undocumented `RtlCreateProcessReflection` API, producing an orphaned reflected process that inherits the original's address space — including any shellcode written before the reflect call. The reflector evades `PspCreateProcessNotifyRoutine` kernel callbacks (where EDRs register `PsSetCreateProcessNotifyRoutineEx`), so the new process never fires a process-creation event. The Rust impl executes every NT call through RecycledGate (T-001) indirect syscalls, uses minimal access rights (`0x00FA`), and avoids RWX by going RW → RX in two steps. The only OPSEC gap: `ntdll.dll`/`RtlCreateProcessReflection` are resolved via `winapi`'s `GetModuleHandleA`/`GetProcAddress` instead of a PEB walk.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `dark_crystal/crowd/src/dirty_vanity.rs` | Dirty Vanity injection primitive — opens target via minimal-rights NtOpenProcess, writes shellcode RW, flips to RX, then forks via `RtlCreateProcessReflection` with shellcode as StartRoutine | `reflect_and_inject(target_pid, shellcode)`, `reflect_from_explorer(shellcode)` | ~6KB / ~230 lines |
+
+Only one source file implements this technique. The crate-module-level constant `RTL_CLONE_PROCESS_FLAGS_INHERIT_HANDLES | RTL_CLONE_PROCESS_FLAGS_NO_SYNCHRONIZE` is the only flag combination exercised.
+
+## How It Works
+
+The Rust function `reflect_and_inject()` (declared around L72) executes the following sequence. Every NT call goes through `crate::recycled::*` wrappers — these are the RecycledGate indirect-syscall stubs from T-001.
+
+1. **Empty-payload guard.** `if shellcode.is_empty()` returns `Err("DirtyVanity: empty shellcode")`. Cheap but real: prevents a degenerate alloc+reflect cycle.
+2. **Minimal-rights process open.** A `ClientIdNt { unique_process, unique_thread }` is built inline with `target_pid` as the process half. An `ObjAttr` struct (48 bytes — the correct `OBJECT_ATTRIBUTES` x64 size) is `zeroed()` then has `length = size_of::<ObjAttr>()` written. The desired access mask `0x00FA` is the bitwise OR of:
+   - `PROCESS_CREATE_THREAD` (0x0002) — needed by `RtlCreateProcessReflection` to spawn the initial thread of the reflected process
+   - `PROCESS_VM_OPERATION` (0x0008)
+   - `PROCESS_VM_READ` (0x0010)
+   - `PROCESS_VM_WRITE` (0x0020)
+   - `PROCESS_DUP_HANDLE` (0x0040)
+   - `PROCESS_CREATE_PROCESS` (0x0080) — the crucial bit; without it `RtlCreateProcessReflection` returns `STATUS_ACCESS_DENIED`. The author calls this out in the comment block — this is what distinguishes Dirty Vanity access requirements from a vanilla WriteVirtualMemory injection.
+   The handle comes from `crate::recycled::nt_open_process(...)` (RecycledGate indirect syscall). On `status < 0 || h_process_raw == 0`, returns `Err` with the NTSTATUS formatted as `0x{:08x}`.
+3. **Remote RW allocation.** `crate::recycled::nt_allocate_virtual_memory(h_process_raw, &mut remote_mem, 0, &mut region_size, 0x00003000 /* MEM_COMMIT|MEM_RESERVE */, 0x04 /* PAGE_READWRITE */)`. The author explicitly notes that the previous version used `PAGE_EXECUTE_READWRITE` and that RWX "is a red flag" — this is the foundational OPSEC fix. On failure the function calls `nt_close(h_process_raw)` and bails.
+4. **Shellcode write.** `crate::recycled::nt_write_virtual_memory(h_process_raw, remote_mem, shellcode.as_ptr() as *const c_void, shellcode.len(), &mut written)`. On failure: `nt_free_virtual_memory(... 0x8000 /* MEM_RELEASE */)` + `nt_close`. Note `written` is not actually validated — only the NTSTATUS is checked.
+5. **RW → RX flip.** `crate::recycled::nt_protect_virtual_memory(h_process_raw, &mut base_prot, &mut prot_size, 0x20 /* PAGE_EXECUTE_READ */, &mut old_protect)`. The return value of `nt_protect_virtual_memory` is **not checked** — the function proceeds regardless. This is a silent bug surface; if protection fails, `RtlCreateProcessReflection` would later execute non-executable memory and fault the reflector.
+6. **Resolve `RtlCreateProcessReflection`.** `winapi::um::libloaderapi::GetModuleHandleA(b"ntdll.dll\0")` followed by `GetProcAddress(ntdll, b"RtlCreateProcessReflection\0")`. **This is the OPSEC gap**: rather than walking the PEB (T-004) to find `ntdll`'s export table, the code uses the documented Win32 loader API, which is trivially hooked by every EDR. The export is `transmute`d to `RtlCreateProcessReflectionFn`:
+   ```rust
+   type RtlCreateProcessReflectionFn = unsafe extern "system" fn(
+       process_handle: usize, flags: u32,
+       start_routine: *mut c_void, start_context: *mut c_void,
+       event_handle: usize,
+       reflection_information: *mut RtlpProcessReflectionInformation,
+   ) -> i32;
+   ```
+7. **Reflect.** `rtl_create_process_reflection(h_process_raw, RTL_CLONE_PROCESS_FLAGS_INHERIT_HANDLES | RTL_CLONE_PROCESS_FLAGS_NO_SYNCHRONIZE, remote_mem /* StartRoutine — our shellcode */, null_mut() /* StartContext */, 0 /* EventHandle */, &mut info)`. The shellcode pointer is passed as the `StartRoutine` — the reflected process begins execution at the shellcode, not at the original entry point.
+   - `INHERIT_HANDLES` (0x2) — duplicates the source's handle table into the reflector.
+   - `NO_SYNCHRONIZE` (0x4) — skips the reflection synchronization event; faster, but means the source may continue mutating shared state during the clone.
+8. **Harvest the reflected PID.** `info.reflection_client_id.unique_process as u32`. Both `reflection_process_handle` and `reflection_thread_handle` are `nt_close`d — clean detach.
+9. **Remote memory cleanup in source.** `nt_free_virtual_memory(h_process_raw, &mut base, &mut sz, 0x8000 /* MEM_RELEASE */)` then `nt_close(h_process_raw)`. The reflected process keeps its own COW copy of the page so the shellcode keeps executing after the source's allocation is freed.
+10. **`reflect_from_explorer`** wraps the above: resolves `explorer.exe` PID via `crate::ppid::find_pid_by_name("explorer.exe")` (T-015) and delegates to `reflect_and_inject`.
+
+The kernel-level magic: `RtlCreateProcessReflection` performs an in-kernel fork (NT path `NtCreateProcessEx`-equivalent) that does **not** traverse `PspCreateProcessNotifyRoutine`. EDRs that register `PsSetCreateProcessNotifyRoutineEx` therefore never see the reflected PID appear. The reflector is also parentless — there is no `NtCreateUserProcess`/`CreateProcess` caller to attribute.
+
+## Code Architecture
+
+**Call graph (this file):**
+```
+reflect_from_explorer()
+  └── crate::ppid::find_pid_by_name()          [T-015]
+  └── reflect_and_inject()
+        ├── crate::recycled::nt_open_process()          [T-001]
+        ├── crate::recycled::nt_allocate_virtual_memory()  [T-001]
+        ├── crate::recycled::nt_write_virtual_memory()     [T-001]
+        ├── crate::recycled::nt_protect_virtual_memory()   [T-001]
+        ├── winapi::um::libloaderapi::GetModuleHandleA()   ⚠ Win32 API, not PEB
+        ├── winapi::um::libloaderapi::GetProcAddress()    ⚠ Win32 API, not PEB
+        ├── RtlCreateProcessReflection (transmuted)
+        ├── crate::recycled::nt_close()           [T-001]
+        └── crate::recycled::nt_free_virtual_memory() [T-001]
+```
+
+**Data flow:**
+- Caller → `reflect_and_inject(target_pid: u32, shellcode: &[u8])`
+- `target_pid` → `ClientIdNt.unique_process` → `NtOpenProcess` → `h_process_raw: usize`
+- `shellcode` ptr + len → `NtWriteVirtualMemory` → remote_mem backing
+- `remote_mem` (now RX) → `RtlCreateProcessReflection.StartRoutine` → shellcode entry in reflector
+- `RtlpProcessReflectionInformation.reflection_client_id.unique_process` → return value `Ok(reflected_pid: u32)`
+
+**Type hierarchy:**
+- `ClientId { unique_process: usize, unique_thread: usize }` — used inside `RtlpProcessReflectionInformation`
+- `RtlpProcessReflectionInformation { reflection_process_handle, reflection_thread_handle, reflection_client_id: ClientId }` — output of `RtlCreateProcessReflection`. Field layout matches the undocumented ntdll internal structure (verified by the source repo's research notes).
+- `ClientIdNt` — redefined inline in `reflect_and_inject` instead of reusing the file-scope `ClientId` (small code smell, no behavioral impact).
+- `ObjAttr { length: u32, _rest: [u8; 44] }` — 48-byte `OBJECT_ATTRIBUTES` minimal model; `RootDirectory`, `ObjectName`, `Attributes`, `SecurityDescriptor`, `SecurityQualityOfService` are all left zeroed. This is correct for an unnamed, no-security-descriptor process open.
+
+**Feature gates:** none. `#![allow(dead_code, non_snake_case)]` is the only module-level attribute. The function is always compiled in (subject to the crate's overall feature flag for injection methods).
+
+**Error handling pattern:** every NT call except `nt_protect_virtual_memory` is followed by a `status < 0` check. Failures execute a deterministic cleanup path (`nt_free_virtual_memory` + `nt_close`) and return `Err(format!("... 0x{:08x}", status as u32))`. There are no panics, no `unwrap`s. The cleanup pattern is consistent across all five failure sites.
+
+## Operational Profile
+
+### When to Use
+- Engagements where the SOC has kernel-mode process-create telemetry (`PsSetCreateProcessNotifyRoutineEx`) — i.e., EDRs like CrowdStrike Falcon, Microsoft Defender for Endpoint, SentinelOne.
+- You need a long-lived sacrificial process for a beacon/payload that doesn't tolerate being the original loader's host (e.g., avoiding module-stomp cleanup windows).
+- You already have a foothold with `PROCESS_CREATE_PROCESS` rights on a benign-looking host (e.g., `explorer.exe`, `sihost.exe`, `ctfmon.exe`).
+- You need the injected process to look like a legitimate `explorer.exe` (same image path, same company-name metadata) for forensic misdirection.
+
+### When NOT to Use
+- EDR that hooks `RtlCreateProcessReflection` directly (rare but possible). The reflection routine lives in ntdll `.text`; an inline hook will catch it.
+- Targets where you lack `PROCESS_CREATE_PROCESS` on any suitable host — the 0x0080 access right is gated by `SeDebugPrivilege` for cross-user processes.
+- High-cadence injections on a single host: the reflector leaves the source process with an orphaned COW page that the kernel must keep until the reflector dies. Reflected `explorer.exe`s accumulate.
+- Targets with strict handle-brokering policies (Process Protection Level / PPL on the source) — `NtOpenProcess` will return `STATUS_ACCESS_DENIED` even with debug privilege.
+
+### Kill Chain Position
+T-011 lives in the injection stage, after recon/SSN-resolution and before sleep obfuscation:
+
+```
+T-004 (PEB walk) → T-001 (RecycledGate) → T-002 (Hells/Halos/Tartarus SSN resolution) →
+T-011 (Dirty Vanity reflect+inject) → T-005 (Ekko ROP sleep on the reflector) →
+T-017 (persistence layer — COM hijack/TLS callback in the reflected process)
+```
+
+### Trade-offs
+| Dimension | Rating | Notes |
+|---|---|---|
+| Stealth | 9/10 | Bypasses `PspCreateProcessNotifyRoutine` (kernel callbacks); minimal `0x00FA` access rights; RW→RX two-step (`0x04` → `0x20`) — never RWX. Loses 1 pt for `GetModuleHandleA`/`GetProcAddress` going through the Win32 loader API instead of a PEB walk. |
+| Reliability | 7/10 | `nt_protect_virtual_memory` return value is **not** checked (silent-fail risk). `written` from `nt_write_virtual_memory` is ignored. Otherwise deterministic cleanup. |
+| Complexity | 6/10 | Single `unsafe` block, one `transmute`, no inline asm in this file. RecycledGate complexity is delegated to `crate::recycled` (T-001). |
+| Version range | Win Vista+ | `RtlCreateProcessReflection` exists from 6.0; exported from `ntdll.dll`. No version check is in the code. |
+| Privilege needed | Conditional | Own-process: none. Cross-user (`explorer.exe` from a medium-IL service): `SeDebugPrivilege`. |
+
+## Rust Implementation Deep Dive
+
+### `unsafe` blocks
+- **One top-level `unsafe { ... }`** spans the entire body of `reflect_and_inject` from the `let desired_access: u32 = 0x00FA;` line through the cleanup-on-failure paths. Inside it:
+  - Five RecycledGate calls (`nt_open_process`, `nt_allocate_virtual_memory`, `nt_write_virtual_memory`, `nt_protect_virtual_memory`, `nt_close`, `nt_free_virtual_memory`) — each is itself an `unsafe extern "system" fn` under the hood.
+  - `std::mem::zeroed()` for `ObjAttr` and `RtlpProcessReflectionInformation` — both are valid for zero-init per Windows ABI rules.
+  - `std::mem::transmute(rtl_fn_ptr)` — casts `*const c_void` from `GetProcAddress` to the typed `RtlCreateProcessReflectionFn` function pointer. This is sound only because the source signature is verified by manual review against the ntdll export.
+  - The actual indirect call `rtl_create_process_reflection(...)` — UB if the prototype is wrong (it isn't).
+
+### Inline asm
+- None in this file. RecycledGate's `syscall` instruction lives in `crate::recycled` (T-001).
+
+### FFI patterns
+- `RtlCreateProcessReflectionFn` uses `extern "system"` (WinAPI calling convention on x64 — `__stdcall` semantics collapsed into the Microsoft x64 ABI). Argument order matches the documented signature.
+- Handles are typed as `usize` throughout — `usize` is the Rust-friendly alias for pointer-sized integers and is the convention this crate uses to dodge `isize`/`*mut` borrow-checker noise.
+- `winapi::um::libloaderapi::GetModuleHandleA` / `GetProcAddress` are used unmodified from the `winapi` crate — these are direct Win32 imports. Replacing them with a PEB-walk-based `find_export(ntdll_base, "RtlCreateProcessReflection")` would close the only OPSEC hole.
+
+### Initialization patterns
+- No `OnceLock` / `LazyLock` here — the function is stateless. `RtlpProcessReflectionInformation` is `zeroed()` on each call, which is correct because the API fills it fresh.
+- No `cfg` gates.
+
+### Error handling
+- Failure site 1: `NtOpenProcess` returns negative or zero handle → `Err` with `format!("... failed (0x{:08x})"...)`.
+- Failure site 2: `NtAllocateVirtualMemory` fails → `nt_close` + `Err`.
+- Failure site 3: `NtWriteVirtualMemory` fails → `nt_free_virtual_memory` + `nt_close` + `Err`.
+- (Implicit failure site): `NtProtectVirtualMemory` return value **ignored**.
+- Failure site 4: `GetModuleHandleA("ntdll.dll")` returns null → cleanup + `Err("ntdll.dll not found")`.
+- Failure site 5: `GetProcAddress(...)` returns null → cleanup + `Err("RtlCreateProcessReflection not found")`.
+- Failure site 6: `rtl_create_process_reflection` returns nonzero NTSTATUS → cleanup + `Err(format!("reflection failed (NTSTATUS 0x{:08x})"))`.
+- Success path: closes both reflection handles, frees the source's remote allocation, closes the source handle, returns `Ok(reflected_pid)`.
+
+### Memory layout
+- `ClientId`: 2 × `usize` = 16 bytes on x64.
+- `RtlpProcessReflectionInformation`: 2 × `usize` + `ClientId` = 32 bytes (with no padding because `ClientId` is 16-byte aligned naturally).
+- `ObjAttr`: `length: u32` + `[u8; 44]` = 48 bytes — matches `sizeof(OBJECT_ATTRIBUTES)` on x64.
+- All structs use `#[repr(C)]`. Field order matches Win ABI; this matters because `RtlCreateProcessReflection` writes into `RtlpProcessReflectionInformation` directly via the pointer.
+
+### Syscall numbers
+- None resolved in this file. All syscall mechanics are delegated to `crate::recycled::*`. `RtlCreateProcessReflection` itself is **not** a syscall — it's an ntdll user-mode function that internally calls `NtCreateProcessEx` / `NtCreateThreadEx` via the same syscall stubs. That's why EDR kernel callbacks are bypassed: the EDR's kernel notify routine never fires for the reflector; only `Nt*` syscalls fired *during* the reflection would be visible (and they look like source-process activity).
+
+## Cross-References Found in Code
+
+| Code Site | Reference | Reason |
+|---|---|---|
+| `dirty_vanity.rs:reflect_and_inject` calls `crate::recycled::nt_open_process` | T-001 (RecycledGate) | All NT API invocations are indirect syscalls |
+| `dirty_vanity.rs:reflect_and_inject` calls `crate::recycled::nt_allocate_virtual_memory` / `nt_write_virtual_memory` / `nt_protect_virtual_memory` / `nt_close` / `nt_free_virtual_memory` | T-001 (RecycledGate) | Same — every memory op is indirect |
+| `dirty_vanity.rs:reflect_from_explorer` calls `crate::ppid::find_pid_by_name` | T-015 (PPID Spoofing) | PID enumeration helper reused; the same routine underpins the parent-spoofing path |
+| `dirty_vanity.rs` uses `crate::mega_dbg!` | (crate-internal logging) | Not a technique; logs go to a debug sink gated by build feature |
+| `dirty_vanity.rs` uses `winapi::um::libloaderapi` | (No technique — gap) | Should be T-004 PEB Walker for full OPSEC |
+| `dirty_vanity.rs` struct `RtlpProcessReflectionInformation` corresponds to `crates/core/experimental/injection/process_reflection.rs` | T-011 (sibling impl) | The crate's `core` has the reference experimental version; `crowd` is the operationalized port |
+
+## Edge Cases & Failure Modes
+
+1. **`NtProtectVirtualMemory` returns nonzero (e.g., `STATUS_NOT_COMMITTED` after a racing free)**
+   - Code path: the `nt_protect_virtual_memory(...)` return value is never inspected; the function proceeds to call `RtlCreateProcessReflection` with `remote_mem` as StartRoutine.
+   - Symptom: the reflected process crashes immediately on entry with `STATUS_ACCESS_VIOLATION` (DEP/NX fault on non-executable memory). The reflected PID may still be reported back as "created" — but it dies within milliseconds.
+   - Workaround: check the NTSTATUS; if `STATUS_NOT_COMMITTED`, re-allocate. Alternatively, log the status into `mega_dbg!` for diagnostics.
+
+2. **`written` from `NtWriteVirtualMemory` is less than `shellcode.len()`**
+   - Code path: only the NTSTATUS is checked. A partial write (e.g., source process hitting commit limits) leaves the reflector's start address pointing at partial shellcode + zero-padding.
+   - Symptom: reflector crashes with a nonsensical instruction pointer; very obvious on crash dumps.
+   - Workaround: assert `written == shellcode.len()`.
+
+3. **Source process exits between `NtAllocateVirtualMemory` and `RtlCreateProcessReflection`**
+   - Code path: `nt_write_virtual_memory` will likely succeed (the page is committed), but `RtlCreateProcessReflection` returns `STATUS_PROCESS_IS_TERMINATING` or `STATUS_INVALID_HANDLE`.
+   - Symptom: `Err(format!("reflection failed (NTSTATUS 0x{:08x})"))`.
+   - Workaround: pre-pin the source with a duplicated handle via `NtDuplicateObject` into the current process (`OBJ_INHERIT` + `DUPLICATE_SAME_ACCESS`) so that even if the source dies, the kernel keeps the EPROCESS alive until you release your duplicated handle.
+
+4. **EDR hooks `RtlCreateProcessReflection` directly in ntdll `.text`**
+   - Code path: the inline hook fires before the syscall reaches `NtCreateProcessEx`. The reflector never spawns, the hook sees your `StartRoutine` parameter (a pointer to RX shellcode in the source).
+   - Symptom: EDR raises an alert; `RtlCreateProcessReflection` returns `STATUS_ACCESS_DENIED` or you get killed mid-call.
+   - Workaround: bypass ntdll `.text` integrity — restore ntdll from a known-good copy (`ntdll_unhook_inject.rs`, T-016) before invoking the routine, or reimplement `RtlCreateProcessReflection` in user mode by manually issuing `NtCreateProcessEx` + `NtSetInformationProcess(ProcessBreakOnTerminationHandle)` + `NtCreateThreadEx` for the StartRoutine.
+
+5. **`PROCESS_CREATE_PROCESS` (0x80) denied**
+   - Code path: `nt_open_process` returns `STATUS_ACCESS_DENIED` (`0xC0000022`).
+   - Symptom: `Err("DirtyVanity: NtOpenProcess(<pid>) failed (0xc0000022)")`.
+   - Workaround: acquire `SeDebugPrivilege` via `RtlAdjustPrivilege(20, TRUE, FALSE, ...)` before the open; or pick a target in your own session / same user.
+
+6. **Calling `reflect_from_explorer` when `explorer.exe` is not running (e.g., on Server Core)**
+   - Code path: `crate::ppid::find_pid_by_name("explorer.exe")` returns `None` → `Err("DirtyVanity: explorer.exe not found")`.
+   - Symptom: hard error from the convenience wrapper.
+   - Workaround: parameterize the host process; on Server Core use `svchost.exe` or `RuntimeBroker.exe`.
+
+7. **Reflected process becomes a zombie if the StartRoutine shellcode exits**
+   - Code path: the function returns `Ok(reflected_pid)` and forgets the PID; no supervision.
+   - Symptom: an `explorer.exe` orphan sits in the process list indefinitely until reboot.
+   - Workaround: operator should issue a kill via T-022 networking transport or include a self-termination stub in the shellcode.
+
+## Variant Ideas
+
+1. **PEB-resolved `RtlCreateProcessReflection`.** Replace the `GetModuleHandleA`/`GetProcAddress` pair with a T-004 PEB-walk + DJB2 export-hash lookup. Removes the only OPSEC gap.
+2. **`NtCreateProcessEx` reimplementation.** Skip `RtlCreateProcessReflection` entirely; issue `NtCreateProcessEx(STATUS_PROCESS_CLONE)` directly via RecycledGate, then set up an initial thread manually with `NtCreateThreadEx`. Costs ~80 lines of additional code; buys full evasion of any ntdll-level hook on `RtlCreateProcessReflection`.
+3. **Multiple-write stealth.** Split shellcode across several small `NtWriteVirtualMemory` calls into different pages with decoy writes interleaved (e.g., zero-fills to neighboring regions) to dilute EDR's memory-pattern scanner.
+4. **Reflect-from-self variant.** Skip `NtOpenProcess` on another PID; call `RtlCreateProcessReflection(GetCurrentProcess(), ..., shellcode, ...)` to fork yourself. Produces a same-image-name reflector with no parent — useful when the loader is already benign-looking (e.g., signed binary).
+5. **Reflector-based sleep host.** Use the reflected process purely as a sacrificial host for T-005 (Ekko ROP sleep). The reflector's RX page can host the Ekko timer+APC chain without ever touching the original process — bounds forensic contamination.
+6. **Persistent reflector.** Combine with T-017 (Five-Layer Persistence): spawn reflector → install COM hijack inside the reflector's address space → the reflector becomes a stable persistence host whose image path is `explorer.exe`.
+7. **Two-stage reflector.** Write a stage-1 stub that resolves `LdrLoadDll` via PEB walk and loads the real payload as a reflective DLL — gives the reflector full module-level capabilities (TLS callbacks, imports) without ever touching the loader in the original process.
+
+## OPSEC Notes
+
+**Artifacts left:**
+- Source process: brief RW region (gone after `nt_free_virtual_memory` on success).
+- Source process handle list: a transient duplicate handle in the source's handle table (closed by `nt_close`).
+- Reflected process: RX allocation sized exactly `shellcode.len()` (rounded up to page boundary). **This is the forensic fingerprint.** A memory scan of the reflected process will show one RX private region in an otherwise-`explorer.exe`-shaped virtual layout.
+- Reflected process image path: matches the source's image path verbatim — good for camouflage, bad if the source is something obscure.
+- No parent-child link — but `explorer.exe` with no parent and an RX private page is itself a known Dirty Vanity IoC.
+
+**Telemetry sources that may still see this:**
+- `RtlCreateProcessReflection` user-mode hook in ntdll (the gap above).
+- Memory scan callbacks (`PsSetLoadImageNotifyRoutine` will not fire — no new image loaded; but kernel-mode memory scanners like those in Defender for Endpoint's `MsMpEng.exe` can hit the RX page).
+- ETW Threat Intelligence (`EtwTi`) provider — kernel-mode, hooks `NtAllocateVirtualMemory`, `NtProtectVirtualMemory`, `NtCreateProcessEx` syscalls. **You cannot evade EtwTi from user mode.** The RX flip and the reflector's process-creation syscall will appear in EtwTI.
+
+**Cleanup the code already does:**
+- `nt_close` on source handle (success and failure).
+- `nt_close` on both reflection handles (process + thread).
+- `nt_free_virtual_memory(MEM_RELEASE)` on source's remote allocation (success and on `nt_write_virtual_memory` failure).
+
+**Cleanup the code does NOT do:**
+- It does **not** kill the reflected process — that's intentional (the reflector runs the beacon). Operator is responsible for the reflector's lifecycle.
+- It does not unhook or restore any modified state — there is nothing to restore (no ntdll patching here).
+
+## Reusable Patterns
+
+### Pattern: Minimal-access process open
+- **Use when**: opening a handle on a process that an EDR monitors — every access bit you request is a telemetry event.
+- **Code ref**: `dirty_vanity.rs:reflect_and_inject`, `let desired_access: u32 = 0x00FA;`
+- **How**: bitwise-compute the minimum mask from the set of operations you actually perform. `0x00FA` here is `VM_OP | VM_READ | VM_WRITE | DUP_HANDLE | CREATE_THREAD | CREATE_PROCESS`. Document each bit's *reason* in a comment — the comments in this file are exemplary and should be propagated to every injection primitive.
+
+### Pattern: RW → RX two-step memory write
+- **Use when**: writing executable content into a remote process. RWX is a first-class detection heuristic in every modern EDR.
+- **Code ref**: `dirty_vanity.rs:reflect_and_inject`, `nt_allocate_virtual_memory(..., 0x04 /* PAGE_READWRITE */)` then `nt_protect_virtual_memory(..., 0x20 /* PAGE_EXECUTE_READ */)`.
+- **How**: allocate `PAGE_READWRITE`, write content, then flip to `PAGE_EXECUTE_READ`. Never request `PAGE_EXECUTE_READWRITE` even momentarily. For finer OPSEC, insert a `Sleep(0)` or a benign syscall between write and protect to break the write→protect causal chain in ETW.
+
+### Pattern: Cleanup-on-every-failure-path
+- **Use when**: any FFI-heavy function that mutates remote process state.
+- **Code ref**: `dirty_vanity.rs:reflect_and_inject`, the six cleanup branches.
+- **How**: at each failure site, run the inverse of every successful prior step (`nt_free_virtual_memory` for `nt_allocate_virtual_memory`, `nt_close` for `nt_open_process`). Return `Err` with the NTSTATUS formatted as `0x{:08x}` so the operator can correlate with `ntstatus.h`. The pattern is verbose but mechanical — a perfect candidate for a `#[derive(Cleanup)]` macro or a `scopeguard` crate adoption.
+
+### Pattern: Stack-local `OBJECT_ATTRIBUTES` with manual `length` set
+- **Use when**: calling `NtOpenProcess` (or any NT object API) without an object name.
+- **Code ref**: `dirty_vanity.rs:reflect_and_inject`, `let mut oa: ObjAttr = std::mem::zeroed(); oa.length = std::mem::size_of::<ObjAttr>() as u32;`
+- **How**: declare a `#[repr(C)]` struct with the correct size (48 bytes on x64), zero it, set `length`. Avoids a `Box::new` allocation and matches the C idiom one-for-one.
+
+### Pattern: Convenience wrapper over a sensible default
+- **Use when**: an injection primitive has a "usually you want to target X" pattern.
+- **Code ref**: `dirty_vanity.rs:reflect_from_explorer`.
+- **How**: wrap the general function (`reflect_and_inject`) with a one-liner that resolves `explorer.exe` via `crate::ppid::find_pid_by_name`. Keeps the operator's hot path short without dumbing down the general API.

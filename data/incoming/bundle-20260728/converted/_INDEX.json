@@ -1,0 +1,747 @@
+[
+  {
+    "file": "source-extracts__api_hammering.md",
+    "title": "api_hammering",
+    "source": "source-extracts/api_hammering.rs"
+  },
+  {
+    "file": "source-extracts__early_cascade_injection.md",
+    "title": "early_cascade_injection",
+    "source": "source-extracts/early_cascade_injection.rs"
+  },
+  {
+    "file": "source-extracts__edo_dead_drop_channels.md",
+    "title": "edo_dead_drop_channels",
+    "source": "source-extracts/edo_dead_drop_channels.rs"
+  },
+  {
+    "file": "source-extracts__edo_tensei_resurrection.md",
+    "title": "edo_tensei_resurrection",
+    "source": "source-extracts/edo_tensei_resurrection.rs"
+  },
+  {
+    "file": "source-extracts__ekko_rop_sleep.md",
+    "title": "ekko_rop_sleep",
+    "source": "source-extracts/ekko_rop_sleep.rs"
+  },
+  {
+    "file": "source-extracts__eth_tx_signing.md",
+    "title": "eth_tx_signing",
+    "source": "source-extracts/eth_tx_signing.rs"
+  },
+  {
+    "file": "source-extracts__kaguya_lotl.md",
+    "title": "kaguya_lotl",
+    "source": "source-extracts/kaguya_lotl.rs"
+  },
+  {
+    "file": "source-extracts__pool_party_injection.md",
+    "title": "pool_party_injection",
+    "source": "source-extracts/pool_party_injection.rs"
+  },
+  {
+    "file": "source-extracts__recycled_gate_stubs.md",
+    "title": "recycled_gate_stubs",
+    "source": "source-extracts/recycled_gate_stubs.rs"
+  },
+  {
+    "file": "source-extracts__veh_gate_macro.md",
+    "title": "veh_gate_macro",
+    "source": "source-extracts/veh_gate_macro.rs"
+  },
+  {
+    "file": "src__client_rust__build.md",
+    "title": "build",
+    "source": "src/client_rust/build.rs"
+  },
+  {
+    "file": "src__client_rust__src__amaterasu.md",
+    "title": "Amaterasu (天照) — Persistent exfiltration engine (client side).",
+    "source": "src/client_rust/src/amaterasu.rs"
+  },
+  {
+    "file": "src__client_rust__src__browser.md",
+    "title": "browser",
+    "source": "src/client_rust/src/browser.rs"
+  },
+  {
+    "file": "src__client_rust__src__browser_hook.md",
+    "title": "browser_hook",
+    "source": "src/client_rust/src/browser_hook.rs"
+  },
+  {
+    "file": "src__client_rust__src__browser_session.md",
+    "title": "browser_session",
+    "source": "src/client_rust/src/browser_session.rs"
+  },
+  {
+    "file": "src__client_rust__src__byakugan.md",
+    "title": "Byakugan (白眼) — 360° network reconnaissance engine (client side).",
+    "source": "src/client_rust/src/byakugan.rs"
+  },
+  {
+    "file": "src__client_rust__src__capture.md",
+    "title": "capture",
+    "source": "src/client_rust/src/capture.rs"
+  },
+  {
+    "file": "src__client_rust__src__clipboard.md",
+    "title": "clipboard",
+    "source": "src/client_rust/src/clipboard.rs"
+  },
+  {
+    "file": "src__client_rust__src__commands.md",
+    "title": "commands",
+    "source": "src/client_rust/src/commands.rs"
+  },
+  {
+    "file": "src__client_rust__src__config.md",
+    "title": "config",
+    "source": "src/client_rust/src/config.rs"
+  },
+  {
+    "file": "src__client_rust__src__cursor_hider.md",
+    "title": "cursor_hider",
+    "source": "src/client_rust/src/cursor_hider.rs"
+  },
+  {
+    "file": "src__client_rust__src__dirty_rect.md",
+    "title": "dirty_rect",
+    "source": "src/client_rust/src/dirty_rect.rs"
+  },
+  {
+    "file": "src__client_rust__src__discovery.md",
+    "title": "discovery",
+    "source": "src/client_rust/src/discovery.rs"
+  },
+  {
+    "file": "src__client_rust__src__eth_rpc.md",
+    "title": "eth_rpc",
+    "source": "src/client_rust/src/eth_rpc.rs"
+  },
+  {
+    "file": "src__client_rust__src__eth_tx.md",
+    "title": "eth_tx",
+    "source": "src/client_rust/src/eth_tx.rs"
+  },
+  {
+    "file": "src__client_rust__src__h264_encoder.md",
+    "title": "h264_encoder",
+    "source": "src/client_rust/src/h264_encoder.rs"
+  },
+  {
+    "file": "src__client_rust__src__henge.md",
+    "title": "henge",
+    "source": "src/client_rust/src/henge.rs"
+  },
+  {
+    "file": "src__client_rust__src__html_overlay.md",
+    "title": "html_overlay",
+    "source": "src/client_rust/src/html_overlay.rs"
+  },
+  {
+    "file": "src__client_rust__src__http_poll_transport.md",
+    "title": "http_poll_transport",
+    "source": "src/client_rust/src/http_poll_transport.rs"
+  },
+  {
+    "file": "src__client_rust__src__hvnc.md",
+    "title": "hvnc",
+    "source": "src/client_rust/src/hvnc.rs"
+  },
+  {
+    "file": "src__client_rust__src__input.md",
+    "title": "input",
+    "source": "src/client_rust/src/input.rs"
+  },
+  {
+    "file": "src__client_rust__src__input_blocker.md",
+    "title": "input_blocker",
+    "source": "src/client_rust/src/input_blocker.rs"
+  },
+  {
+    "file": "src__client_rust__src__juubi.md",
+    "title": "juubi",
+    "source": "src/client_rust/src/juubi.rs"
+  },
+  {
+    "file": "src__client_rust__src__juubi_chain.md",
+    "title": "juubi_chain",
+    "source": "src/client_rust/src/juubi_chain.rs"
+  },
+  {
+    "file": "src__client_rust__src__kamui.md",
+    "title": "Kamui (神威) — Network pivoting engine (client side).",
+    "source": "src/client_rust/src/kamui.rs"
+  },
+  {
+    "file": "src__client_rust__src__keylogger.md",
+    "title": "keylogger",
+    "source": "src/client_rust/src/keylogger.rs"
+  },
+  {
+    "file": "src__client_rust__src__kotoamatsukami.md",
+    "title": "Kotoamatsukami (別天津神) — BOF execution engine (client side).",
+    "source": "src/client_rust/src/kotoamatsukami.rs"
+  },
+  {
+    "file": "src__client_rust__src__main.md",
+    "title": "main",
+    "source": "src/client_rust/src/main.rs"
+  },
+  {
+    "file": "src__client_rust__src__overlay.md",
+    "title": "overlay",
+    "source": "src/client_rust/src/overlay.rs"
+  },
+  {
+    "file": "src__client_rust__src__protocol.md",
+    "title": "protocol",
+    "source": "src/client_rust/src/protocol.rs"
+  },
+  {
+    "file": "src__client_rust__src__self_delete.md",
+    "title": "self_delete",
+    "source": "src/client_rust/src/self_delete.rs"
+  },
+  {
+    "file": "src__client_rust__src__sysinfo_collect.md",
+    "title": "sysinfo_collect",
+    "source": "src/client_rust/src/sysinfo_collect.rs"
+  },
+  {
+    "file": "src__client_rust__src__tcp_transport.md",
+    "title": "tcp_transport",
+    "source": "src/client_rust/src/tcp_transport.rs"
+  },
+  {
+    "file": "src__client_rust__src__ui_automation.md",
+    "title": "ui_automation",
+    "source": "src/client_rust/src/ui_automation.rs"
+  },
+  {
+    "file": "src__client_rust__src__vnc_server.md",
+    "title": "vnc_server",
+    "source": "src/client_rust/src/vnc_server.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__build.md",
+    "title": "build",
+    "source": "src/dark_crystal/crates/core/build.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__crypto.md",
+    "title": "crypto",
+    "source": "src/dark_crystal/crates/core/src/crypto.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__ekko_variants.md",
+    "title": "ekko_variants",
+    "source": "src/dark_crystal/crates/core/src/ekko_variants.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__escalation__uac.md",
+    "title": "uac",
+    "source": "src/dark_crystal/crates/core/src/escalation/uac.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__evasion__mod.md",
+    "title": "mod",
+    "source": "src/dark_crystal/crates/core/src/evasion/mod.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__evasion__stack_spoof.md",
+    "title": "stack_spoof",
+    "source": "src/dark_crystal/crates/core/src/evasion/stack_spoof.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__amsi_hbp.md",
+    "title": "amsi_hbp",
+    "source": "src/dark_crystal/crates/core/src/experimental/amsi_hbp.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__api_hammering.md",
+    "title": "api_hammering",
+    "source": "src/dark_crystal/crates/core/src/experimental/api_hammering.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__evade_vm.md",
+    "title": "evade_vm",
+    "source": "src/dark_crystal/crates/core/src/experimental/evade_vm.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__evasion__advanced_stack.md",
+    "title": "advanced_stack",
+    "source": "src/dark_crystal/crates/core/src/experimental/evasion/advanced_stack.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__evasion__byovd__driver.md",
+    "title": "driver",
+    "source": "src/dark_crystal/crates/core/src/experimental/evasion/byovd/driver.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__evasion__byovd__mod.md",
+    "title": "mod",
+    "source": "src/dark_crystal/crates/core/src/experimental/evasion/byovd/mod.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__evasion__byovd__service.md",
+    "title": "service",
+    "source": "src/dark_crystal/crates/core/src/experimental/evasion/byovd/service.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__evasion__veh__def.md",
+    "title": "def",
+    "source": "src/dark_crystal/crates/core/src/experimental/evasion/veh/def.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__evasion__veh__hooks.md",
+    "title": "hooks",
+    "source": "src/dark_crystal/crates/core/src/experimental/evasion/veh/hooks.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__evasion__veh__lib.md",
+    "title": "lib",
+    "source": "src/dark_crystal/crates/core/src/experimental/evasion/veh/lib.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__evasion__veh__mod.md",
+    "title": "mod",
+    "source": "src/dark_crystal/crates/core/src/experimental/evasion/veh/mod.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__evasion__veh__syscall.md",
+    "title": "syscall",
+    "source": "src/dark_crystal/crates/core/src/experimental/evasion/veh/syscall.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__evasion__veh__utils.md",
+    "title": "utils",
+    "source": "src/dark_crystal/crates/core/src/experimental/evasion/veh/utils.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__fiber_inject.md",
+    "title": "fiber_inject",
+    "source": "src/dark_crystal/crates/core/src/experimental/fiber_inject.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__iat_camouflage.md",
+    "title": "iat_camouflage",
+    "source": "src/dark_crystal/crates/core/src/experimental/iat_camouflage.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__injection__process_reflection.md",
+    "title": "process_reflection",
+    "source": "src/dark_crystal/crates/core/src/experimental/injection/process_reflection.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__injection__threadless.md",
+    "title": "threadless",
+    "source": "src/dark_crystal/crates/core/src/experimental/injection/threadless.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__loader__module_overload.md",
+    "title": "module_overload",
+    "source": "src/dark_crystal/crates/core/src/experimental/loader/module_overload.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__pe_header_stomp.md",
+    "title": "pe_header_stomp",
+    "source": "src/dark_crystal/crates/core/src/experimental/pe_header_stomp.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__process_ghosting.md",
+    "title": "process_ghosting",
+    "source": "src/dark_crystal/crates/core/src/experimental/process_ghosting.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__experimental__self_deletion.md",
+    "title": "self_deletion",
+    "source": "src/dark_crystal/crates/core/src/experimental/self_deletion.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__injection__mod.md",
+    "title": "mod",
+    "source": "src/dark_crystal/crates/core/src/injection/mod.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__lib.md",
+    "title": "lib",
+    "source": "src/dark_crystal/crates/core/src/lib.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__main.md",
+    "title": "main",
+    "source": "src/dark_crystal/crates/core/src/main.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__pe.md",
+    "title": "pe",
+    "source": "src/dark_crystal/crates/core/src/pe.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__runner.md",
+    "title": "runner",
+    "source": "src/dark_crystal/crates/core/src/runner.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__selection_config.md",
+    "title": "selection_config",
+    "source": "src/dark_crystal/crates/core/src/selection_config.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__sys_indirect.md",
+    "title": "sys_indirect",
+    "source": "src/dark_crystal/crates/core/src/sys_indirect.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__sys_recycled.md",
+    "title": "RecycledGate — OPSEC 9.5/10  (Tier S)",
+    "source": "src/dark_crystal/crates/core/src/sys_recycled.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__sys_resolve.md",
+    "title": "sys_resolve",
+    "source": "src/dark_crystal/crates/core/src/sys_resolve.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__sysindirect_map.md",
+    "title": "sysindirect_map",
+    "source": "src/dark_crystal/crates/core/src/sysindirect_map.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__transport.md",
+    "title": "transport",
+    "source": "src/dark_crystal/crates/core/src/transport.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__core__src__wrappers.md",
+    "title": "wrappers",
+    "source": "src/dark_crystal/crates/core/src/wrappers.rs"
+  },
+  {
+    "file": "src__dark_crystal__crates__obf__src__lib.md",
+    "title": "lib",
+    "source": "src/dark_crystal/crates/obf/src/lib.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__amsi_hbp.md",
+    "title": "crowd — amsi_hbp.rs  (⚡ GOD TIER — PEB walker + RecycledGate only, VEH/CONTEXT structs irreducible)",
+    "source": "src/dark_crystal/crowd/src/amsi_hbp.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__amsi_page_guard.md",
+    "title": "crowd -- amsi_page_guard.rs",
+    "source": "src/dark_crystal/crowd/src/amsi_page_guard.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__anti_vm.md",
+    "title": "crowd — anti_vm.rs  (🅱️ B TIER — CPUID/RDTSC/MAC detection, utility module)",
+    "source": "src/dark_crystal/crowd/src/anti_vm.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__arg_spoof.md",
+    "title": "crowd — arg_spoof.rs  (✅ C TIER — PEB manipulation utility, zero Win32 calls)",
+    "source": "src/dark_crystal/crowd/src/arg_spoof.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__block_handle.md",
+    "title": "crowd — block_handle.rs  (🅱️ B TIER — SDDL-based handle protection utility)",
+    "source": "src/dark_crystal/crowd/src/block_handle.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__byovd.md",
+    "title": "crowd -- byovd.rs  (S TIER -- kernel driver load via SCM for EDR file deletion)",
+    "source": "src/dark_crystal/crowd/src/byovd.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__chain.md",
+    "title": "crowd — chain.rs   (🔥 S TIER — v6 — Cadena completa 6 fases + Tsukuyomi Tier A, RecycledGate handles)",
+    "source": "src/dark_crystal/crowd/src/chain.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__crypto.md",
+    "title": "crowd — crypto.rs  (✅ C TIER — AES-GCM + zstd, pure crypto utility)",
+    "source": "src/dark_crystal/crowd/src/crypto.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__debug_log.md",
+    "title": "crowd — debug_log.rs  (✅ C TIER — debug logging utility)",
+    "source": "src/dark_crystal/crowd/src/debug_log.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__dirty_vanity.md",
+    "title": "crowd — dirty_vanity.rs  (🔥 S TIER — upgraded from A: NtOpenProcess, RW→RX, minimal access)",
+    "source": "src/dark_crystal/crowd/src/dirty_vanity.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__early_bird.md",
+    "title": "crowd — early_bird.rs  (🔥 S TIER — upgraded from A: full RecycledGate syscalls)",
+    "source": "src/dark_crystal/crowd/src/early_bird.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__early_cascade.md",
+    "title": "crowd -- early_cascade.rs  (S TIER -- pure NT API, pre-LdrInitializeThunk)",
+    "source": "src/dark_crystal/crowd/src/early_cascade.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__edo_dead_drop.md",
+    "title": "crowd — edo_dead_drop.rs  (Edo Tensei Autonomous Dead Drop)",
+    "source": "src/dark_crystal/crowd/src/edo_dead_drop.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__edo_tensei.md",
+    "title": "crowd — edo_tensei.rs  (Polymorphic Resurrection Engine)",
+    "source": "src/dark_crystal/crowd/src/edo_tensei.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__etw.md",
+    "title": "crowd — etw.rs  (⚡ GOD TIER — zero Win32 surface, PEB hash walker + RecycledGate only)",
+    "source": "src/dark_crystal/crowd/src/etw.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__fsm.md",
+    "title": "crowd — fsm.rs  (🅱️ B TIER — finite state machine orchestrator)",
+    "source": "src/dark_crystal/crowd/src/fsm.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__func_stomp.md",
+    "title": "crowd — func_stomp.rs  (⚡ GOD TIER — zero Win32 surface: PEB walker + RecycledGate only)",
+    "source": "src/dark_crystal/crowd/src/func_stomp.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__ghost.md",
+    "title": "crowd — ghost.rs   (Process Ghosting — ⚡ GOD TIER)",
+    "source": "src/dark_crystal/crowd/src/ghost.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__hammering.md",
+    "title": "crowd — hammering.rs  (✅ C TIER — API hammering sandbox evasion, pure compute)",
+    "source": "src/dark_crystal/crowd/src/hammering.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__hells_gate.md",
+    "title": "crowd -- hells_gate.rs  (GOD TIER -- Gate Cascade SSN Resolution)",
+    "source": "src/dark_crystal/crowd/src/hells_gate.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__herpaderping.md",
+    "title": "crowd — herpaderping.rs  (🔥 S TIER — upgraded from A: full RecycledGate syscall path)",
+    "source": "src/dark_crystal/crowd/src/herpaderping.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__hypnosis.md",
+    "title": "crowd — hypnosis.rs  (🔥 S TIER — NtWriteVirtualMemory + NtClose via RecycledGate, debug API irreducible)",
+    "source": "src/dark_crystal/crowd/src/hypnosis.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__iat_camo.md",
+    "title": "crowd — iat_camo.rs  (IAT Camouflage — benign import injection for ML evasion)",
+    "source": "src/dark_crystal/crowd/src/iat_camo.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__kaguya.md",
+    "title": "Kaguya (輝夜) — Living-Off-The-Land-as-Code",
+    "source": "src/dark_crystal/crowd/src/kaguya.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__ki_step_over.md",
+    "title": "crowd — ki_step_over.rs  (🔥 S TIER)",
+    "source": "src/dark_crystal/crowd/src/ki_step_over.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__main.md",
+    "title": "crowd — main.rs  (v6 — Cadena completa 6 fases + Tsukuyomi Tier A)",
+    "source": "src/dark_crystal/crowd/src/main.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__mapping_inject.md",
+    "title": "crowd -- mapping_inject.rs  (S TIER)",
+    "source": "src/dark_crystal/crowd/src/mapping_inject.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__module_stomp.md",
+    "title": "crowd — module_stomp.rs  (🔥 S TIER — upgraded from A: full RecycledGate syscall path)",
+    "source": "src/dark_crystal/crowd/src/module_stomp.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__nt_create_process.md",
+    "title": "crowd -- nt_create_process.rs  (S TIER -- pure NtCreateUserProcess via RecycledGate)",
+    "source": "src/dark_crystal/crowd/src/nt_create_process.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__overload.md",
+    "title": "crowd — overload.rs  (⚡ GOD TIER — upgraded from S: pure RecycledGate syscall path)",
+    "source": "src/dark_crystal/crowd/src/overload.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__payload_cfg.md",
+    "title": "crowd — payload_cfg.rs",
+    "source": "src/dark_crystal/crowd/src/payload_cfg.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__pe_loader.md",
+    "title": "crowd — pe_loader.rs  (Reflective PE Loader — PEB-invisible manual mapping)",
+    "source": "src/dark_crystal/crowd/src/pe_loader.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__peb_unlink.md",
+    "title": "crowd — peb_unlink.rs  (✅ C TIER — PEB module unlinking, zero Win32 calls)",
+    "source": "src/dark_crystal/crowd/src/peb_unlink.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__persist__com_hijack.md",
+    "title": "crowd — persist/com_hijack.rs",
+    "source": "src/dark_crystal/crowd/src/persist/com_hijack.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__persist__mod.md",
+    "title": "crowd — persist/mod.rs",
+    "source": "src/dark_crystal/crowd/src/persist/mod.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__persist__ntfs_ea.md",
+    "title": "crowd — persist/ntfs_ea.rs",
+    "source": "src/dark_crystal/crowd/src/persist/ntfs_ea.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__persist__phantom_restart.md",
+    "title": "crowd — persist/phantom_restart.rs",
+    "source": "src/dark_crystal/crowd/src/persist/phantom_restart.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__persist__schtask.md",
+    "title": "crowd — persist/schtask.rs",
+    "source": "src/dark_crystal/crowd/src/persist/schtask.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__persist__tls_cb.md",
+    "title": "crowd — persist/tls_cb.rs",
+    "source": "src/dark_crystal/crowd/src/persist/tls_cb.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__phantom.md",
+    "title": "crowd — phantom.rs  (⚡ GOD TIER)",
+    "source": "src/dark_crystal/crowd/src/phantom.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__policy.md",
+    "title": "crowd — policy.rs  (🅱️ B TIER — BlockDLL policy utility)",
+    "source": "src/dark_crystal/crowd/src/policy.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__pool_party.md",
+    "title": "crowd — pool_party.rs  (⚡ GOD TIER)",
+    "source": "src/dark_crystal/crowd/src/pool_party.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__ppid.md",
+    "title": "crowd — ppid.rs  (🔥 S TIER — NtOpenProcess + NtClose via RecycledGate, CreateProcessW irreducible)",
+    "source": "src/dark_crystal/crowd/src/ppid.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__proxy_dll.md",
+    "title": "crowd — proxy_dll.rs  (🔥 S TIER — RecycledGate events, UAF fix, AtomicUsize)",
+    "source": "src/dark_crystal/crowd/src/proxy_dll.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__recycled.md",
+    "title": "crowd — recycled.rs  (⚡ GOD TIER)",
+    "source": "src/dark_crystal/crowd/src/recycled.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__resolve.md",
+    "title": "crowd — resolve.rs  (⚡ GOD TIER)",
+    "source": "src/dark_crystal/crowd/src/resolve.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__self_delete.md",
+    "title": "crowd — self_delete.rs  (🅱️ B TIER — Win32 file API for ADS rename, non-injection path)",
+    "source": "src/dark_crystal/crowd/src/self_delete.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__sleep.md",
+    "title": "crowd — sleep.rs  (⚡ GOD TIER)",
+    "source": "src/dark_crystal/crowd/src/sleep.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__stack_spoof.md",
+    "title": "crowd — stack_spoof.rs  (🔥 S TIER)",
+    "source": "src/dark_crystal/crowd/src/stack_spoof.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__stomp.md",
+    "title": "crowd — stomp.rs  (🅱️ B TIER — PE header stomping utility)",
+    "source": "src/dark_crystal/crowd/src/stomp.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__syscall_map.md",
+    "title": "crowd — syscall_map.rs  (✅ C TIER — SSN cache infrastructure)",
+    "source": "src/dark_crystal/crowd/src/syscall_map.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__threadless.md",
+    "title": "crowd — threadless.rs  (🔥 S TIER)",
+    "source": "src/dark_crystal/crowd/src/threadless.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__veh_gate.md",
+    "title": "crowd -- veh_gate.rs  (VEH Syscall Gate -- ETW-TI evasion via Hardware Breakpoints)",
+    "source": "src/dark_crystal/crowd/src/veh_gate.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__waiting_thread.md",
+    "title": "crowd -- waiting_thread.rs  (S TIER)",
+    "source": "src/dark_crystal/crowd/src/waiting_thread.rs"
+  },
+  {
+    "file": "src__dark_crystal__crowd__src__winhttp_dl.md",
+    "title": "crowd — winhttp_dl.rs  (🅱️ B TIER — WinHTTP staged download, non-injection path)",
+    "source": "src/dark_crystal/crowd/src/winhttp_dl.rs"
+  },
+  {
+    "file": "src__dark_crystal__framework__runtime__src__lib.md",
+    "title": "lib",
+    "source": "src/dark_crystal/framework/runtime/src/lib.rs"
+  },
+  {
+    "file": "src__dark_crystal__legacy__core-evasion__veh-corpus__lib.md",
+    "title": "lib",
+    "source": "src/dark_crystal/legacy/core-evasion/veh-corpus/lib.rs"
+  },
+  {
+    "file": "src__dark_crystal__legacy__core-src-dead__sys_trace.md",
+    "title": "sys_trace",
+    "source": "src/dark_crystal/legacy/core-src-dead/sys_trace.rs"
+  },
+  {
+    "file": "src__dark_crystal__legacy__core-src-dead__syscall_recycled.md",
+    "title": "syscall_recycled",
+    "source": "src/dark_crystal/legacy/core-src-dead/syscall_recycled.rs"
+  },
+  {
+    "file": "src__dark_crystal__tools__xptool__src__config.md",
+    "title": "config",
+    "source": "src/dark_crystal/tools/xptool/src/config.rs"
+  },
+  {
+    "file": "src__dark_crystal__tools__xptool__src__evasion_chain.md",
+    "title": "evasion_chain",
+    "source": "src/dark_crystal/tools/xptool/src/evasion_chain.rs"
+  },
+  {
+    "file": "src__dark_crystal__tools__xptool__src__executor.md",
+    "title": "executor",
+    "source": "src/dark_crystal/tools/xptool/src/executor.rs"
+  },
+  {
+    "file": "src__dark_crystal__tools__xptool__src__main.md",
+    "title": "main",
+    "source": "src/dark_crystal/tools/xptool/src/main.rs"
+  },
+  {
+    "file": "src__dark_crystal__tools__xptool__src__shellcode.md",
+    "title": "shellcode",
+    "source": "src/dark_crystal/tools/xptool/src/shellcode.rs"
+  }
+]

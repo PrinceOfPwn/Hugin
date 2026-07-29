@@ -1,0 +1,137 @@
+{
+  "timestamp": "2026-07-22T02:44:22.316373+00:00",
+  "model": "glm-5.2",
+  "total_jobs": 14,
+  "successful": 14,
+  "failed": 0,
+  "results": [
+    {
+      "job_id": "sec670-pe-format",
+      "status": "success",
+      "elapsed_s": 85.0,
+      "files": [
+        "training-source/sec670/chunks/10-pe-format.md"
+      ],
+      "output_file": "sec670-pe-format.md"
+    },
+    {
+      "job_id": "sec670-data-types-conventions",
+      "status": "success",
+      "elapsed_s": 93.1,
+      "files": [
+        "training-source/sec670/chunks/03-data-types-calling-conventions.md"
+      ],
+      "output_file": "sec670-data-types-conventions.md"
+    },
+    {
+      "job_id": "sec670-windows-api",
+      "status": "success",
+      "elapsed_s": 97.8,
+      "files": [
+        "training-source/sec670/chunks/05-windows-api.md"
+      ],
+      "output_file": "sec670-windows-api.md"
+    },
+    {
+      "job_id": "sec670-os-recon",
+      "status": "success",
+      "elapsed_s": 131.4,
+      "files": [
+        "training-source/sec670/chunks/06-os-information.md",
+        "training-source/sec670/chunks/07-process-enumeration.md"
+      ],
+      "output_file": "sec670-os-recon.md"
+    },
+    {
+      "job_id": "sec670-windows-dlls",
+      "status": "success",
+      "elapsed_s": 132.0,
+      "files": [
+        "training-source/sec670/chunks/02-windows-dlls.md"
+      ],
+      "output_file": "sec670-windows-dlls.md"
+    },
+    {
+      "job_id": "sec670-threads-injections",
+      "status": "success",
+      "elapsed_s": 139.2,
+      "files": [
+        "training-source/sec670/chunks/11-threads-injections.md"
+      ],
+      "output_file": "sec670-threads-injections.md"
+    },
+    {
+      "job_id": "sec670-user-network-enum",
+      "status": "success",
+      "elapsed_s": 143.3,
+      "files": [
+        "training-source/sec670/chunks/08-user-group-enumeration.md",
+        "training-source/sec670/chunks/09-network-shares-registry.md"
+      ],
+      "output_file": "sec670-user-network-enum.md"
+    },
+    {
+      "job_id": "sec670-token-escalation",
+      "status": "success",
+      "elapsed_s": 104.7,
+      "files": [
+        "training-source/sec670/chunks/12-token-escalation.md"
+      ],
+      "output_file": "sec670-token-escalation.md"
+    },
+    {
+      "job_id": "sec670-debugging",
+      "status": "success",
+      "elapsed_s": 75.8,
+      "files": [
+        "training-source/sec670/chunks/15-debugging-analysis.md"
+      ],
+      "output_file": "sec670-debugging.md"
+    },
+    {
+      "job_id": "sec670-persistence",
+      "status": "success",
+      "elapsed_s": 111.0,
+      "files": [
+        "training-source/sec670/chunks/14-persistence-mechanisms.md"
+      ],
+      "output_file": "sec670-persistence.md"
+    },
+    {
+      "job_id": "sec670-in-memory-execution",
+      "status": "success",
+      "elapsed_s": 136.8,
+      "files": [
+        "training-source/sec670/chunks/13-in-memory-execution.md"
+      ],
+      "output_file": "sec670-in-memory-execution.md"
+    },
+    {
+      "job_id": "sec670-loaders-shellcode",
+      "status": "success",
+      "elapsed_s": 120.4,
+      "files": [
+        "training-source/sec670/chunks/16-loaders-shellcode.md"
+      ],
+      "output_file": "sec670-loaders-shellcode.md"
+    },
+    {
+      "job_id": "sec670-evasion",
+      "status": "success",
+      "elapsed_s": 126.0,
+      "files": [
+        "training-source/sec670/chunks/17-evasion-techniques.md"
+      ],
+      "output_file": "sec670-evasion.md"
+    },
+    {
+      "job_id": "sec670-c2-networking",
+      "status": "success",
+      "elapsed_s": 166.0,
+      "files": [
+        "training-source/sec670/chunks/18-c2-networking.md"
+      ],
+      "output_file": "sec670-c2-networking.md"
+    }
+  ]
+}

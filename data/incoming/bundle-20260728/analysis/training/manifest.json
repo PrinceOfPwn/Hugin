@@ -1,0 +1,138 @@
+{
+  "timestamp": "2026-07-22T02:35:10.985816+00:00",
+  "model": "glm-5.2",
+  "total_jobs": 7,
+  "successful": 7,
+  "failed": 0,
+  "results": [
+    {
+      "job_id": "training-process-injection",
+      "status": "success",
+      "elapsed_s": 98.0,
+      "files": [
+        "training-source/rto-notes/1. Process Injection.md",
+        "training-source/rto-notes/2. CreateThread.md",
+        "training-source/rto-notes/3. CreateRemoteThread.md",
+        "training-source/rto-notes/4. QueueUserAPC.md",
+        "training-source/rto-notes/5. NtMapViewOfSection.md"
+      ],
+      "output_file": "training-process-injection.md"
+    },
+    {
+      "job_id": "training-winapi-dev",
+      "status": "success",
+      "elapsed_s": 112.8,
+      "files": [
+        "training-source/rto-notes/1. WinAPI.md",
+        "training-source/rto-notes/2. MessageBox in C++.md",
+        "training-source/rto-notes/3. CreateProcess in C++.md",
+        "training-source/rto-notes/4. PInvoke.md",
+        "training-source/rto-notes/5. MessageBox in C#.md",
+        "training-source/rto-notes/6. Type Marshalling.md",
+        "training-source/rto-notes/7. CreateProcess in C#.md",
+        "training-source/rto-notes/8. Ordinals.md",
+        "training-source/rto-notes/9. MessageBox in VBA.md",
+        "training-source/rto-notes/10. CreateProcess in VBA.md",
+        "training-source/rto-notes/11. DInvoke.md",
+        "training-source/rto-notes/12. MessageBox with DInvoke.md",
+        "training-source/rto-notes/13. CreateProcess with DInvoke.md"
+      ],
+      "output_file": "training-winapi-dev.md"
+    },
+    {
+      "job_id": "training-telemetry-detection",
+      "status": "success",
+      "elapsed_s": 118.8,
+      "files": [
+        "training-source/rto-notes/2. Living Off The Land Binaries, Scripts and Libraries.md",
+        "training-source/rto-notes/5. Network Connections.md",
+        "training-source/rto-notes/7. Image Load Events.md",
+        "training-source/rto-notes/8. Named Pipes Names.md",
+        "training-source/rto-notes/9. Event Tracing for Windows (ETW).md"
+      ],
+      "output_file": "training-telemetry-detection.md"
+    },
+    {
+      "job_id": "training-c2-infra",
+      "status": "success",
+      "elapsed_s": 125.2,
+      "files": [
+        "training-source/rto-notes/1. Defence in Depth.md",
+        "training-source/rto-notes/2. Infrastructure Design.md",
+        "training-source/rto-notes/3. Apache Installation.md",
+        "training-source/rto-notes/4. Generate SSL Certificates.md",
+        "training-source/rto-notes/5. Java KeyStore.md",
+        "training-source/rto-notes/6. HTTPS Listener for Redirector.md",
+        "training-source/rto-notes/7. SSH Tunnel.md",
+        "training-source/rto-notes/8. autossh.md",
+        "training-source/rto-notes/9. Enabling htaccess.md",
+        "training-source/rto-notes/10. User Agent Rules.md",
+        "training-source/rto-notes/11. Cookie Rules.md",
+        "training-source/rto-notes/12. URI & Query Rules.md",
+        "training-source/rto-notes/13. cs2modrewrite.md",
+        "training-source/rto-notes/14. C2 Resiliency.md",
+        "training-source/rto-notes/15. Beacon Staging.md",
+        "training-source/rto-notes/16. External C2.md"
+      ],
+      "output_file": "training-c2-infra.md"
+    },
+    {
+      "job_id": "training-evasion-tradecraft",
+      "status": "success",
+      "elapsed_s": 129.8,
+      "files": [
+        "training-source/rto-notes/1. Post-Exploitation Behaviours.md",
+        "training-source/rto-notes/2. SpawnTo.md",
+        "training-source/rto-notes/3. PPID Spoofing.md",
+        "training-source/rto-notes/4. Command Line Spoofing.md",
+        "training-source/rto-notes/6. Session Prepping.md",
+        "training-source/rto-notes/10. RWX & Cleanup.md",
+        "training-source/rto-notes/11. Sleep Mask Kit.md",
+        "training-source/rto-notes/12. Thread Stack Spoofing.md"
+      ],
+      "output_file": "training-evasion-tradecraft.md"
+    },
+    {
+      "job_id": "training-wdac-asr",
+      "status": "success",
+      "elapsed_s": 137.8,
+      "files": [
+        "training-source/rto-notes/1. Windows Defender Application Control.md",
+        "training-source/rto-notes/1. Attack Surface Reduction.md",
+        "training-source/rto-notes/2. Block Child Processes.md",
+        "training-source/rto-notes/3. Block Win32 APIs.md",
+        "training-source/rto-notes/3. Wildcard FilePaths.md",
+        "training-source/rto-notes/4. Block Code Injection.md",
+        "training-source/rto-notes/4. User Modifiable Binaries.md",
+        "training-source/rto-notes/5. Block PsExecWMI.md",
+        "training-source/rto-notes/6. Block Credential Stealing from LSASS.md",
+        "training-source/rto-notes/6. Trusted Signers.md",
+        "training-source/rto-notes/7. Exploiting Vulnerable Applications.md"
+      ],
+      "output_file": "training-wdac-asr.md"
+    },
+    {
+      "job_id": "training-edr-syscalls",
+      "status": "success",
+      "elapsed_s": 137.9,
+      "files": [
+        "training-source/rto-notes/1. Endpoint Detection and Response.md",
+        "training-source/rto-notes/2. Detecting the Bad.md",
+        "training-source/rto-notes/3. IAT Hooking.md",
+        "training-source/rto-notes/4. Inline Hooking.md",
+        "training-source/rto-notes/5. Hook Bypass Strategies.md",
+        "training-source/rto-notes/6. Hooking in Action.md",
+        "training-source/rto-notes/7. Manual Mapping.md",
+        "training-source/rto-notes/8. Process Mitigation Policy.md",
+        "training-source/rto-notes/9. Syscalls.md",
+        "training-source/rto-notes/10. GetSyscallStub.md",
+        "training-source/rto-notes/11. SysWhispers.md",
+        "training-source/rto-notes/12. Syscalls & ArtifactKit.md",
+        "training-source/rto-notes/13. User Defined Reflective Loader.md",
+        "training-source/rto-notes/14. Kernel Callbacks.md",
+        "training-source/rto-notes/15. Driver Signature Enforcement.md"
+      ],
+      "output_file": "training-edr-syscalls.md"
+    }
+  ]
+}

@@ -1,0 +1,397 @@
+---
+id: T-010
+name: Process Herpaderping
+category: process-injection
+tier: A
+mitre: T1055.012
+analyzed_by: glm-5.2
+analysis_date: 2026-07-21
+confidence: high
+requires: [T-001, T-004]
+enables: []
+vault_references:
+  - dark_crystal/crowd/src/herpaderping.rs
+  - dark_crystal/crowd/src/recycled.rs (dependency, not provided)
+  - dark_crystal/crowd/src/ghost.rs (PEB param port source, not provided)
+implements:
+  - file: dark_crystal/crowd/src/herpaderping.rs
+    key_functions:
+      - herpaderp
+      - create_image_section
+      - create_process_from_section
+      - overwrite_file_with_decoy
+      - parse_entry_point
+      - query_image_base
+      - setup_process_parameters
+      - rand_u32
+    key_structs:
+      - UnicodeStr (inline)
+      - ObjAttr (inline)
+      - IoStatus (inline)
+      - PROCESS_BASIC_INFORMATION (inline, 2 variants)
+      - PBI (inline, 2 variants)
+      - ProcessParams (inline RTL_USER_PROCESS_PARAMETERS partial layout)
+    key_constants:
+      - SEC_IMAGE (0x0100_0000)
+      - SECTION_ALL_ACCESS (0x000F_001F)
+      - PROCESS_ALL_ACCESS (0x001F_FFFF)
+      - THREAD_ALL_ACCESS (0x001F_FFFF)
+      - PROCESS_CREATE_FLAGS_INHERIT_HANDLES (0x00000004)
+      - FILE_GENERIC_READ|FILE_GENERIC_WRITE (0x0012_0089 | 0x0012_0116)
+      - OBJ_CASE_INSENSITIVE (0x40)
+      - FILE_SYNCHRONOUS_IO_NONALERT|FILE_NON_DIRECTORY_FILE (0x60)
+      - PAGE_READONLY (0x02)
+      - MEM_COMMIT|MEM_RESERVE (0x3000)
+      - PAGE_READWRITE (0x04)
+      - RTL_USER_PROC_PARAMS_NORMALIZED (0x01)
+      - PEB.ProcessParameters offset 0x20 (x64)
+      - PEB.ImageBaseAddress offset 0x10 (x64)
+    lines_of_interest:
+      - L14-L26 (crate-level doc + module description)
+      - L77-L107 (herpaderp main flow steps 1-3 — write payload, create section, overwrite with decoy)
+      - L77-L88 (payload MZ header validation)
+      - L130-L155 (create_image_section — NtOpenFile + NtCreateSection via RecycledGate)
+      - L189-L228 (overwrite_file_with_decoy — NtSetInformationFile + NtWriteFile + NtFlushBuffersFile)
+      - L230-L253 (create_process_from_section — NtCreateProcessEx with current process as parent)
+      - L255-L282 (parse_entry_point — PE32+ e_lfanew + AddressOfEntryPoint parse)
+      - L284-L322 (query_image_base — PEB read via NtQueryInformationProcess + NtReadVirtualMemory)
+      - L330-L512 (setup_process_parameters — RtlCreateProcessParametersEx + remote PEB patching)
+      - L483-L495 (PEB.ProcessParameters remote patch at offset 0x20)
+min_windows: "Windows 7+ (NtCreateProcessEx is NT6+)"
+needs_admin: "no"
+tags: [injection, herpaderping, decoy-pe, race-condition, nt-create-process, sec-image, peb-parameter-setup, recycled-gate, edr-evasion]
+---
+
+# Process Herpaderping — Operator Playbook
+
+## TL;DR
+Process Herpaderping creates an image section (`SEC_IMAGE`) from a payload file on disk, **then overwrites the file with a benign decoy PE before invoking `NtCreateProcessEx`**. Any EDR callback that scans the file backing the section will see only the decoy. The entire path runs through `crate::recycled::*` (RecycledGate / T-001 indirect syscalls) — no `CreateFile`/`CreateProcess` usermode hooks fire. The 8-step pipeline includes a working `setup_process_parameters()` that builds and remotely patches `PEB.ProcessParameters`, making this capable of executing real PE payloads (not just raw shellcode), at the cost of needing an explicit decoy PE.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `dark_crystal/crowd/src/herpaderping.rs` | Full Process Herpaderping implementation: temp file write → image section → decoy overwrite → NtCreateProcessEx → PEB parameter setup → thread create at entry point | `herpaderp(payload, decoy, args)` returning `Result<u32, String>` (PID) | ~676 lines |
+| `dark_crystal/crowd/src/recycled.rs` (dependency, not in scope) | RecycledGate indirect syscall wrappers for all 12 NT APIs consumed by herpaderping | `nt_open_file`, `nt_create_section`, `nt_write_file`, `nt_set_information_file`, `nt_flush_buffers_file`, `nt_create_process_ex`, `nt_query_information_process`, `nt_read_virtual_memory`, `nt_allocate_virtual_memory`, `nt_write_virtual_memory`, `nt_create_thread_ex`, `nt_close` | ~24K (per vault manifest) |
+| `dark_crystal/crowd/src/ghost.rs` (referenced, not in scope) | Process Ghosting implementation; `setup_process_parameters` ported from here per inline comment at L326-L327 | (shared PEB param-setup routine) | — |
+
+## How It Works
+
+The eight-stage flow is documented inline at L18-L26 of `herpaderping.rs` and implemented in `herpaderp()` (L41-L120). Each NT call is routed through `crate::recycled::*` so that no ntdll stub on the `Nt*` boundary is hit directly.
+
+1. **Payload validation & temp file write** (`herpaderp` L77-L88): `std::env::temp_dir()` is composed with a filename derived from `rand_u32()` (timestamp-based, L514-L521). Payload is validated for `0x4D 0x5A` (MZ) and minimum 64 bytes, then written via `std::fs::write`. This is the only file write that touches usermode `kernel32!WriteFile`; everything else is `Nt*`.
+
+2. **Open file & create `SEC_IMAGE` section** (`create_image_section` L130-L185):
+   - Builds an NT path `\??\<path>` and a stack-allocated `UNICODE_STRING` (`UnicodeStr` L142-L144) + `OBJECT_ATTRIBUTES` (`ObjAttr` L145-L150) + `IO_STATUS_BLOCK` (`IoStatus` L151-L152).
+   - `nt_open_file` is called with `FILE_GENERIC_READ | FILE_GENERIC_WRITE = 0x0012_0089 | 0x0012_0116`, **share mode `0x01` (FILE_SHARE_READ only)** — this is the OPSEC-critical step that blocks EDR from opening the file with FILE_SHARE_WRITE or FILE_SHARE_DELETE.
+   - Sync/disposition flags: `0x0000_0060 = FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE`.
+   - `OBJ_CASE_INSENSITIVE (0x40)` set in `ObjAttr.attributes`.
+   - `nt_create_section` with `SECTION_ALL_ACCESS`, `PAGE_READONLY (0x02)`, `SEC_IMAGE (0x0100_0000)`, file handle as `FileHandle` parameter. The kernel parses the PE and creates an image-backed section object.
+
+3. **Overwrite file with decoy** (`overwrite_file_with_decoy` L189-L228) — **performed before `NtCreateProcessEx`**, which is the inverse ordering from classic Ghosting and is what closes the scan race window:
+   - `nt_set_information_file` class `14` (FilePositionInformation) to rewind the file pointer to `0`.
+   - `nt_write_file` writes the decoy PE bytes at current position (`ByteOffset` and `Key` both `null_mut`).
+   - `crate::recycled::nt_flush_buffers_file` forces kernel cache → disk flush.
+   - `nt_set_information_file` class `20` (FileEndOfFileInformation) truncates/extends file to `decoy.len() as u64`, ensuring no leftover payload bytes survive past the decoy length.
+
+4. **Create process from section** (`create_process_from_section` L230-L253): `nt_create_process_ex` with `PROCESS_ALL_ACCESS`, `ParentProcess = (-1isize) as usize` (current process — note: **not** PPID-spoofed), flags `PROCESS_CREATE_FLAGS_INHERIT_HANDLES = 0x00000004`, and the section handle. Returns `h_process`. The file the kernel sees on disk at this point is the decoy.
+
+5. **Parse entry RVA from payload bytes** (`parse_entry_point` L255-L282): reads `e_lfanew` from offset `0x3C`, then computes `entry_offset = e_lfanew + 4 (signature) + 20 (FileHeader) + 16 (offset of AddressOfEntryPoint in OptionalHeader)`. Returns the RVA. **PE32+ only** — see Edge Case #1.
+
+6. **Query remote PEB for `ImageBaseAddress`** (`query_image_base` L284-L322):
+   - `nt_query_information_process` class `0` (ProcessBasicInformation) into `PROCESS_BASIC_INFORMATION` (L286-L291). The `peb_base_address` is at offset `0x08` of the struct.
+   - `nt_read_virtual_memory` reads `PEB.ImageBaseAddress` at `peb + 0x10` on x64 (`0x08` on x86 — gated by `cfg!(target_arch = "x86_64")` at L309). Returns the load-time base the kernel assigned (which for `SEC_IMAGE` mappings equals the PE's preferred `ImageBase`).
+   - `entry_point = image_base + entry_rva`.
+
+7. **Set up process parameters** (`setup_process_parameters` L326-L512): The largest and most failure-prone step — without this the new process has no `ImagePathName`, `CommandLine`, `CurrentDirectory`, or `Environment` block and crashes on CRT/init. Steps:
+   - `GetModuleHandleA("ntdll.dll")` + `GetProcAddress("RtlInitUnicodeString")` + `GetProcAddress("RtlCreateProcessParametersEx")`. These are the only `kernel32`/`ntdll` usermode calls in the file.
+   - Builds `UNICODE_STRING`s for image path, `C:\Windows\System32` (DllPath), CWD derived from the temp file's parent directory, and command line (defaults to image path if `args` is empty).
+   - `CreateEnvironmentBlock(..., NULL, 1)` inherits the injector's environment.
+   - `RtlCreateProcessParametersEx(...)` with flag `RTL_USER_PROC_PARAMS_NORMALIZED = 0x01`. The struct layout (`ProcessParams`, L367-L391) is a partial `RTL_USER_PROCESS_PARAMETERS` with explicit `_middle: [u8; 0x200]` padding and `environment_size: usize` field at offset `0x03F0` (x64 layout comment at L363).
+   - `nt_allocate_virtual_memory` in the **remote process** with `null_mut` base (kernel picks a free region) and `MEM_COMMIT|MEM_RESERVE = 0x3000`, `PAGE_READWRITE = 0x04`.
+   - **Environment pointer fix-up**: `(*params).environment = (remote_params_base + params_len) as *mut c_void` — the params block is laid out as `[params][env_block]` contiguously, and the env pointer inside params is patched to the remote VA. Without this fix, the new process dereferences a stale injector-VA pointer and faults.
+   - `nt_write_virtual_memory` writes params block, then env block.
+   - `nt_query_information_process` reads `PEB.ImageBaseAddress` field at PEB offset `0x08` (the second PBI struct variant at L466-L471).
+   - `nt_write_virtual_memory` writes `PEB.ProcessParameters` (offset `0x20` on x64) with the pointer `remote_params_base`.
+   - `DestroyEnvironmentBlock` cleanup.
+
+8. **Create thread at entry & extract PID** (`herpaderp` L130-L160):
+   - `nt_create_thread_ex` with `THREAD_ALL_ACCESS`, `h_process`, `entry_point` as `StartRoutine`, no `Argument`, zeroed `ClientId`-style args. `CreateThread` usermode hook never fires.
+   - `nt_query_information_process` into inline `PBI` struct (L138-L148) and reads `unique_pid` field at offset `0x20`.
+   - `nt_close` on `h_thread`, `h_process`, `h_file`. Note: section handle was closed at L113 *before* the PEB setup — the section is no longer needed after `NtCreateProcessEx` because the kernel has already promoted it to a process image.
+   - **Temp file is intentionally not deleted** — comment at L165-L166 notes the process needs it during startup. Cleanup is deferred to OS temp sweeper or the `self_delete` routine (T-013).
+
+## Code Architecture
+
+### Call graph
+
+```
+herpaderp()  [public entry]
+ ├─ std::fs::write (kernel32!WriteFile — only usermode file op)
+ ├─ create_image_section()
+ │   ├─ crate::recycled::nt_open_file
+ │   └─ crate::recycled::nt_create_section
+ ├─ overwrite_file_with_decoy()
+ │   ├─ crate::recycled::nt_set_information_file (class 14 — FilePositionInformation)
+ │   ├─ crate::recycled::nt_write_file
+ │   ├─ crate::recycled::nt_flush_buffers_file
+ │   └─ crate::recycled::nt_set_information_file (class 20 — FileEndOfFileInformation)
+ ├─ crate::recycled::nt_close  (closes section)
+ ├─ parse_entry_point()  (pure PE parse, no syscalls)
+ ├─ query_image_base()
+ │   ├─ crate::recycled::nt_query_information_process (class 0)
+ │   └─ crate::recycled::nt_read_virtual_memory
+ ├─ setup_process_parameters()
+ │   ├─ winapi: GetModuleHandleA + GetProcAddress (ntdll!RtlCreateProcessParametersEx + RtlInitUnicodeString)
+ │   ├─ winapi: CreateEnvironmentBlock / DestroyEnvironmentBlock (userenv)
+ │   ├─ crate::recycled::nt_allocate_virtual_memory
+ │   ├─ crate::recycled::nt_write_virtual_memory (×3: params, env, PEB.ProcessParameters)
+ │   └─ crate::recycled::nt_query_information_process
+ ├─ crate::recycled::nt_create_thread_ex
+ ├─ crate::recycled::nt_query_information_process (extract PID)
+ └─ crate::recycled::nt_close (×3: thread, process, file)
+```
+
+### Data flow
+
+- **Payload bytes** → `std::fs::write` → temp file → kernel section object (parsed as PE) → process address space.
+- **Decoy bytes** → `nt_write_file` over temp file (post-section creation).
+- **Entry RVA** parsed from in-memory `payload: &[u8]` slice, *not* re-read from disk (so the decoy overwrite doesn't poison the entry point calc).
+- **`ImageBaseAddress`** flows from kernel (via PEB) → `query_image_base` → `herpaderp` → `entry_point = base + RVA`.
+- **ProcessParameters** are constructed in the injector address space, environment pointer is patched to the future remote VA, then the whole block is copied across via `NtWriteVirtualMemory` and the PEB pointer is set.
+
+### Type hierarchy
+
+Three flavors of `PROCESS_BASIC_INFORMATION` are declared inline:
+1. `herpaderp()` L138-L148: full 6-field struct for PID extraction (`unique_pid` at `0x20`).
+2. `query_image_base()` L286-L291: minimal 2-field-plus-padding struct, only `peb_base_address` used.
+3. `setup_process_parameters()` L466-L471: minimal PBI for PEB address only.
+
+This is duplication but the layouts are byte-compatible (the underscored fields are just to advance the offset). An operator refactoring should consolidate to one definition in a shared module.
+
+### Feature gates / cfg
+
+- `#[allow(dead_code, non_snake_case)]` at crate top (L28) — the `non_snake_case` permits the C-ABI-style `nt_*` function names from `recycled`.
+- `cfg!(target_arch = "x86_64")` at L309 — selects `PEB.ImageBaseAddress` offset (`0x10` vs `0x08`). The file is otherwise x64-hardcoded (entry point calc assumes PE32+).
+- No Cargo feature gates inside this file.
+
+## Operational Profile
+
+### When to Use
+- Engagement requires executing an actual **PE payload** (not just shellcode) — herpaderping preserves the original image layout so CRT/static initializers work.
+- Target SOC has file-scanning minifilters (Defender, CrowdStrike, SentinelOne) that fire on `NtCreateUserProcess` callbacks — those callbacks will see the decoy PE.
+- You need a sibling technique to Ghosting for variant coverage (one of the two is more likely to slip past a specific EDR).
+- You can supply a benign decoy PE (e.g., `notepad.exe` or any signed binary) that you're comfortable leaving on disk.
+- You're already inside `dark_crystal`/`crowd` and have T-001 RecycledGate bootstrapped — this file is essentially free to call.
+
+### When NOT to Use
+- You only have raw shellcode, not a PE — use Early Cascade (T-012) or shellcode execution instead; you'd be needlessly shipping a decoy PE.
+- The target EDR hooks `NtCreateSection(SEC_IMAGE)` and validates the file via callback (e.g., Defender with real-time + ASR) — the kernel invokes the minifilter at section creation, before you can overwrite. Use Ghosting (T-009) which deletes the file *first*.
+- Target runs Win10 1709+ with `MITIGATION_IMAGE_LOAD_NO_LOW_MIPS` or similar that pinning image-base randomization — your entry point calc may still work but ASLR-rebase semantics differ; verify.
+- The temp directory is heavily watched (`%TEMP%\hpd_*.tmp` is a low-entropy, predictable filename; `rand_u32()` is just nanosecond timestamp `& 0xFFFF_FFFF`, so collisions across runs are possible — see Edge Case #2).
+- You need a parent other than current process — current code sets `ParentProcess = (-1isize) as usize`; chain T-015 PPID Spoofing instead if you need a different parent.
+
+### Kill Chain Position
+
+Herpaderping is a **post-evasion execution primitive**. Typical chain:
+
+```
+T-004 (PEB walk to bootstrap) → T-001 (RecycledGate initialized) →
+T-002 (SSN cascade resolved) → T-010 (Herpaderping: PE payload execute) →
+T-005 (Ekko sleep on the spawned process) → T-017 (Persistence)
+```
+
+Optional parallel:
+- T-009 (Process Ghosting) — alternative variant; same parent setup, different race ordering.
+- T-015 (PPID Spoofing) — could replace `(-1isize)` parent reference if combined with `PROCESS_CREATE_FLAGS_INHERIT_FROM_PARENT` semantics, but this file does not implement that combination.
+
+### Trade-offs
+
+## Rust Implementation Deep Dive
+
+### `unsafe` blocks
+
+Six `unsafe` scopes in this file:
+
+1. **`create_image_section` L132-L184**: stack-allocates `UNICODE_STRING`, `OBJECT_ATTRIBUTES`, `IO_STATUS_BLOCK` and passes raw pointers to `nt_open_file` / `nt_create_section`. Lifetime risk: `wide: Vec<u16>` outlives the call (correct because it's owned by the function frame).
+2. **`herpaderp` L131-L160 (inner unsafe for `nt_create_thread_ex`)**: passes `entry_point` (computed from `query_image_base`) as a function pointer into the remote process. Trusts `parse_entry_point` RVA is within the loaded image.
+3. **`herpaderp` L137-L160 (PBI struct + `nt_query_information_process` for PID)**: declares an inline `#[repr(C)] struct PBI` with 6 usize fields — this matches the actual kernel `PROCESS_BASIC_INFORMATION` on x64. Uses `std::mem::zeroed()` then reads `unique_pid` at offset `0x20`.
+4. **`herpaderp` L162-L167 (cleanup `nt_close` × 3)**: closes thread/process/file handles on success path.
+5. **`overwrite_file_with_decoy` L191-L227**: rewrites file pointer, writes decoy, flushes, truncates. `zero_offset: u64 = 0` and `eof_pos = decoy.len() as u64` are stack values used as `*const c_void` — relies on no intervening move.
+6. **`setup_process_parameters` L414-L510**: largest unsafe block; resolves `RtlInitUnicodeString` and `RtlCreateProcessParametersEx` via `GetProcAddress` + `std::mem::transmute` to function pointer types (`RtlInitUnicodeStringFn`, `RtlCreateProcessParametersExFn` at L393-L404). Then performs remote `NtAllocateVirtualMemory` → `NtWriteVirtualMemory` × 3 → PEB pointer patch.
+
+### `core::arch::asm!` usage
+
+**None in this file.** All asm lives in `crate::recycled` (T-001). This file is purely a high-level orchestrator over RecycledGate.
+
+### FFI patterns
+
+- `winapi` crate is used for:
+  - `winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress}` — runtime resolution of ntdll exports, with byte-string literals (`b"ntdll.dll\0"`, `b"RtlInitUnicodeString\0"`).
+  - `winapi::um::userenv::{CreateEnvironmentBlock, DestroyEnvironmentBlock}` — environment block acquire/release.
+  - `winapi::ctypes::c_void` — opaque pointer type.
+- Custom `extern "system"` fn types are declared at L393-L404 — `system` ABI on Windows x64 is `__stdcall` for x86 and the Microsoft x64 calling convention for x64, which is what ntdll exports expect.
+- `std::mem::transmute` is used to convert `FARPROC` (return of `GetProcAddress`) into the typed function pointer — this is the canonical Rust pattern for runtime-resolved FFI.
+
+### Initialization patterns
+
+- **No `OnceLock`/`LazyCell` here.** The function relies on `crate::recycled::*` having been initialized before being called (which happens at FSM boot). This is an implicit dependency — see Frontmatter `requires: [T-001]`.
+- Temp filename randomness: `rand_u32()` (L514-L521) is `SystemTime::now().duration_since(UNIX_EPOCH).as_nanos() & 0xFFFF_FFFF`. **Not cryptographic** — this is an OPSEC weakness (predictable, low entropy — see Edge Case #2).
+- `mega_dbg!` macro imported at L15 (gated with `#[allow(unused_imports)]`).
+
+### Error handling
+
+Every syscall boundary checks `status < 0` (NTSTATUS is signed int32). On failure:
+- `create_image_section` (L170-L175): closes file handle, returns formatted `Err`.
+- `create_process_from_section` (L247-L250): returns `Err` without closing section (the caller `herpaderp` closes section at L113 *before* this call, so no leak).
+- `overwrite_file_with_decoy` (L201, L213): returns `Err` with NTSTATUS hex.
+- `query_image_base` (L317): closes nothing — caller cleans up.
+- `setup_process_parameters` (L440, L452, L478, L487, L500): on each error, `DestroyEnvironmentBlock(env_block)` is called before returning — preventing a leak of the inherited environment block. This is the most thorough RAII-ish cleanup in the file.
+- `herpaderp` itself (L141-L148): on `NtCreateThreadEx` failure, closes process + file handles and removes temp file via `std::fs::remove_file` — but does **not** close the section handle (it was already closed at L113). Symptom: orphaned section object in the injector. Workaround: move the section close below the thread-create error branch.
+
+### Memory layout
+
+- `ProcessParams` struct (L367-L391): a *partial* reconstruction of `RTL_USER_PROCESS_PARAMETERS`. `_middle: [u8; 0x200]` reserves space for fields `StartingX` through `CurrentDirectories`; `_rest: [u8; 256]` reserves space for `EnvironmentSize` and trailing fields. The `environment_size: usize` field is positioned at the expected x64 offset `0x03F0` per the L363 comment. This layout is fragile — see Edge Case #3.
+- Inline `UNICODE_STRING`: 16 bytes on x64 (length u16, max_length u16, padding u32 to align, buffer pointer usize). Same as Windows `UNICODE_STRING`.
+- `OBJECT_ATTRIBUTES`: 48 bytes on x64 (matches `OBJECT_ATTRIBUTES`).
+- `IO_STATUS_BLOCK`: 16 bytes (two `usize`).
+- The `PBI` struct in `herpaderp` (L138-L148) is 48 bytes — matches `PROCESS_BASIC_INFORMATION` on x64.
+- The `PROCESS_BASIC_INFORMATION` struct in `query_image_base` (L286-L291) is `2*usize + 4*usize = 48` bytes — same layout, only reads first two fields.
+
+### Syscall numbers
+
+Not visible in this file — all SSN resolution is delegated to `crate::recycled` (which itself uses T-002's `hells_gate.rs` resolution cascade and T-001's indirect dispatch). An operator who needs to swap dispatch (e.g., to VEH Gate T-003) would change only the `crate::recycled::` prefix on each call.
+
+## Cross-References Found in Code
+
+| Reference | Source Location | Target Technique | Reason |
+|---|---|---|---|
+| `crate::recycled::nt_open_file` | `create_image_section` L170 | T-001 (RecycledGate) | Indirect syscall wrapper |
+| `crate::recycled::nt_create_section` | `create_image_section` L176 | T-001 | Indirect syscall wrapper |
+| `crate::recycled::nt_set_information_file` | `overwrite_file_with_decoy` L197, L221 | T-001 | Indirect syscall wrapper |
+| `crate::recycled::nt_write_file` | `overwrite_file_with_decoy` L207 | T-001 | Indirect syscall wrapper |
+| `crate::recycled::nt_flush_buffers_file` | `overwrite_file_with_decoy` L215 | T-001 | Indirect syscall wrapper |
+| `crate::recycled::nt_create_process_ex` | `create_process_from_section` L236 | T-001 | Indirect syscall wrapper (also touches T-014 concept space — NtCreateProcessEx directly) |
+| `crate::recycled::nt_query_information_process` | `query_image_base` L307; `setup_process_parameters` L478; `herpaderp` L150 | T-001 | Indirect syscall wrapper |
+| `crate::recycled::nt_read_virtual_memory` | `query_image_base` L320 | T-001 | Indirect syscall wrapper |
+| `crate::recycled::nt_allocate_virtual_memory` | `setup_process_parameters` L449 | T-001 | Indirect syscall wrapper |
+| `crate::recycled::nt_write_virtual_memory` | `setup_process_parameters` L463, L475, L487 | T-001 | Indirect syscall wrapper |
+| `crate::recycled::nt_create_thread_ex` | `herpaderp` L131 | T-001 | Indirect syscall wrapper |
+| `crate::recycled::nt_close` | `herpaderp` L113, L142, L165-L167 | T-001 | Indirect syscall wrapper |
+| Inline comment L326-L327 "Ported from ghost.rs's working implementation" | `setup_process_parameters` header | T-009 (Process Ghosting) | Shared PEB-parameter-setup routine between Ghosting and Herpaderping — operators can dedupe |
+| `(-1isize) as usize` parent handle | `create_process_from_section` L241 | T-015 (PPID Spoofing) — negative space | Current process used as parent; T-015 would replace this with `NtOpenProcess` of a chosen parent + `PROCESS_CREATE_FLAGS_INHERIT_FROM_PARENT` |
+| `std::fs::write(&temp_name, payload)` | `herpaderp` L82 | T-013 self_delete (downstream) | Temp file is intentionally not deleted at L165-L166; defers cleanup to OS or self_delete routine |
+| `mega_dbg!` macro | L15 (import); L77, L91, L100, L121, L156, L328, L508 | Pattern (not a technique) | Debug logging gated by macro — at minimum verbosity emits no code |
+| `#[allow(dead_code, non_snake_case)]` | L28 | Pattern (not a technique) | Permits ntdll-style naming on `nt_*` wrappers |
+| `std::env::temp_dir()` | L79 | T-013 (anti-analysis) — pre-cleanup | `%TEMP%` is a known noisy location; could be replaced with `T-021` shellcode encoding + memory-only execution to eliminate file footprint |
+
+## Edge Cases & Failure Modes
+
+1. **PE32 (32-bit) payloads**
+   - *Scenario*: Operator feeds a 32-bit PE as `payload`.
+   - *What goes wrong*: `parse_entry_point` (L255-L282) computes `entry_offset = e_lfanew + 4 + 20 + 16` — that `+16` is the offset of `AddressOfEntryPoint` in `IMAGE_OPTIONAL_HEADER32`, but the `e_lfanew + 4 + 20` skips `IMAGE_FILE_HEADER` (20 bytes), then adds 16 to land on `AddressOfEntryPoint`. Actually that calc is correct for both PE32 and PE32+ (the field offset is the same), but the code comment at L272 says "PE32+: OptionalHeader.AddressOfEntryPoint is at offset 0x10 into OptionalHeader". The actual *image base* size assumption (`PEB.ImageBaseAddress` is always `usize` 8 bytes on x64) is the real limitation: a 32-bit PE loaded into a 64-bit process via `SEC_IMAGE` would have a 4-byte `ImageBase` in its headers but the PEB field is 8 bytes. The kernel handles this — but `query_image_base` returns 8 bytes which is correct.
+   - *Symptom*: Subtle bugs only if the 32-bit image uses 32-bit RVA math at runtime. Most 32-bit PEs won't load correctly into a 64-bit section anyway.
+   - *Workaround*: Restrict to PE32+ payloads; cross-arch scenarios belong to T-013 (Remaining Methods).
+
+2. **Predictable temp filename collision**
+   - *Scenario*: Two herpaderp runs in the same nanosecond (e.g., concurrent chains) or replayed attacks at predictable times.
+   - *What goes wrong*: `rand_u32()` (L514-L521) is `SystemTime::now().as_nanos() & 0xFFFF_FFFF`. Two invocations in the same nanosecond produce the same filename; the second `std::fs::write` either succeeds silently (overwriting the first's payload!) or fails with permission denied if the first process has the file open.
+   - *Symptom*: Either wrong payload executes, or `NtOpenFile` returns `STATUS_SHARING_VIOLATION (0xC0000043)`.
+   - *Workaround*: Use a CSPRNG (`getrandom` crate) or include `std::process::id()` + a counter in the name. Or, use `T-009` Ghosting's `FILE_ATTRIBUTE_DELETE_ON_CLOSE` semantics to avoid the collision entirely.
+
+3. **`ProcessParams` struct brittleness**
+   - *Scenario*: Future Windows versions grow `RTL_USER_PROCESS_PARAMETERS` (Microsoft has done this historically — added `RuntimeData`, `CurrentDirectories`, etc.).
+   - *What goes wrong*: The `_middle: [u8; 0x200]` and `_rest: [u8; 256]` padding blocks in `ProcessParams` (L382-L384, L386) become undersized. The `environment_size` field reads garbage; `RtlCreateProcessParametersEx` writes past the end of the Rust struct, corrupting adjacent stack memory.
+   - *Symptom*: Stack corruption, silent AV, or — most insidious — a wrong `environment_size` causes `nt_write_virtual_memory` to write a truncated environment block to the remote process; the new process's CRT reads a partially-formed env block and crashes on `_wenviron` enumeration.
+   - *Workaround*: Use `nt_query_information_process(ProcessPeb)` and read `PEB.ProcessParameters` from the *new* process directly — it's already partially populated by `NtCreateProcessEx`. Or, dynamically size the struct via `RtlCreateProcessParametersEx` returning a pointer whose first 4 bytes are `Length` and use that length for the copy without relying on a Rust struct layout.
+
+4. **EDR hooks `NtCreateSection(SEC_IMAGE)` before our overwrite**
+   - *Scenario*: EDR's minifilter fires `IRP_MJ_ACQUIRE_FOR_SECTION_SYNCHRONIZATION` callback at `NtCreateSection` time (before `overwrite_file_with_decoy` runs).
+   - *What goes wrong*: The minifilter reads the file content at this point — it sees the **real payload**, not the decoy.
+   - *Symptom*: Quarantine, signature alert, process termination.
+   - *Workaround*: Use T-009 (Process Ghosting) instead, which deletes the file before section creation. Herpaderping's whole premise is that the EDR scans *after* `NtCreateSection`; if your specific EDR scans *during*, Herpaderping is the wrong primitive.
+
+5. **Section handle leak on `NtCreateThreadEx` failure**
+   - *Scenario*: `nt_create_thread_ex` returns `status < 0` (e.g., `STATUS_THREAD_IS_TERMINATING` or AV-related kill).
+   - *What goes wrong*: Error path at L141-L148 closes `h_process` and `h_file` but **not** `h_section` — it was closed at L113 (success path only).
+   - *Symptom*: Section object leaks into the injector's handle table until process exit.
+   - *Workaround*: Move the `nt_close(h_section)` at L113 below the thread-create block, or add `nt_close(h_section)` to the failure branch. Single-line fix.
+
+6. **Race between decoy overwrite and process startup**
+   - *Scenario*: After `NtCreateProcessEx`, the kernel maps the image section into the new process's address space. The image section is backed by the file object, and if the page fault handler pages in from the file post-overwrite, the new process sees **decoy bytes** in its image, not payload.
+   - *What goes wrong*: This is actually the *intended* behavior in the original Herpaderping paper — the kernel caches the file content in the section's page file, not re-reads from disk. The comment at L11-L13 says "EDR scanning the file (after the section is mapped but before execution) sees the **decoy** content". This relies on the kernel having already paged in the **payload** (not the decoy) by the time of overwrite.
+   - *Symptom*: If overwrite happens before the kernel pages in the payload, the new process crashes on first instruction fetch (decoy bytes don't match the section's parsed PE header). The code calls `nt_flush_buffers_file` which **flushes the decoy write to disk** — this could trigger the kernel to invalidate cached pages and re-read the decoy.
+   - *Workaround*: The intended ordering is: payload bytes cached in the section object (memory) → decoy bytes flushed to disk → kernel uses in-memory cached copy, not disk, for further page-ins. If a particular Windows version pages in lazily or invalidate-on-flush is enabled, this breaks. Empirically, Win10 1903+ is reliable; older builds may not be.
+
+7. **`RtlCreateProcessParametersEx` failure on edge environment blocks**
+   - *Scenario*: Injector runs with a corrupted or unusually large environment block (>4KB).
+   - *What goes wrong*: `CreateEnvironmentBlock` succeeds, but `RtlCreateProcessParametersEx` allocates a block whose `EnvironmentSize` field exceeds the Rust struct's expectation.
+   - *Symptom*: Returns `STATUS_INVALID_PARAMETER` (0xC000000D) or `STATUS_NO_MEMORY`.
+   - *Workaround*: Validate `env_size` against a sane upper bound before allocating in the remote process; bail with a meaningful error.
+
+## OPSEC Notes
+
+### Artifacts left
+
+| Artifact | Location | Persistence |
+|---|---|---|
+| Temp file `%TEMP%\hpd_<hex>.tmp` | Disk, `%TEMP%` | Until OS temp sweeper runs (typically reboot or disk cleanup) |
+| Decoy PE content | The temp file itself | Same as above |
+| Process object with parent = injector PID | Kernel object table | Process lifetime |
+| Thread with `StartAddress` = payload entry RVA in remote image | ETW `ThreadStart` (if ETW not muted) | Thread lifetime |
+| `ntdll!RtlCreateProcessParametersEx` call in injector's call stack | Stack backtrace at moment of call | Until stack unwound |
+| `GetModuleHandleA("ntdll.dll")` call | `kernel32` usermode hook trace | Until stack unwound |
+| `GetProcAddress` calls for "RtlInitUnicodeString" and "RtlCreateProcessParametersEx" | Same | Same |
+| `CreateEnvironmentBlock` call | `userenv` usermode hook trace | Same |
+| New process handle in injector's handle table (closed at L165) | — | Closed before function returns; if EDR enumerated handles during execution, it would see it |
+| New process: image backed by temp file path | Remote process PEB `ImagePathName` | Process lifetime |
+| `IMAGE_FILE` notification from `PsSetCreateImageNotifyRoutine` (if any kernel-mode EDR registered) | Kernel callback | At `NtCreateProcessEx` time |
+
+### Telemetry muted by upstream
+
+If the FSM bootstrapping sequence has executed:
+- **T-009 (EDR Evasion Suite) — ETW muffling**: removes `EtwNotificationRegister` callbacks so `ThreadStart` doesn't reach the SIEM.
+- **T-009 — PEB unlink**: the new process is created with current process as parent; if injector's `LDR_LIST` is unlinked, that's the injector's modules — doesn't affect the new process.
+- **T-009 — NTDLL unhook**: doesn't help here; this file doesn't call `ntdll.dll`'s syscall stubs (all via RecycledGate).
+
+### Cleanup
+
+- `crate::recycled::nt_close` × 5 (section, thread, process, file, plus the implicit `nt_close(h_section)` at L113).
+- `DestroyEnvironmentBlock(env_block)` on every error branch in `setup_process_parameters` (L440, L452, L478, L487, L500) and on success path (L505).
+This is a *deliberate* design choice but it's an OPSEC gap if the chain fails between herpaderp and the cleanup phase.
+
+### Stack trace disguise
+
+The file does **not** perform call stack spoofing on the `nt_*` calls. If T-009's stack spoofing is bootstrapped at FSM level, the calls inherit whatever spoofing RecycledGate's stubs perform — otherwise the injector's stack frame is visible in `nt_*` callbacks. Recommend chaining with `crate::stack_spoof` (T-009 advanced stack) at FSM boot.
+
+## Reusable Patterns
+
+### Pattern: Inline `PROCESS_BASIC_INFORMATION` declaration
+- **Use when**: You need PEB address or PID from a process handle in a self-contained module without a shared types crate.
+- **Code ref**: `herpaderping.rs:herpaderp()` L138-L148 (6-field variant) and `herpaderping.rs:query_image_base()` L286-L291 (minimal 2-field variant)
+- **How**: Declare `#[repr(C)] struct PBI` inside the function body, `std::mem::zeroed()` it, pass `&mut pbi as *mut _ as *mut u8` to `nt_query_information_process(ProcessBasicInformation)`. The kernel writes the canonical 48-byte structure; only the fields you care about need to be named (the rest can be `_reserved`). Avoids importing `winapi::um::winnt::PROCESS_BASIC_INFORMATION` which pulls in many transitive types.
+
+### Pattern: Remote PEB pointer patching
+- **Use when**: A NT process creation primitive leaves `PEB.ProcessParameters` null and you need to fix it post-creation.
+- **Code ref**: `herpaderping.rs:setup_process_parameters()` L478-L495
+- **How**: `NtAllocateVirtualMemory` in remote with `BaseAddress = null` (kernel picks), copy params + env block contiguously, then `NtWriteVirtualMemory` a single `usize` pointer into `PEB + 0x20` (x64). The env pointer inside params must be patched to the *remote* VA before the params block is copied — see L460-L462.
+
+### Pattern: Multi-mode file manipulation via `NtSetInformationFile` + `NtWriteFile` + `NtFlushBuffersFile`
+- **Use when**: You need to rewrite file content post-open without re-opening, with pointer control and disk-flush semantics.
+- **Code ref**: `herpaderping.rs:overwrite_file_with_decoy()` L189-L228
+- **How**: (a) `NtSetInformationFile(FilePositionInformation=14)` to rewind, (b) `NtWriteFile` at current offset, (c) `NtFlushBuffersFile` to push cache to disk, (d) `NtSetInformationFile(FileEndOfFileInformation=20)` to truncate/extend. This sequence is the canonical "rewind-write-flush-truncate" pattern that gives precise file-content control without `SetFilePointer`/`WriteFile` usermode hooks.
+
+### Pattern: Failure-path RAII via `DestroyEnvironmentBlock` on every error branch
+- **Use when**: Acquiring a Win32 resource that must be released, in a function with multiple failure points and no RAII wrapper.
+- **Code ref**: `herpaderping.rs:setup_process_parameters()` L440, L452, L478, L487, L500, L505 (success)
+- **How**: Every `if status < 0 { ...; if !env_block.is_null() { DestroyEnvironmentBlock(env_block.cast()); } return Err(...) }`. Verbose but explicit. A cleaner Rust pattern would be a `struct EnvBlock(*mut c_void); impl Drop for EnvBlock { ... }` — left as a refactor candidate.
+
+### Pattern: NTSTATUS → formatted error string
+- **Use when**: Returning `Result<_, String>` from an FFI-heavy function and wanting actionable error messages.
+- **Code ref**: `herpaderping.rs` (every error site)
+- **How**: `format!("Herpaderping: <syscall> failed (0x{:08x})", status as u32)`. The `as u32` cast handles signed-to-unsigned NTSTATUS presentation. The hex format makes it easy to grep for in `ntstatus.h`. Note `status as u32` is correct even though NTSTATUS is `i32` — bit pattern preserved.
+
+### Pattern: Module-doc-rate "🔥 S TIER" header for tier classification
+- **Use when**: Self-documenting Rust files in a multi-technique crate.
+- **Code ref**: `herpaderping.rs` L1-L3
+- **How**: File-level doc comment (`//!`) at the top declares the technique name, tier, and dependencies — operators running `cargo doc` get a navigable catalog. The inline "🔥 S TIER — upgraded from A" note is *operator* metadata, not crate metadata; it indicates a manual re-tiering decision. Useful when the manifest's tier differs from the source's self-assessment.

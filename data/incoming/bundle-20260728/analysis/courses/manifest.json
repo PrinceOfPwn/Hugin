@@ -1,0 +1,126 @@
+{
+  "timestamp": "2026-07-22T02:52:52.289936+00:00",
+  "model": "glm-5.2",
+  "total_jobs": 13,
+  "successful": 13,
+  "failed": 0,
+  "results": [
+    {
+      "job_id": "bof-tradecraft",
+      "status": "success",
+      "elapsed_s": 71.5,
+      "files": [
+        "training-source/htmls/chunks/bof-tradecraft.md"
+      ],
+      "output_file": "bof-tradecraft.md"
+    },
+    {
+      "job_id": "osed-06-aslr-advanced",
+      "status": "success",
+      "elapsed_s": 109.2,
+      "files": [
+        "training-source/htmls/chunks/osed-06-aslr-advanced.md"
+      ],
+      "output_file": "osed-06-aslr-advanced.md"
+    },
+    {
+      "job_id": "osed-03-seh-egghunters",
+      "status": "success",
+      "elapsed_s": 134.1,
+      "files": [
+        "training-source/htmls/chunks/osed-03-seh-egghunters.md"
+      ],
+      "output_file": "osed-03-seh-egghunters.md"
+    },
+    {
+      "job_id": "osed-02-stack-overflows",
+      "status": "success",
+      "elapsed_s": 148.6,
+      "files": [
+        "training-source/htmls/chunks/osed-02-stack-overflows.md"
+      ],
+      "output_file": "osed-02-stack-overflows.md"
+    },
+    {
+      "job_id": "osed-05-rop-dep-bypass",
+      "status": "success",
+      "elapsed_s": 149.2,
+      "files": [
+        "training-source/htmls/chunks/osed-05-rop-dep-bypass.md"
+      ],
+      "output_file": "osed-05-rop-dep-bypass.md"
+    },
+    {
+      "job_id": "osed-01-intro-reversing",
+      "status": "success",
+      "elapsed_s": 150.6,
+      "files": [
+        "training-source/htmls/chunks/osed-01-intro-reversing.md"
+      ],
+      "output_file": "osed-01-intro-reversing.md"
+    },
+    {
+      "job_id": "osed-04-shellcoding",
+      "status": "success",
+      "elapsed_s": 171.7,
+      "files": [
+        "training-source/htmls/chunks/osed-04-shellcoding.md"
+      ],
+      "output_file": "osed-04-shellcoding.md"
+    },
+    {
+      "job_id": "oswa-01-intro-recon",
+      "status": "success",
+      "elapsed_s": 141.4,
+      "files": [
+        "training-source/htmls/chunks/oswa-01-intro-recon.md"
+      ],
+      "output_file": "oswa-01-intro-recon.md"
+    },
+    {
+      "job_id": "oswa-03-csrf-cors",
+      "status": "success",
+      "elapsed_s": 107.7,
+      "files": [
+        "training-source/htmls/chunks/oswa-03-csrf-cors.md"
+      ],
+      "output_file": "oswa-03-csrf-cors.md"
+    },
+    {
+      "job_id": "oswa-02-xss",
+      "status": "success",
+      "elapsed_s": 160.7,
+      "files": [
+        "training-source/htmls/chunks/oswa-02-xss.md"
+      ],
+      "output_file": "oswa-02-xss.md"
+    },
+    {
+      "job_id": "oswa-04-sqli",
+      "status": "success",
+      "elapsed_s": 150.9,
+      "files": [
+        "training-source/htmls/chunks/oswa-04-sqli.md"
+      ],
+      "output_file": "oswa-04-sqli.md"
+    },
+    {
+      "job_id": "oswa-06-command-injection-final",
+      "status": "success",
+      "elapsed_s": 169.5,
+      "files": [
+        "training-source/htmls/chunks/oswa-06-command-injection-final.md"
+      ],
+      "output_file": "oswa-06-command-injection-final.md"
+    },
+    {
+      "job_id": "oswa-05-auth-ssrf-advanced",
+      "status": "success",
+      "elapsed_s": 190.2,
+      "files": [
+        "training-source/htmls/chunks/oswa-05-auth-ssrf-advanced.md"
+      ],
+      "output_file": "oswa-05-auth-ssrf-advanced.md"
+    }
+  ]
+}

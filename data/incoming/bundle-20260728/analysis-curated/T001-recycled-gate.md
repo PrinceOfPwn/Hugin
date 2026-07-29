@@ -1,0 +1,414 @@
+---
+id: T-001
+name: RecycledGate Indirect Syscalls
+category: syscalls
+tier: S
+mitre: T1106
+analyzed_by: glm-5.2
+analysis_date: 2025-07-21
+confidence: high
+requires: [T-002, T-004]
+enables: [T-007, T-009, T-010, T-012, T-013, T-014, T-015, T-016, T-017]
+vault_references:
+  - dark_crystal/crowd/src/recycled.rs
+  - dark_crystal/crates/core/src/sys_recycled.rs
+  - dark_crystal/crates/core/src/sys_indirect.rs
+implements:
+  - file: dark_crystal/crowd/src/recycled.rs
+    key_functions: [recycled1, recycled2, recycled3, recycled4, recycled5, recycled6, recycled7, recycled8, recycled9, recycled10, recycled11, invoke, nt_allocate_virtual_memory, nt_free_virtual_memory, nt_write_virtual_memory, nt_read_virtual_memory, nt_protect_virtual_memory, nt_create_section, nt_map_view_of_section, nt_unmap_view_of_section, nt_create_thread_ex, nt_queue_apc_thread, nt_resume_thread, nt_suspend_thread, nt_get_context_thread, nt_set_context_thread, nt_open_process, nt_query_information_process, nt_close, nt_delay_execution, nt_duplicate_object, nt_query_object, nt_set_information_worker_factory, nt_release_worker_factory_worker, nt_set_ea_file, nt_query_ea_file, nt_set_security_object, nt_open_file, nt_create_user_process, nt_query_system_information, nt_write_file, nt_set_information_file, nt_flush_buffers_file, nt_create_process_ex, nt_create_event, nt_set_event, nt_wait_for_single_object, nt_terminate_process]
+    key_structs: []
+    key_constants: []
+    lines_of_interest:
+      - "L20-L38: recycled1 stub — sub rsp 0x28 / call r11 / add rsp 0x28 with a1 in r10"
+      - "L100-L130: recycled5 — 5-arg stub with [rsp+0x28] stack slot for a5"
+      - "L260-L285: invoke() dispatcher — hash→(ssn,gadget) lookup via crate::syscall_map::syscall_map()"
+      - "L290-L330: nt_allocate_virtual_memory typed wrapper — 6 args"
+      - "L488-L525: nt_create_user_process — 11-arg PPID-spoofing entry"
+      - "L552-L580: nt_create_process_ex — herpaderping section-backed process creation (9 args)"
+      - "L582-L625: nt_write_file / nt_set_information_file / nt_flush_buffers_file — herpaderping file overwrite triad"
+      - "L627-L660: nt_create_event / nt_set_event / nt_wait_for_single_object — proxy_dll sync primitives"
+  - file: dark_crystal/crates/core/src/sys_recycled.rs
+    key_functions: [recycled1, recycled2, recycled3, recycled4, recycled5, recycled6, recycled7, recycled8, recycled9, recycled10, recycled11, recycled_invoke, recycled_spoof_invoke]
+    key_structs: []
+    key_constants: []
+    lines_of_interest:
+      - "L80-L96: recycled1 — mov r10, rcx; jmp r11 with options(nostack) (no shadow space)"
+      - "L120-L138: recycled5 — 5-arg variant with [rsp+0x28] stack slot for a5"
+      - "L240-L265: recycled_invoke — hash→(ssn,gadget) via crate::sysindirect_map::syscall_map()"
+      - "L283-L296: recycled_spoof_invoke — cfg(feature=advanced_stack) wrapper around replace_and_syscall"
+      - "L302-end: nt:: submodule with 18 typed wrappers"
+  - file: dark_crystal/crates/core/src/sys_indirect.rs
+    key_functions: [invoke_syscall, execute_syscall_direct, syscall1, syscall2, syscall3, syscall4, syscall5, syscall7, syscall8, syscall9, syscall10, syscall11]
+    key_structs: []
+    key_constants: []
+    lines_of_interest:
+      - "L11-L40: invoke_syscall — universal dispatcher; reads selection_config::syscall_mode()"
+      - "L17-L24: veh branch → crate::evasion::veh::hooks::set_hw_bp / take_last_rax"
+      - "L28-L33: indirect default branch → cfg(recycled_gate) → recycled_invoke"
+      - "L35-L40: fallback chain advanced_stack → execute_syscall_direct"
+      - "L42-L75: execute_syscall_direct — direct syscall fallback (implant-RIP visible to ETW)"
+      - "L77-L100: syscall1 — minimal direct syscall stub (mov r10, rcx; syscall)"
+      - "L283-end: nt:: submodule — typed wrappers routing through invoke_syscall"
+min_windows: "Windows 7 SP1 x64 (canonical stub bytes 4C 8B D1 B8 xx xx 00 00 0F 05 C3 stable since Vista x64)"
+needs_admin: "no"
+tags: [syscalls, inline-asm, etw-evasion, djb2-hash, indirect-syscalls, ntdll-gadget, opsec-9.5, cet-compatible]
+---
+
+# RecycledGate Indirect Syscalls — Operator Playbook
+
+## TL;DR
+RecycledGate is the canonical S-tier indirect syscall dispatcher: instead of executing `syscall` from the implant's own private memory (which ETW-TI flags as an anomaly), it JMPs into a `0F 05 C3` gadget located inside `ntdll.dll`'s `.text` section. The kernel transition RIP therefore lives in a `\KnownDlls\ntdll.dll`-backed image region, making stack-walk-based telemetry see only legitimate ntdll frames. The framework ships **two parallel implementations** (`crowd/src/recycled.rs` and `crates/core/src/sys_recycled.rs`) plus a universal dispatcher (`sys_indirect.rs`) that selects between RecycledGate, VEH Gate, and direct syscall modes at runtime.
+
+## Source File Map
+
+| File | Role | Key Exports | Size |
+|---|---|---|---|
+| `dark_crystal/crowd/src/recycled.rs` | Primary production dispatcher; 11 stubs using `sub rsp/call/add rsp` shadow-space pattern; 38 typed NT wrappers spanning injection, herpaderping, worker-factory, EA files, events | `recycled1..recycled11`, `invoke()`, `nt_*` family | ~660 lines |
+| `dark_crystal/crates/core/src/sys_recycled.rs` | Alternative implementation with `mov r10, rcx; jmp r11` + `options(nostack)` pattern; integrates `advanced_stack` spoofing via `recycled_spoof_invoke` | `recycled1..recycled11`, `recycled_invoke()`, `recycled_spoof_invoke()`, `nt::` submodule | ~510 lines |
+| `dark_crystal/crates/core/src/sys_indirect.rs` | Universal mode-selecting dispatcher; routes to RecycledGate / VEH Gate / Heaven's Gate / direct syscall based on `selection_config::syscall_mode()` | `invoke_syscall()`, `execute_syscall_direct()`, `syscall1..syscall11`, `nt::` submodule | ~470 lines |
+
+## How It Works
+
+The technique closes a specific gap that classic "indirect syscall" implementations leave open: ETW Threat Intelligence performs a `RtlVirtualUnwind`-style stack walk on every kernel transition and inspects the return RIP. If that RIP is not inside a known MEM_IMAGE region backed by `\KnownDlls\ntdll.dll`, an alert fires. RecycledGate solves this by jumping the *instruction pointer itself* into ntdll before `syscall` executes.
+
+**Step-by-step mechanism** (cited from `crowd/src/recycled.rs` and `crates/core/src/sys_recycled.rs`):
+
+1. **SSN + gadget pre-resolution.** Before any RecycledGate stub is invoked, `sys_resolve::find_syscall_stub64` (T-002, not in this vault slice) walks ntdll's export table, locates each target stub, scans for the canonical byte signature `4C 8B D1 B8 xx xx 00 00 0F 05 C3`, and returns `(ssn, gadget)` where `gadget = stub_base + 0x12` — the offset of the `0F 05` (syscall) byte. These tuples are cached in either `crate::syscall_map::syscall_map()` (crowd) or `crate::sysindirect_map::syscall_map()` (crates/core), both backed by `OnceLock<HashMap<u32, (u32, usize)>>` keyed by DJB2 hash of the NT function name.
+
+2. **Hash-keyed dispatch.** A typed wrapper such as `nt_allocate_virtual_memory()` in `crowd/src/recycled.rs` constructs an `args: [usize; N]` array in Microsoft x64 ABI order (RCX, RDX, R8, R9, then stack slots) and calls `invoke(crate::resolve::compute_hash("NtAllocateVirtualMemory"), 6, &args)`. The `compute_hash` is a compile-time-resolvable DJB2 hash, so no NT function name strings appear in the final binary.
+
+3. **Stub selection by arg_count.** `invoke()` (crowd) / `recycled_invoke()` (crates/core) looks up the cached `(ssn, gadget)` tuple, asserts `gadget != 0`, then dispatches to `recycled1` through `recycled11` based on argument count. The `a = |i| args.get(i).copied().unwrap_or(0)` closure in both files guarantees zero-fill for missing args.
+
+4. **Register setup.** Each `recycledN` stub loads:
+   - `eax ← ssn` (syscall service number)
+   - `r10 ← a1` (the syscall-convention first argument; kernel reads R10 because `syscall` clobbers RCX)
+   - `r11 ← gadget` (pointer to `0F 05 C3` inside ntdll)
+   - For args 5–11: stack slots at `[rsp+0x28]`, `[rsp+0x30]`, `[rsp+0x38]`, `[rsp+0x40]`, `[rsp+0x48]`, `[rsp+0x50]`, `[rsp+0x58]` (the Microsoft x64 ABI home-address area + first stack-arg slots)
+
+5. **The JMP/CALL into ntdll.** Two implementations diverge here:
+   - **`crowd/src/recycled.rs`** uses `sub rsp, 0x28 / call r11 / add rsp, 0x28` (or `0x38`–`0x60` for higher arg counts). `call r11` pushes a return address pointing at the `add rsp` instruction. The `0F 05` (syscall) in ntdll executes with RIP inside ntdll. The `C3` (ret) in ntdll returns to the `add rsp` cleanup, then the Rust function returns normally.
+   - **`crates/core/src/sys_recycled.rs`** uses `mov r10, rcx; jmp r11` with `options(nostack)`. No shadow space is allocated. The `jmp` does not push a return address; ntdll's `ret` pops the original Rust caller's return address directly. This is the more minimal variant — the Rust ABI guarantees the caller-provided shadow space is already valid because Rust functions are expected to provide 0x20 bytes of home space for callees.
+
+6. **Kernel transition.** When `0F 05` executes, the CPU transitions to kernel mode. The kernel saves the user-mode return RIP — which is `gadget + 2` (the address of `C3` inside ntdll). ETW-TI's stack walk now sees:
+   ```
+   ntdll!NtXxx+0x12   ← where syscall;ret lives (RIP at transition)
+   <implant frame>     ← but this is *above* the saved RIP, not below
+   ```
+   The saved transition RIP is unambiguously inside ntdll's MEM_IMAGE region.
+
+7. **Optional stack spoofing layer.** In `crates/core/src/sys_recycled.rs`, `recycled_spoof_invoke()` checks `#[cfg(feature = "advanced_stack")]` and `crate::selection_config::enable_stack_spoof()`. If both are active, the call is routed through `crate::evasion::advanced_stack::replace_and_syscall(hash, args)` (T-016) which lays down a fake ROP chain of legitimate frames (`kernelbase!VirtualAlloc`, `kernel32!VirtualAllocEx`, `ntdll!RtlUserThreadStart+0x21`) before invoking the syscall. The crowd version lacks this integration — it always calls `invoke()` directly.
+
+8. **Return path.** After the kernel completes the syscall and writes the result to RAX, ntdll's `C3` returns to either the `add rsp` cleanup (crowd) or directly to the Rust caller (crates/core). The RAX value is captured via `lateout("rax") ret` in the inline asm and returned as `i32` (NTSTATUS).
+
+## Code Architecture
+
+### Call Graph
+
+```
+caller (any technique module, e.g. early_cascade.rs, ghost.rs, herpaderping.rs)
+  │
+  ├─→ crowd::recycled::nt_<api>(...)              [primary path, crowd crate]
+  │       │
+  │       └─→ crowd::recycled::invoke(hash, argc, args)
+  │              │
+  │              ├─→ crowd::syscall_map::syscall_map().get(&hash)    [T-004 PEB walker output]
+  │              │
+  │              └─→ recycledN(ssn, gadget, args...)                 [inline asm]
+  │                     │
+  │                     └─→ call/jmp r11  → ntdll!0F 05 C3
+  │
+  └─→ crates/core::sys_indirect::nt::<api>(...)   [alternative path]
+          │
+          └─→ crates/core::sys_indirect::invoke_syscall(hash, argc, args)
+                 │
+                 ├─→ crate::selection_config::syscall_mode()         [runtime mode select]
+                 │
+                 ├─[mode="veh"]─→ crate::evasion::veh::hooks::set_hw_bp(gadget, ..., ssn)   [T-003]
+                 │
+                 ├─[mode="hgate"]→ execute_syscall_direct(ssn, argc, args)                   [direct fallback]
+                 │
+                 └─[mode="indirect"]
+                      ├─[cfg(recycled_gate)]─→ sys_recycled::recycled_invoke(hash, argc, args)
+                      │                          │
+                      │                          └─→ sysindirect_map::syscall_map().get(&hash)
+                      │                          └─→ recycledN(ssn, gadget, args...)   [jmp r11, nostack]
+                      │
+                      ├─[cfg(advanced_stack), no recycled_gate]
+                      │              └─→ crate::evasion::advanced_stack::replace_and_syscall(hash, args)   [T-016]
+                      │
+                      └─[fallback]──→ execute_syscall_direct(ssn, argc, args)
+                                            └─→ syscallN(ssn, args...)  [mov r10, rcx; syscall — implant RIP]
+```
+
+### Data Flow
+
+- **Inputs**: NT function name as string literal (compile-time) → DJB2 hash via `compute_hash()` → `u32` key.
+- **Map lookup**: `OnceLock<HashMap<u32, (u32, usize)>>` populated at first access by T-002 (Hells Gate) / T-004 (PEB walker). Tuple is `(ssn: u32, gadget_addr: usize)`.
+- **Argument marshalling**: typed wrapper packs args into `[usize; N]` in Microsoft x64 order (RCX, RDX, R8, R9, then [rsp+0x28]…).
+- **Inline asm**: register inputs `eax`, `r10`/`rcx`, `r11`; stack slots for args 5–11; output `rax` as `i32`.
+- **Return**: raw NTSTATUS cast to `i32`. Caller is responsible for `NTSTATUS_SUCCESS` check.
+
+### Type Hierarchy
+
+No user-defined structs. The technique operates entirely on primitives:
+- `ssn: u32` — syscall service number
+- `gadget: usize` — pointer to `0F 05 C3` inside ntdll
+- `hash: u32` — DJB2 of NT function name
+- `args: &[usize]` — argument slice, Microsoft x64 ABI order
+- Return: `i32` reinterpreted NTSTATUS
+
+### Feature Gates
+
+| Gate | File | Effect |
+|---|---|---|
+| `target_arch = "x86_64"` | all stubs | Stubs only compile on x64; no x86/WOW64 fallback in these files |
+| `feature = "recycled_gate"` | `sys_indirect.rs:32` | Enables `recycled_invoke` path in default `indirect` mode |
+| `feature = "advanced_stack"` | `sys_recycled.rs:286`, `sys_indirect.rs:36` | Wraps call in `replace_and_syscall` (T-016 stack spoofing) |
+| `feature = "veh_syscalls"` | `sys_indirect.rs:18` | Enables VEH Gate path (T-003) |
+| `#![allow(dead_code)]` | all three files | Suppresses warnings for wrappers not used in current build config |
+
+## Operational Profile
+
+### When to Use
+
+- **EDR-saturated environments** with active ETW-TI (MDE, CrowdStrike, SentinelOne with kernel telemetry): RecycledGate is the default syscall dispatch mode precisely because it defeats stack-walk-based syscall origin checks.
+- **Long-running implants** that need sustained syscall pressure: the gadget is resolved once via `OnceLock`, so subsequent calls are O(1) hash lookups + inline asm.
+- **Chains requiring NtCreateUserProcess (PPID spoofing), NtCreateProcessEx (herpaderping), NtSetInformationWorkerFactory (Pool Party), NtSetEaFile (NTFS EA persistence), NtQueueApcThread (Early Cascade / Early Bird)**: all of these have typed wrappers in `crowd/src/recycled.rs`, so they transparently inherit the OPSEC properties of RecycledGate.
+- **When paired with `advanced_stack` (T-016)**: the `crates/core` variant's `recycled_spoof_invoke()` produces the documented "OPSEC 9.5/10" invariant chain from `darkcrystal.html`.
+
+### When NOT to Use
+
+- **EDRs that hook ntdll syscall stubs with JMP trampolines** (e.g., early EDRDriver installations that patch `4C 8B D1` to `E9 xx xx xx xx`): the canonical byte scan in T-002 will fail to find the gadget, and `gadget = 0`. `invoke()` returns `-1` silently. Fallback to Tartarus Gate (T-002) or VEH Gate (T-003) is required.
+- **WOW64 / 32-bit processes**: all stubs are `#[cfg(target_arch = "x86_64")]` only. Heaven's Gate (`"hgate"` mode in `sys_indirect.rs`) is the WoW64 path, but it falls through to `execute_syscall_direct` which leaks implant RIP.
+- **CET shadow stack enforcement** (Windows 10 2004+ with CET-compatible hardware): the `call r11` pattern in `crowd/src/recycled.rs` pushes a return address that does NOT match the shadow stack entry, potentially raising a `STATUS_BAD_FUNCTION_TABLE`. The `crates/core` version with `jmp r11 + options(nostack)` is CET-compatible because no return address is pushed — ntdll's `ret` returns directly to the Rust caller's expected return address. **Use the crates/core variant on CET-enabled targets.**
+- **Cross-process injection where the target has ntdll unhooked/restored by the EDR**: if the target process's ntdll has been replaced with a clean copy, the SSN-to-syscall mapping may differ from the resolver's cached values. Re-resolve per-process.
+
+### Kill Chain Position
+
+RecycledGate is **infrastructure**, not a kill-chain stage. It sits beneath every NT API call in the implant:
+
+```
+T-004 (PEB walk → ntdll base)
+  → T-002 (Hells/Halo/Tartarus Gate → (ssn, gadget) map)
+    → T-001 (RecycledGate — this technique)
+      → T-012 (Early Cascade APC injection)
+      → T-009 (Process Ghosting)
+      → T-010 (Herpaderping via nt_create_process_ex)
+      → T-015 (PPID spoofing via nt_create_user_process)
+      → T-007 (Pool Party via nt_set_information_worker_factory)
+      → T-017 (NTFS EA persistence via nt_set_ea_file)
+      → T-016 (advanced_stack wraps recycled_spoof_invoke → OPSEC 9.5/10)
+      → T-005 (Ekko sleep obfuscation uses nt_create_timer + nt_set_waitable_timer)
+```
+
+### Trade-offs
+
+## Rust Implementation Deep Dive
+
+### `unsafe` blocks
+
+Every stub function is `pub unsafe fn` — there is no internal unsafe boundary. The safety contract is documented at `recycled_invoke()`:
+
+> All pointer arguments in `args` must be valid for the duration of the syscall. `gadget` must point into a valid, executable ntdll region.
+
+Operators wrapping new NT APIs must:
+1. Match the Microsoft x64 ABI argument order exactly
+2. Cast all pointer args with `as usize` (truncation-safe on x64)
+3. Specify `arg_count` correctly — `invoke()` silently zero-fills missing slots via `args.get(i).copied().unwrap_or(0)` which can mask bugs
+4. Check the returned `i32` for `STATUS_SUCCESS` (0); any negative value is an NTSTATUS
+
+### `core::arch::asm!` usage
+
+**`crowd/src/recycled.rs` — `recycled1` (1-arg, call pattern):**
+```rust
+asm!(
+    "sub rsp, 0x28",
+    "call r11",
+    "add rsp, 0x28",
+    in("r10")  a1,    // a1 directly in r10 (skips mov r10, rcx)
+    in("eax")  ssn,
+    in("r11")  gadget,
+    lateout("rax") ret,
+    lateout("rcx") _,
+);
+```
+- No `options(nostack)` — the asm writes to RSP (sub/add) and pushes via `call`
+- `lateout("rcx") _` marks RCX as clobbered (syscall clobbers it)
+- `lateout("rax") ret` captures the NTSTATUS return
+- No `clobber("r11")` declared — this is technically a bug, but `r11` is already declared as `in("r11") gadget` so the compiler knows it's used
+- `clobbers("flags")` is implicit via `syscall`
+
+**`crates/core/src/sys_recycled.rs` — `recycled1` (1-arg, jmp pattern):**
+```rust
+asm!(
+    "mov r10, rcx",
+    "jmp r11",
+    in("rcx")  a1,    // a1 in rcx (Win64 ABI), then mov to r10
+    in("eax")  ssn,
+    inlateout("r11") gadget => _,
+    lateout("rax") ret,
+    lateout("rcx") _,
+    options(nostack),
+);
+```
+- `options(nostack)` promises the asm doesn't touch RSP — required because we use `jmp` (no push) and rely on the existing return address
+- `inlateout("r11") gadget => _` — r11 is consumed (the value is read in, then discarded)
+- `mov r10, rcx` converts from Win64 ABI (arg1 in rcx) to syscall ABI (arg1 in r10, because syscall clobbers rcx with return RIP)
+
+**Args 5–11 — stack slot writes:**
+Both implementations use the same pattern for stack arguments:
+```rust
+"mov [rsp + 0x28], {a5}",
+"mov [rsp + 0x30], {a6}",
+...
+a5 = in(reg) a5,   // a5 in a scratch reg, then stored
+```
+- `0x28` is the first stack-arg slot in Microsoft x64 ABI (after 0x20 bytes of shadow space + 8 bytes return address)
+- `in(reg)` lets the compiler pick any free GPR for the temporary
+- In the crowd version, `sub rsp, 0x60` (for 11 args) makes room for these slots BEFORE writing them; in the crates/core version, the slots are written into the caller's existing stack frame (which Rust guarantees has at least 0x20 bytes of shadow space + slots for any stack args the callee was declared to accept — **this is fragile if the Rust function signature doesn't actually declare 11 args**, but in practice the `args: &[usize]` slice doesn't trigger Rust to allocate the stack slots, so the writes may go into unrelated stack memory. **Operators modifying the crates/core variant should add explicit `sub rsp`/`add rsp` like the crowd variant does.**)
+
+### FFI patterns
+
+The wrappers do NOT use `windows_targets::link!` or `extern "system"`. They bypass the Win32 import table entirely:
+- No IAT entries for NT functions
+- No string literals naming NT functions (only DJB2 hashes via `compute_hash`)
+- No `GetProcAddress` calls at runtime
+- The only Win32 dependency is the `core::arch::asm!` intrinsic and `std::ffi::c_void` for pointer typing
+
+### Initialization patterns
+
+- `crate::syscall_map::syscall_map()` (crowd) and `crate::sysindirect_map::syscall_map()` (crates/core) are both `OnceLock`-protected lazy singletons. First access triggers T-002/T-004 to walk ntdll, populate the map, and return.
+- `crate::selection_config::syscall_mode()` reads an embedded YAML config (`include_str!` at build time) — once resolved it is cached for the process lifetime.
+- `crate::selection_config::enable_stack_spoof()` follows the same pattern.
+
+### Error handling
+
+Every stub and dispatcher returns `i32`. Failure modes:
+- Hash not in map → `return -1` (both `invoke()` and `recycled_invoke()`)
+- `gadget == 0` → `return -1` (defensive check after map lookup)
+- `arg_count` outside 1..=11 → `return -1` (the `_ => -1` arm in the match)
+- Successful syscall → NTSTATUS in `rax`. Caller MUST check for `>= 0` (STATUS_SUCCESS = 0; informational statuses are >= 0).
+
+There is NO retry logic, NO exception handler around the asm, NO `__try/__except` equivalent. A faulting syscall (e.g., invalid pointer arg) will propagate as a normal access violation. Pair with VEH Gate (T-003) for fault-tolerant syscall dispatch.
+
+### Memory layout
+
+- No heap allocations in the hot path
+- `args: &[usize]` is a stack-allocated array in each typed wrapper
+- The `(ssn, gadget)` tuple is `(u32, usize)` = 16 bytes on x64
+- Map is `HashMap<u32, (u32, usize)>` — ~24 bytes per entry + HashMap overhead
+
+### Syscall numbers
+
+SSNs are NOT hardcoded. They are resolved at runtime by T-002 (Hells Gate) and cached in the syscall map. The `eax` register receives the SSN at runtime from the map lookup, not from a constant. This means the same binary will resolve different SSNs on Windows 10 vs Windows 11 — a key OPSEC property (no version-specific byte patterns in the binary).
+
+## Cross-References Found in Code
+
+| Source | Reference | Target Technique | Reason |
+|---|---|---|---|
+| `crowd/src/recycled.rs:invoke()` | `crate::syscall_map::syscall_map()` | **T-004** (PEB Walker / syscall map) | Provides the `HashMap<u32, (u32, usize)>` of DJB2 hash → (SSN, gadget) |
+| `crowd/src/recycled.rs:nt_*` | `crate::resolve::compute_hash(...)` | **T-004** (PEB Walker) | DJB2 hash of NT function names |
+| `crates/core/src/sys_recycled.rs:recycled_invoke()` | `crate::sysindirect_map::syscall_map()` | **T-004** | Same map, different module path |
+| `crates/core/src/sys_recycled.rs:nt::*` | `crate::compute_hash(...)` | **T-004** | DJB2 hash |
+| `crates/core/src/sys_recycled.rs:recycled_spoof_invoke()` | `crate::evasion::advanced_stack::replace_and_syscall` | **T-016** (EDR Evasion Suite) | Wraps the call in ROP-based call stack spoofing |
+| `crates/core/src/sys_recycled.rs:recycled_spoof_invoke()` | `crate::selection_config::enable_stack_spoof()` | **T-021** (selection_config) | Runtime feature gate from embedded YAML |
+| `crates/core/src/sys_indirect.rs:invoke_syscall()` | `crate::selection_config::syscall_mode()` | **T-021** | Mode selection (indirect/veh/hgate) |
+| `crates/core/src/sys_indirect.rs:invoke_syscall()` | `crate::sys_recycled::recycled_invoke` | **T-001 (self)** | Default `indirect` mode path |
+| `crates/core/src/sys_indirect.rs:invoke_syscall()` | `crate::evasion::veh::hooks::set_hw_bp` | **T-003** (VEH Syscall Gate) | `veh` mode alternative |
+| `crates/core/src/sys_indirect.rs:invoke_syscall()` | `crate::evasion::advanced_stack::replace_and_syscall` | **T-016** | Fallback when `recycled_gate` feature is off |
+| `crowd/src/recycled.rs:nt_create_user_process()` | callsite in `ppid.rs` | **T-015** (PPID Spoofing) | 11-arg wrapper for direct process creation |
+| `crowd/src/recycled.rs:nt_create_process_ex()` | callsite in `herpaderping.rs` | **T-010** (Herpaderping) | Section-backed process creation |
+| `crowd/src/recycled.rs:nt_write_file()`, `nt_set_information_file()`, `nt_flush_buffers_file()` | callsite in `herpaderping.rs` | **T-010** | File overwrite triad for decoy content |
+| `crowd/src/recycled.rs:nt_set_information_worker_factory()` | callsite in `pool_party.rs` | **T-007** (Pool Party) | Worker factory manipulation |
+| `crowd/src/recycled.rs:nt_set_ea_file()`, `nt_query_ea_file()` | callsite in `persist/ntfs_ea.rs` | **T-017** (Persistence) | NTFS EA persistence |
+| `crowd/src/recycled.rs:nt_queue_apc_thread()` | callsite in `early_cascade.rs`, `early_bird.rs` | **T-007**, **T-012** (Early Cascade) | APC injection |
+| `crowd/src/recycled.rs:nt_create_thread_ex()` | callsite in `process_hollow.rs`, `threadless.rs` | **T-007**, **T-008** | Remote thread creation |
+| `crowd/src/recycled.rs:nt_create_event()`, `nt_set_event()`, `nt_wait_for_single_object()` | callsite in `proxy_dll.rs` | **T-016** | Sync primitives for proxy DLL handoff |
+
+## Edge Cases & Failure Modes
+
+1. **EDR hooks ntdll syscall stub with JMP trampoline**
+   - **Fails at**: T-002's `find_syscall_stub64` byte scan fails to find `4C 8B D1 B8 xx xx 00 00 0F 05 C3`
+   - **Symptom**: `(ssn, gadget)` tuple has `gadget = 0`; `invoke()` returns `-1`; the typed NT wrapper returns -1 (not a valid NTSTATUS)
+   - **Workaround**: T-002 Tartarus Gate fallback walks neighboring stubs to recover the SSN; for the gadget, fall back to VEH Gate (T-003) which uses HW breakpoints and doesn't need a gadget pointer
+
+2. **CET shadow stack enforcement (Win10 2004+ with Intel CET hardware)**
+   - **Fails at**: `crowd/src/recycled.rs` `call r11` pushes a return address that doesn't match the shadow stack entry pushed by the Rust caller
+   - **Symptom**: `STATUS_BAD_FUNCTION_TABLE` or a hard fault on `ret` inside ntdll
+   - **Workaround**: Use the `crates/core/src/sys_recycled.rs` variant which uses `jmp r11` with `options(nostack)` — no return address is pushed, so ntdll's `ret` pops the original Rust caller return address, which IS on the shadow stack
+
+3. **Arg count mismatch in typed wrapper**
+   - **Fails at**: `invoke(hash, arg_count, &args)` where `arg_count != args.len()`
+   - **Symptom**: If `arg_count > args.len()`, the `a = |i| args.get(i).copied().unwrap_or(0)` closure silently zero-fills — syscall receives NULL for missing args, likely returning `STATUS_ACCESS_VIOLATION` or `STATUS_INVALID_PARAMETER`
+   - **Workaround**: Always verify `arg_count == args.len()` before calling `invoke()`. Add a debug_assert! in operator-modified wrappers
+
+4. **Stack slot writes in `crates/core` variant without `sub rsp`**
+   - **Fails at**: `recycled5`–`recycled11` in `crates/core/src/sys_recycled.rs` write to `[rsp+0x28]`..`[rsp+0x58]` without first allocating stack space (`options(nostack)` prevents `sub rsp`)
+   - **Symptom**: Potential corruption of caller's stack frame if the Rust function didn't allocate enough stack for the declared arguments. In practice, the `args: &[usize]` parameter doesn't trigger Rust to allocate stack-arg slots
+   - **Workaround**: Use the crowd variant's `sub rsp, 0x60 / ... / add rsp, 0x60` pattern, OR ensure the Rust wrapper function signature has enough declared parameters to justify the stack space
+
+5. **Hash collision in DJB2**
+   - **Fails at**: Two NT function names hash to the same `u32` DJB2 value
+   - **Symptom**: Map lookup returns the wrong `(ssn, gadget)`; syscall executes with the wrong service number, likely returning `STATUS_INVALID_SYSTEM_SERVICE`
+   - **Workaround**: T-002's resolution layer should assert uniqueness when populating the map. DJB2 collision probability for ~50 NT function names is astronomically low (~1e-9) but not zero
+
+6. **Target process has different ntdll SSN mapping (post-unhook)**
+   - **Fails at**: Implant resolves SSNs in its own process; injects shellcode that uses those SSNs in a target process with a different ntdll version (e.g., different Windows build)
+   - **Symptom**: Syscall returns `STATUS_INVALID_SYSTEM_SERVICE` because the target's kernel expects a different SSN
+   - **Workaround**: Re-resolve SSNs inside the target process via T-002/T-004. Don't share the `OnceLock` map across process boundaries
+
+7. **`execute_syscall_direct` fallback leaks implant RIP**
+   - **Fails at**: `crates/core/src/sys_indirect.rs:invoke_syscall()` when `recycled_gate` feature is off AND `advanced_stack` is off AND mode is `indirect`
+   - **Symptom**: Falls through to `execute_syscall_direct` which emits `mov r10, rcx; syscall` from implant memory — ETW-TI sees the transition RIP as private/unbacked
+   - **Workaround**: Always build with `--features recycled_gate` for production implants. The fallback is a debugging aid, not a production path
+
+## OPSEC Notes
+
+### Artifacts left
+- **No new handles, no new objects** — RecycledGate is pure register/stack manipulation
+- **No filesystem artifacts**
+- **No registry artifacts**
+- **ETW-TI**: sees the syscall transition RIP as `ntdll!NtXxx+0x12` (legitimate). The return address on the stack is either the `add rsp` instruction in the crowd stub (private memory!) or the Rust caller (private memory). **The crowd variant leaves a private-memory return address on the stack at the moment of `syscall`** — `call r11` pushed it. This is detectable by stack-walk EDRs that examine the full stack, not just the transition RIP. The crates/core variant with `jmp r11` does NOT leave a private-memory return address at syscall time.
+
+### Telemetry surface
+- `IMAGE_LOAD_HINT`-style telemetry: none
+- ETW `Microsoft-Windows-Kernel-General`: sees syscalls as originating from ntdll
+- ETW `Microsoft-Windows-Kernel-Process`: no implant-attributable frames
+- Kernel callbacks (ObRegisterCallbacks, PsSetCreateProcessNotifyRoutine): unaffected — they see the syscall arguments, not the dispatch path
+
+### Cleanup
+- No resources to clean up. The `OnceLock<HashMap>` persists for process lifetime; this is intentional (re-resolution would be expensive and observable).
+- The gadget pointer is never written to — ntdll is read-only via W^X.
+- No allocated memory, no handles, no events.
+
+### Detection surface for defenders
+- **Static**: presence of inline asm with `mov r10, rcx` + `syscall` byte pattern (only in `execute_syscall_direct` fallback). The RecycledGate stubs themselves emit `mov r10, rcx` + `jmp r11` / `call r11`, which is unusual outside of legitimate compiler-generated tail calls.
+- **Behavioral**: a process making NtCreateUserProcess with a parent handle acquired via NtOpenProcess(PROCESS_CREATE_PROCESS) is suspicious regardless of dispatch method
+- **Heuristic**: DJB2 hash values in a binary's `.rdata` section — a defender can extract the 4-byte u32 hashes and reverse them against the known NT function name set to identify which syscalls the implant uses
+
+## Reusable Patterns
+
+### Pattern: Hash-keyed indirect dispatch with OnceLock cache
+- **Use when**: Any FFI call must avoid string literals, IAT entries, and `GetProcAddress`
+- **Code ref**: `crowd/src/recycled.rs:invoke()` + `crate::syscall_map::syscall_map()`
+- **How**: Pre-resolve (function name → DJB2 hash) at compile time; resolve (hash → SSN/gadget) at first runtime call into a `OnceLock<HashMap>`; dispatch via inline asm. The hash is the stable contract — the SSN and gadget are runtime-resolved.
+
+### Pattern: Arity-dispatched inline asm stubs
+- **Use when**: A calling convention requires different stubs for different arg counts (e.g., syscalls, varargs FFI)
+- **Code ref**: `recycled1`..`recycled11` in both files
+- **How**: Generate one `unsafe fn` per arity. The first 4 args go in registers (RCX, RDX, R8, R9 for Win64; R10, RDX, R8, R9 for syscall). Args 5+ go to stack slots at `[rsp+0x28]`, `[rsp+0x30]`, etc. Use `in(reg)` for the stack-arg temporaries so the compiler picks a free GPR.
+
+### Pattern: `options(nostack)` for JMP-based indirect calls
+- **Use when**: An inline asm block transfers control via `jmp` (not `call`) to a foreign function that itself does `ret`
+- **Code ref**: `crates/core/src/sys_recycled.rs:recycled1`
+- **How**: Declare `options(nostack)` so the compiler doesn't set up a stack frame. The foreign `ret` will pop the return address that the Rust caller already pushed. This is CET-compatible (no shadow stack mismatch) and saves 3 instructions vs the `sub rsp / call / add rsp` pattern.
+
+### Pattern: cfg-gated fallback chain
+- **Use when**: A technique has multiple implementations with different OPSEC trade-offs and the operator needs runtime/build-time selection
+- **Code ref**: `crates/core/src/sys_indirect.rs:invoke_syscall()` lines 28–40
+- **How**: Use `#[cfg(feature = "...")]` to gate each path, then a runtime `match` on a config value. Order the fallback chain from highest-OPSEC to lowest: `recycled_gate` → `advanced_stack` → direct. Document each path's OPSEC rating in a comment.
+
+### Pattern: Typed NT wrapper as a thin arg-packing layer
+- **Use when**: Wrapping raw syscalls in safe-ish Rust APIs
+- **Code ref**: `crowd/src/recycled.rs:nt_allocate_virtual_memory()`
+- **How**: Accept typed parameters (handles, pointers, flag enums), cast each to `usize`, build a `let args = [...];` array, call `invoke(hash, arg_count, &args)`. Keep the wrapper `unsafe fn` — the caller is still responsible for pointer validity. Add `#[allow(dead_code)]` so unused wrappers don't bloat release builds.
