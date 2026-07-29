@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type * as THREE from "three";
 import type { DatasetManifest, Entity } from "../lib/types";
 import { decodeFilters, encodeFilters, EMPTY_FILTER, filterEntities, type FilterState } from "../lib/filters";
 import FilterSidebar from "./FilterSidebar";
 import GraphThreeV3 from "./GraphThreeV3";
 import type { UniverseSettings } from "./UniverseControls";
+import Breadcrumb from "./Breadcrumb";
+import Minimap from "./Minimap";
+import CommandPalette from "./CommandPalette";
+import WelcomeTour from "./WelcomeTour";
+import AffordanceHint from "./AffordanceHint";
 
 const DEFAULT_UNIVERSE_SETTINGS: UniverseSettings = {
   edgesMode: "selected",
@@ -11,7 +17,13 @@ const DEFAULT_UNIVERSE_SETTINGS: UniverseSettings = {
   cinematic: true,
 };
 
-// GraphThreeV3 already accepts loose GraphDataIn — we mirror the props shape.
+// Human-readable galaxy labels — mirrors GraphThreeV3.GALAXY_LABELS.
+const GALAXY_LABELS: Record<string, string> = {
+  techniques: "Techniques", internals: "Internals", defenses: "Defenses",
+  chains: "Attack Chains", evidence: "Evidence", sources: "Sources",
+  gaps: "Gaps", architecture: "Architecture", tradecraft_qa: "Q&A",
+};
+
 interface Props {
   graphData: any;
   manifest: DatasetManifest;
@@ -25,6 +37,13 @@ export default function GraphPageShell({ graphData, manifest, entities }: Props)
   });
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [universe, setUniverse] = useState<UniverseSettings>(DEFAULT_UNIVERSE_SETTINGS);
+
+  // Ronda I: lifted selection + camera state for discoverability chrome.
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedGalaxyId, setSelectedGalaxyId] = useState<string | null>(null);
+  const [teleportTarget, setTeleportTarget] = useState<{ x: number; z: number; nonce: number } | null>(null);
+  const [externalSelectId, setExternalSelectId] = useState<string | null>(null);
+  const cameraRef = useRef<THREE.Camera | null>(null);
 
   // ─── URL sync (debounced 500ms) ───────────────────────────────────────────
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -53,6 +72,56 @@ export default function GraphPageShell({ graphData, manifest, entities }: Props)
 
   const totalNodes = entities.length;
   const activeCount = filteredIds ? filteredIds.size : totalNodes;
+
+  // Entity map for O(1) title/id lookup from breadcrumb + palette.
+  const entityById = useMemo(() => {
+    const m = new Map<string, Entity>();
+    for (const e of entities) m.set(e.id, e);
+    return m;
+  }, [entities]);
+
+  // Entities passed to Minimap + CommandPalette respect the current filter.
+  const visibleEntities = useMemo<Entity[]>(() => {
+    if (!filteredIds) return entities;
+    const out: Entity[] = [];
+    for (const e of entities) if (filteredIds.has(e.id)) out.push(e);
+    return out;
+  }, [entities, filteredIds]);
+
+  const selectedEntity = selectedNodeId ? entityById.get(selectedNodeId) ?? null : null;
+  const selectedGalaxyLabel = selectedGalaxyId
+    ? (GALAXY_LABELS[selectedGalaxyId] ?? selectedGalaxyId)
+    : (selectedEntity ? (GALAXY_LABELS[selectedEntity.galaxyId] ?? selectedEntity.galaxyId) : null);
+
+  // ─── Handlers wired into GraphThreeV3 ─────────────────────────────────────
+  const handleResetFocus = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedGalaxyId(null);
+    // Teleport camera back near universe origin.
+    setTeleportTarget({ x: 0, z: 0, nonce: performance.now() });
+  }, []);
+
+  const handleClearNode = useCallback(() => {
+    // "Click galaxy" in breadcrumb: drop node selection, keep galaxy focus.
+    setSelectedNodeId(null);
+    setExternalSelectId(null);
+  }, []);
+
+  const handleTeleport = useCallback((x: number, z: number) => {
+    setTeleportTarget({ x, z, nonce: performance.now() });
+  }, []);
+
+  const handleSelectFromPalette = useCallback((entity: Entity) => {
+    setSelectedNodeId(entity.id);
+    setSelectedGalaxyId(entity.galaxyId);
+    // Bump nonce via unique object so the child effect re-fires even if the
+    // id is the same as last time.
+    setExternalSelectId(entity.id + ":" + performance.now());
+  }, []);
+
+  // Pass the nonce-suffixed string to the child so its effect re-fires on
+  // every palette pick, even when the same id is selected twice in a row.
+  // Child splits off the id before using it.
 
   return (
     <div style={{ display: "flex", width: "100%", height: "100vh", background: "#000005", position: "relative" }}>
@@ -104,14 +173,37 @@ export default function GraphPageShell({ graphData, manifest, entities }: Props)
       )}
 
       {/* Graph */}
-      <div style={{ flex: 1, minWidth: 0, height: "100vh" }}>
+      <div style={{ flex: 1, minWidth: 0, height: "100vh", position: "relative" }}>
         <GraphThreeV3
           graphData={graphData}
           manifest={manifest}
           filteredIds={filteredIds}
           universe={universe}
           onUniverseChange={setUniverse}
+          cameraRef={cameraRef}
+          teleportTarget={teleportTarget}
+          onNodeSelect={(id) => {
+            setSelectedNodeId(id);
+            if (id) {
+              const ent = entityById.get(id);
+              if (ent) setSelectedGalaxyId(ent.galaxyId);
+            }
+          }}
+          onGalaxySelect={setSelectedGalaxyId}
+          externalSelectId={externalSelectId}
         />
+
+        {/* Discoverability overlays (Ronda I) */}
+        <Breadcrumb
+          galaxyLabel={selectedGalaxyLabel}
+          nodeLabel={selectedEntity?.title ?? null}
+          onReset={handleResetFocus}
+          onGalaxyClick={handleClearNode}
+        />
+        <Minimap entities={visibleEntities} cameraRef={cameraRef} onTeleport={handleTeleport} />
+        <CommandPalette entities={visibleEntities} onSelect={handleSelectFromPalette} />
+        <AffordanceHint />
+        <WelcomeTour />
       </div>
     </div>
   );

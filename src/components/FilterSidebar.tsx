@@ -171,6 +171,7 @@ export default function FilterSidebar({ entities, filter, onChange, storageKey =
   return (
     <aside style={{
       width: 320, maxWidth: "90vw", height: "100%",
+      maxHeight: "calc(100vh - 96px)",
       background: "linear-gradient(180deg, rgba(0,8,20,0.92), rgba(0,4,12,0.85))",
       borderRight: "1px solid rgba(0,240,255,0.15)", backdropFilter: "blur(8px)",
       fontFamily: "'Fira Code', ui-monospace, monospace", fontSize: 12,

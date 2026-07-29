@@ -775,8 +775,9 @@ for (const entity of entities) {
     const incl = Number((hash01(`${entity.id}:i`) * Math.PI * 0.55).toFixed(4));
     const M0 = Number((hash01(`${entity.id}:M`) * Math.PI * 2).toFixed(4));
     // Faster orbits around heavier parents (crude Kepler-ish: n ∝ √M/a³).
+    // Tuned so a typical satellite completes a revolution in ~30–45 s.
     const n = Number(
-      (0.05 + 0.15 * ((bestParent.mass || 1) / ((entity.mass || 0) + 1))).toFixed(5)
+      (0.15 + 0.35 * ((bestParent.mass || 1) / ((entity.mass || 0) + 1))).toFixed(5)
     );
     entity.orbit = { a, e, omega, Omega, incl, M0, n };
     orbitCount += 1;

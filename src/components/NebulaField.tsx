@@ -40,10 +40,11 @@ const frag = /* glsl */`
     vec2 p = vUv - 0.5;
     float d = length(p) * 2.0;
     if (d > 1.0) discard;
-    // Soft radial gradient: bright core, long tail.
-    float halo = pow(1.0 - d, 2.2);
-    float core = smoothstep(0.4, 0.0, d) * 0.55;
-    float a = (halo * 0.55 + core) * uIntensity;
+    // Gaussian-like soft falloff: outer 40% of radius is nearly transparent
+    // so nebulae don't drown the nodes behind them.
+    float gauss = exp(-d * d * 4.5);
+    float core = smoothstep(0.35, 0.0, d) * 0.35;
+    float a = (gauss * 0.45 + core) * uIntensity;
     gl_FragColor = vec4(uColor, a);
   }
 `;
@@ -81,12 +82,12 @@ function NebulaSprite({ galaxy, intensity }: { galaxy: NebulaGalaxy; intensity: 
       geometry={geometry}
       material={material}
       position={[galaxy.centroid.x, galaxy.centroid.y, galaxy.centroid.z]}
-      renderOrder={-2}
+      renderOrder={-100}
     />
   );
 }
 
-export default function NebulaField({ galaxies, intensity = 0.15 }: Props) {
+export default function NebulaField({ galaxies, intensity = 0.06 }: Props) {
   return (
     <group>
       {galaxies.map((g) => (

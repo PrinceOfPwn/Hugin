@@ -15,6 +15,9 @@ interface Props {
   onChange: (next: UniverseSettings) => void;
   style?: CSSProperties;
 
+  // ── Reset view — optional; if omitted the button is not rendered ─────────
+  onReset?: () => void;
+
   // ── Spacetime (F5) — optional; if omitted the section is not rendered ────
   spacetimeMode?: SpacetimeMode;
   onSpacetimeModeChange?: (mode: SpacetimeMode) => void;
@@ -35,8 +38,8 @@ const EDGE_LABELS: Array<{ v: EdgesMode; label: string }> = [
 const panelStyle: CSSProperties = {
   position: "absolute",
   top: 16,
-  right: 76,      // leaves room for the Reset view button
-  zIndex: 5,
+  right: 16,
+  zIndex: 30,
   background: "rgba(0,8,20,0.78)",
   border: "1px solid rgba(0,240,255,0.28)",
   color: "#c8d4e8",
@@ -44,7 +47,25 @@ const panelStyle: CSSProperties = {
   fontSize: 11,
   padding: "10px 12px",
   minWidth: 200,
+  maxWidth: 240,
+  maxHeight: "calc(100vh - 96px)",
+  overflowY: "auto",
   backdropFilter: "blur(8px)",
+};
+
+const resetBtnStyle: CSSProperties = {
+  display: "block",
+  width: "100%",
+  padding: "5px 10px",
+  marginBottom: 8,
+  background: "rgba(0,240,255,0.08)",
+  border: "1px solid rgba(0,240,255,0.35)",
+  color: "#00f0ff",
+  fontFamily: "monospace",
+  fontSize: 10,
+  textTransform: "uppercase",
+  letterSpacing: "0.14em",
+  cursor: "pointer",
 };
 
 const rowStyle: CSSProperties = { marginBottom: 8 };
@@ -100,6 +121,7 @@ export default function UniverseControls({
   value,
   onChange,
   style,
+  onReset,
   spacetimeMode,
   onSpacetimeModeChange,
   spacetimeIntensity,
@@ -112,6 +134,12 @@ export default function UniverseControls({
 
   return (
     <div style={{ ...panelStyle, ...style }}>
+      {onReset && (
+        <button type="button" onClick={onReset} style={resetBtnStyle}>
+          Reset view
+        </button>
+      )}
+
       <div style={rowStyle}>
         <div style={labelStyle}>Edges</div>
         <div>

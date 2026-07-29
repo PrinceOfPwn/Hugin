@@ -1,7 +1,7 @@
 import {
   useCallback, useEffect, useMemo, useRef, useState,
 } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
 import { EffectComposer, Bloom, DepthOfField } from "@react-three/postprocessing";
 import * as THREE from "three";
@@ -9,6 +9,7 @@ import type { DatasetManifest } from "../lib/types";
 
 import NodeCloud, { buildSpinRotation } from "./NodeCloud";
 import type { NodeDatum, OrbitDescriptor } from "./NodeCloud";
+import NodeLabels from "./NodeLabels";
 import NodeHitboxes from "./NodeHitboxes";
 import BeamOfLight from "./BeamOfLight";
 import EdgeSet, { EDGE_COLOR } from "./EdgeSet";
@@ -134,6 +135,23 @@ interface Props {
   filteredIds?: Set<string> | null;
   universe?: UniverseSettings;
   onUniverseChange?: (next: UniverseSettings) => void;
+  // Ronda I: discoverability layer wiring.
+  cameraRef?: React.MutableRefObject<THREE.Camera | null>;
+  teleportTarget?: { x: number; z: number; nonce: number } | null;
+  onNodeSelect?: (id: string | null) => void;
+  onGalaxySelect?: (id: string | null) => void;
+  externalSelectId?: string | null;
+}
+
+// Tiny helper: writes the active camera into a ref so parent components
+// (Minimap, teleport handlers) can read camera pose without living inside
+// the R3F Canvas. Rendered as a child of <Canvas> so useThree() is legal.
+function CameraExposer({ cameraRef }: { cameraRef?: React.MutableRefObject<THREE.Camera | null> }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    if (cameraRef) cameraRef.current = camera;
+  }, [camera, cameraRef]);
+  return null;
 }
 
 const DEFAULT_UNIVERSE: UniverseSettings = {
@@ -145,6 +163,7 @@ const DEFAULT_UNIVERSE: UniverseSettings = {
 export default function GraphThreeV3({
   graphData, manifest, filteredIds,
   universe: universeProp, onUniverseChange,
+  cameraRef, teleportTarget, onNodeSelect, onGalaxySelect, externalSelectId,
 }: Props) {
   const [mode, setMode] = useState<Mode>("universe");
   const [selected, setSelected] = useState<GraphNodeIn | null>(null);
@@ -294,9 +313,10 @@ export default function GraphThreeV3({
       .filter((n) => !galaxyFilter || n.galaxyId === galaxyFilter)
       .map((n) => {
         // Dramatic mass-driven size + attractor boost, clamped.
-        let size = 1.6 + (n.mass ?? 2) * 0.9;
-        if (n.isAttractor) size *= 1.7;
-        size = Math.min(24, Math.max(1.6, size));
+        const mass = n.mass ?? 2;
+        let size = 1.5 + Math.pow(Math.min(mass, 20), 1.3) * 0.3;
+        if (n.isAttractor) size *= 2.0;
+        size = Math.min(30, Math.max(1.5, size));
         return {
           id: n.id,
           position: positionsMap.get(n.id) ?? new THREE.Vector3(),
@@ -494,21 +514,50 @@ export default function GraphThreeV3({
     setSelected(node);
     const pos = positionsMap.get(id);
     if (pos) setFocusPos(pos.clone());
-  }, [nodeById, positionsMap]);
+    onNodeSelect?.(node.id);
+  }, [nodeById, positionsMap, onNodeSelect]);
 
   const handleGalaxyClick = useCallback((gid: string) => {
     setGalaxyFilter(gid);
     setMode("galaxy");
     const c = galaxyCenters[gid];
     if (c) setFocusPos(new THREE.Vector3(c[0], c[1], c[2]));
-  }, [galaxyCenters]);
+    onGalaxySelect?.(gid);
+  }, [galaxyCenters, onGalaxySelect]);
 
   const handleReset = useCallback(() => {
     setSelected(null);
     setGalaxyFilter(null);
     setMode("universe");
     setFocusPos(null);
-  }, []);
+    onNodeSelect?.(null);
+    onGalaxySelect?.(null);
+  }, [onNodeSelect, onGalaxySelect]);
+
+  // Ronda I: external drivers — CommandPalette selects a node by id, Minimap
+  // teleports the camera to an XZ world coordinate. Both funnel through the
+  // existing focusPos + selection state so the CinematicCamera tween handles
+  // motion for free.
+  useEffect(() => {
+    if (!externalSelectId) return;
+    // Parent may append a ":nonce" suffix so this effect re-fires even when
+    // the same id is chosen twice in a row from the palette.
+    const rawId = externalSelectId.split(":")[0];
+    const node = nodeById.get(rawId);
+    if (!node) return;
+    setSelected(node);
+    const pos = positionsMap.get(rawId);
+    if (pos) setFocusPos(pos.clone());
+  }, [externalSelectId, nodeById, positionsMap]);
+
+  useEffect(() => {
+    if (!teleportTarget) return;
+    // Preserve the current Y so we glide horizontally rather than diving.
+    const camY = cameraRef?.current?.position.y ?? 2000;
+    setFocusPos(new THREE.Vector3(teleportTarget.x, camY * 0.5, teleportTarget.z));
+    // Teleport doesn't imply a node selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teleportTarget?.nonce]);
 
   useEffect(() => {
     console.log(`[GraphThreeV3] nodes=${visibleNodes.length}/${graphData.nodes.length}  orbits=${orbits.length}  edges_visible=${focusEdges.length + globalEdges.length}/${graphData.edges.length}  mode=${mode}  galaxy=${galaxyFilter ?? "all"}  edgesMode=${universe.edgesMode}`);
@@ -533,64 +582,14 @@ export default function GraphThreeV3({
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh", background: "#000005", color: "#e8f0ff", overflow: "hidden" }}>
-      {/* ─── LEFT RAIL ───────────────────────────────────────────────────── */}
-      <aside style={{
-        position: "absolute", top: 0, left: 0, bottom: 0, width: 240,
-        padding: "20px 18px", background: "linear-gradient(180deg, rgba(0,8,20,0.85), rgba(0,4,12,0.65))",
-        borderRight: "1px solid rgba(0,240,255,0.15)", backdropFilter: "blur(8px)",
-        fontFamily: "'Fira Code', ui-monospace, monospace", fontSize: 12, zIndex: 5, overflowY: "auto",
-      }}>
-        <div style={{ marginBottom: 22 }}>
-          <div style={{ fontSize: 10, opacity: 0.6, letterSpacing: "0.14em", textTransform: "uppercase", color: "#00f0ff" }}>3D Knowledge Universe</div>
-          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "0.05em", marginTop: 4 }}>HUGIN</div>
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 10, opacity: 0.55, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 8 }}>Mode</div>
-          <button onClick={handleReset} style={btnStyle(mode === "universe")}>Universe (all)</button>
-          {galaxyFilter && (
-            <div style={{ marginTop: 6, fontSize: 11, opacity: 0.7 }}>
-              Filtering: <span style={{ color: GALAXY_COLORS[galaxyFilter] }}>● {GALAXY_LABELS[galaxyFilter] ?? galaxyFilter}</span>
-            </div>
-          )}
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 10, opacity: 0.55, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 8 }}>Galaxies</div>
-          {galaxies.map(([gid]) => (
-            <button key={gid} onClick={() => handleGalaxyClick(gid)}
-              style={{ ...btnStyle(galaxyFilter === gid), textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: GALAXY_COLORS[gid], fontSize: 14, lineHeight: 1 }}>●</span>
-              <span>{GALAXY_LABELS[gid] ?? gid}</span>
-            </button>
-          ))}
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 10, opacity: 0.55, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 8 }}>Signals</div>
-          <div style={{ fontSize: 10, opacity: 0.55, lineHeight: 1.6, marginBottom: 8 }}>Hover a node to see its links. Click to inspect.</div>
-          {Object.entries(EDGE_COLOR).filter(([t]) => t !== "similar_to" && t !== "reference").slice(0, 8).map(([t, c]) => (
-            <div key={t} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, opacity: 0.75, marginBottom: 3 }}>
-              <span style={{ width: 18, height: 2, background: c, display: "inline-block" }} />
-              <span>{t.replace(/_/g, " ")}</span>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ position: "absolute", bottom: 16, left: 18, right: 18, fontSize: 10, opacity: 0.5, lineHeight: 1.5 }}>
-          {graphData.nodes.filter((n) => !n.isGalaxy).length.toLocaleString()} nodes<br />
-          {graphData.edges.filter((e) => !NOISE_EDGE.has(e.type)).length.toLocaleString()} curated edges<br />
-          {manifest.counts.galaxies} galaxies
-        </div>
-      </aside>
-
       {/* ─── CANVAS ──────────────────────────────────────────────────────── */}
-      <div ref={canvasWrapRef} style={{ position: "absolute", top: 0, left: 240, right: selected ? 360 : 0, bottom: 0, transition: "right 0.25s ease" }}>
+      <div ref={canvasWrapRef} style={{ position: "absolute", top: 0, left: 0, right: selected ? 360 : 0, bottom: 0, transition: "right 0.25s ease" }}>
         <Canvas
           camera={{ position: [0, 0, 8000], fov: 55, near: 0.1, far: 20000 }}
           dpr={[1, 1.6]}
           gl={{ antialias: true, powerPreference: "high-performance", alpha: false }}
         >
+          <CameraExposer cameraRef={cameraRef} />
           <color attach="background" args={["#000005"]} />
           <fogExp2 attach="fog" args={["#0a0a15", universe.cinematic ? 0.00025 : 0.00045]} />
 
@@ -615,6 +614,14 @@ export default function GraphThreeV3({
             selectedId={selected?.id ?? null}
             dimmedSet={dimmedSet}
             interactive={false}
+          />
+
+          <NodeLabels
+            nodes={visibleNodes}
+            getLabel={(id) => nodeById.get(id)?.label}
+            selectedId={selected?.id ?? null}
+            hoveredId={hovered?.id ?? null}
+            maxLabels={30}
           />
 
           <NodeHitboxes
@@ -676,17 +683,10 @@ export default function GraphThreeV3({
           </EffectComposer>
         </Canvas>
 
-        <button onClick={handleReset} style={{
-          position: "absolute", top: 16, right: 16, zIndex: 4,
-          background: "rgba(0,8,20,0.75)", border: "1px solid rgba(0,240,255,0.35)",
-          color: "#00f0ff", padding: "6px 14px", fontFamily: "monospace",
-          fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em",
-          cursor: "pointer", backdropFilter: "blur(6px)",
-        }}>Reset view</button>
-
         <UniverseControls
           value={universe}
           onChange={setUniverse}
+          onReset={handleReset}
           spacetimeMode={spacetimeMode}
           onSpacetimeModeChange={setSpacetimeMode}
           spacetimeIntensity={spacetimeIntensity}
@@ -732,7 +732,7 @@ export default function GraphThreeV3({
               {GALAXY_LABELS[selected.galaxyId] ?? selected.galaxyId} · {selected.kind.replace(/_/g, " ")}
               {selected.tier && <span> · Tier {selected.tier}</span>}
             </div>
-            <button onClick={() => { setSelected(null); }} style={{
+            <button onClick={() => { setSelected(null); onNodeSelect?.(null); }} style={{
               background: "transparent", border: "none", color: "#88a", fontSize: 18, cursor: "pointer",
               fontFamily: "monospace", padding: 0, lineHeight: 1,
             }} aria-label="Close">×</button>
@@ -782,16 +782,6 @@ export default function GraphThreeV3({
       )}
     </div>
   );
-}
-
-function btnStyle(active: boolean): React.CSSProperties {
-  return {
-    display: "block", width: "100%", padding: "6px 10px", marginBottom: 4,
-    background: active ? "rgba(0,240,255,0.15)" : "transparent",
-    border: `1px solid ${active ? "rgba(0,240,255,0.4)" : "rgba(255,255,255,0.08)"}`,
-    color: active ? "#00f0ff" : "#c8d4e8",
-    fontFamily: "monospace", fontSize: 11, cursor: "pointer", textAlign: "left",
-  };
 }
 
 // Re-export types for GraphPageShell.

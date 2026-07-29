@@ -173,6 +173,47 @@ jobs:
           node scripts/build-data.mjs
           node scripts/validate-data.mjs
 
+      - name: Purge safely-ingested sources
+        if: steps.discover.outputs.count != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f data/source/ingest-manifest.json ]]; then
+            echo "no ingest-manifest; skipping purge"
+            exit 0
+          fi
+
+          # Requires jq (available on ubuntu-latest by default)
+          purged=0
+          jq -r '.sources // {} | to_entries[] | select((.value.node_ids // []) | length > 0) | .key' \
+            data/source/ingest-manifest.json | while read -r src; do
+            [[ -z "$src" ]] && continue
+            [[ ! "$src" =~ ^data/incoming/ ]] && continue
+            relative="${src#data/incoming/}"
+            flat=$(echo "$relative" | tr '/' '_' | sed 's/\.jsonl$//')
+
+            # Delete the source JSONL + its mapping sidecar
+            [[ -f "$src" ]] && rm -f "$src" && purged=$((purged+1))
+            [[ -f "${src%.jsonl}.mapping.json" ]] && rm -f "${src%.jsonl}.mapping.json"
+
+            # Delete normalized + enriched derivatives
+            rm -f "data/normalized/${flat}.jsonl" "data/normalized/${flat}.report.json" || true
+            rm -f "data/enriched/${flat}.jsonl" "data/enriched/${flat}.report.json" || true
+          done
+
+          # Preserve knowledge assets: .wrapped/ (LGTM clusters, technique cards,
+          # vault-export) and bundle-* (curated knowledge bundles). Only the
+          # derived JSONL wrappers + normalized + enriched intermediates are
+          # purged — the raw evidence remains as authoritative source.
+
+          # Remove any empty directories under data/incoming (but keep the root
+          # and everything under .wrapped/ or bundle-* which stays populated).
+          find data/incoming -mindepth 1 -type d -empty \
+            ! -path '*/.wrapped*' ! -path '*/bundle-*' \
+            -delete 2>/dev/null || true
+
+          echo "purge complete"
+
       - name: Commit generated knowledge
         if: steps.discover.outputs.count != '0' && github.ref == 'refs/heads/main'
         shell: bash
@@ -180,19 +221,14 @@ jobs:
           set -euo pipefail
           git config user.name "hugin-bot"
           git config user.email "[private-email]"
-          git add \
-            data/incoming \
-            data/normalized \
-            data/enriched \
-            data/source/public-graph.json \
-            data/source/ingest-manifest.json 2>/dev/null || true
+          git add -A data/incoming data/normalized data/enriched data/source/public-graph.json data/source/ingest-manifest.json
 
           if git diff --staged --quiet; then
             echo "No generated changes"
             exit 0
           fi
 
-          git commit -m "ingest: compile universal knowledge"
+          git commit -m "ingest: compile + purge sources"
           for attempt in 1 2 3; do
             if git push origin HEAD:main; then exit 0; fi
             git fetch origin main
