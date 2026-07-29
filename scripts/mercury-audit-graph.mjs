@@ -38,7 +38,7 @@ function loadExisting(file) {
 function fallbackTitle(node) {
   const label = String(node.label ?? node.name ?? "").replace(/^QA\s*(?:·|:)\s*/i, "").trim();
   const parts = label.split(/\s+·\s+/).map((part) => part.trim()).filter(Boolean);
-  return parts.at(-1) ?? label || null;
+  return (parts.at(-1) ?? label) || null;
 }
 
 function prepareNode(graph, node) {
