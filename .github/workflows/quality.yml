@@ -29,6 +29,8 @@ jobs:
             .cache
           key: hugin-minilm-q8-${{ hashFiles('data/source/public-graph.json', 'scripts/build-data.mjs', 'package-lock.json') }}
       - run: npm ci
+      - name: Pipeline E2E smoke test (deterministic, no LLM)
+        run: node tests/pipeline-e2e.test.mjs
       - name: Build semantic dataset in the cloud
         env:
           HUGIN_SIMILARITY_ENGINE: transformers
