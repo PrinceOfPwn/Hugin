@@ -825,6 +825,12 @@ export default function GraphThreeV3({
             }));
             setGravityRunning(false);
           }}
+          selectedEntityId={selected?.id ?? null}
+          onDraftRelation={(draft) => setGravityScenario((current) => ({
+            ...current,
+            updatedAt: new Date().toISOString(),
+            relationDrafts: [...current.relationDrafts, draft],
+          }))}
         />
 
         {hovered && !selected && (() => {

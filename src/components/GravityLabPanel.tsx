@@ -19,6 +19,8 @@ export interface GravityLabProps {
   onReset(): void;
   onSaveScenario(): StoredScenario;
   onImportScenario(scenario: StoredScenario): void;
+  selectedEntityId: string | null;
+  onDraftRelation(draft: { source: string; target: string; type: string; rationale?: string }): void;
 }
 
 const panel: CSSProperties = { position: "absolute", zIndex: 42, left: 16, bottom: 16, width: 330, maxHeight: "min(680px, calc(100vh - 110px))", overflowY: "auto", background: "rgba(3, 7, 18, .94)", border: "1px solid rgba(120, 176, 255, .42)", boxShadow: "0 18px 60px rgba(0,0,0,.48)", color: "#dfeaff", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11 };
@@ -28,6 +30,8 @@ const button: CSSProperties = { minHeight: 36, border: "1px solid rgba(140,180,2
 export default function GravityLabPanel(props: GravityLabProps) {
   const [status, setStatus] = useState("");
   const [confirmExact, setConfirmExact] = useState(false);
+  const [relationTarget, setRelationTarget] = useState("");
+  const [relationType, setRelationType] = useState("simulated-attraction");
   const importRef = useRef<HTMLInputElement>(null);
   const benchmark = benchmarkDirectPairs(props.bodyCount, 30);
   if (!props.open) return <button type="button" aria-label="Open Gravity Lab" onClick={() => props.onOpenChange(true)} style={{ ...button, position: "absolute", left: 16, bottom: 16, zIndex: 42, letterSpacing: ".12em" }}>GRAVITY LAB</button>;
@@ -55,6 +59,14 @@ export default function GravityLabPanel(props: GravityLabProps) {
     if (solver !== "exact-n2") { setConfirmExact(false); props.onSolverChange(solver); return; }
     setConfirmExact(true);
   };
+  const draftRelation = () => {
+    const source = props.selectedEntityId;
+    const target = relationTarget.trim();
+    if (!source) { setStatus("Select a body before drafting a relation."); return; }
+    if (!target || target === source) { setStatus("Enter the id of a different target body."); return; }
+    props.onDraftRelation({ source, target, type: relationType, rationale: "Local Gravity Lab hypothesis; requires human review." });
+    setRelationTarget(""); setStatus("Candidate relation added to the local scenario only.");
+  };
 
   return <aside aria-label="Gravity Lab controls" style={panel}>
     <header style={{ padding: "14px", display: "flex", justifyContent: "space-between", gap: 8, background: "linear-gradient(135deg, rgba(44,93,195,.22), transparent)" }}>
@@ -70,6 +82,13 @@ export default function GravityLabPanel(props: GravityLabProps) {
         <button type="button" onClick={() => importRef.current?.click()} style={button}>IMPORT</button>
       </div>
       {status && <p role="status" style={{ margin: "8px 0 0", color: "#9ecbff", lineHeight: 1.45 }}>{status}</p>}
+    </div>
+    <div style={section}>
+      <div style={{ color: "#9ecbff", letterSpacing: ".13em", fontSize: 9, marginBottom: 7 }}>RELATION HYPOTHESIS</div>
+      <div style={{ opacity: .7, lineHeight: 1.4, marginBottom: 7 }}>This records a local, review-required scenario draft. It never creates a curated graph edge.</div>
+      <input aria-label="Candidate relation target entity id" placeholder="target entity id" value={relationTarget} onChange={(event) => setRelationTarget(event.target.value)} style={{ width: "100%", minHeight: 36, boxSizing: "border-box", background: "#080e1e", color: "#dfeaff", border: "1px solid rgba(140,180,255,.3)", padding: 7 }} />
+      <select aria-label="Candidate relation type" value={relationType} onChange={(event) => setRelationType(event.target.value)} style={{ width: "100%", minHeight: 36, marginTop: 6, background: "#080e1e", color: "#dfeaff", border: "1px solid rgba(140,180,255,.3)", padding: 7 }}><option value="simulated-attraction">simulated attraction</option><option value="collision-hypothesis">collision hypothesis</option><option value="cluster-hypothesis">cluster hypothesis</option></select>
+      <button type="button" onClick={draftRelation} style={{ ...button, marginTop: 7 }}>ADD LOCAL DRAFT</button>
     </div>
     <div style={section}>
       <label>Solver
