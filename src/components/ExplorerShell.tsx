@@ -12,10 +12,11 @@ import EntityListCard from "./EntityListCard";
 import EntityPreviewPane from "./EntityPreviewPane";
 
 interface Props {
-  entities: Entity[];
+  entities?: Entity[];
   galaxies: Galaxy[];
   relations?: Relation[]; // may be omitted; preview then shows no "related"
   routePrefix: string;    // e.g. "/Hugin"
+  dataUrls?: { catalog: string; graph: string };
 }
 
 // URL param names for view-mode and selection — namespaced so they don't collide.
@@ -29,8 +30,39 @@ const GRID_ROW_H = 168;        // approx row height in grid mode (rows of 2)
 const GRID_COLS = 2;
 
 export default function ExplorerShell({
-  entities, galaxies, relations = [], routePrefix,
+  entities: initialEntities = [],
+  galaxies,
+  relations: initialRelations = [],
+  routePrefix,
+  dataUrls,
 }: Props) {
+  const [remoteData, setRemoteData] = useState<{ entities: Entity[]; relations: Relation[] } | null>(
+    initialEntities.length ? { entities: initialEntities, relations: initialRelations } : null,
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (remoteData || !dataUrls) return;
+    const controller = new AbortController();
+    Promise.all([
+      fetch(dataUrls.catalog, { signal: controller.signal }).then((r) => {
+        if (!r.ok) throw new Error(`catalog ${r.status}`);
+        return r.json();
+      }),
+      fetch(dataUrls.graph, { signal: controller.signal }).then((r) => {
+        if (!r.ok) throw new Error(`graph ${r.status}`);
+        return r.json();
+      }),
+    ]).then(([entities, graph]) => {
+      setRemoteData({ entities, relations: graph.edges ?? [] });
+    }).catch((error) => {
+      if (error?.name !== "AbortError") setLoadError(String(error?.message ?? error));
+    });
+    return () => controller.abort();
+  }, [dataUrls, remoteData]);
+
+  const entities = remoteData?.entities ?? initialEntities;
+  const relations = remoteData?.relations ?? initialRelations;
   const initialQs = typeof window === "undefined" ? "" : window.location.search;
   const initialParams = new URLSearchParams(initialQs.startsWith("?") ? initialQs.slice(1) : initialQs);
 
@@ -212,6 +244,32 @@ export default function ExplorerShell({
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
+  if (!remoteData && dataUrls) {
+    return (
+      <div
+        aria-busy={!loadError}
+        style={{
+          minHeight: 620,
+          display: "grid",
+          placeItems: "center",
+          borderTop: "1px solid rgba(157,124,244,0.18)",
+          background: "linear-gradient(180deg, rgba(12,7,24,0.7), rgba(0,0,5,0.92))",
+          padding: 24,
+          textAlign: "center",
+        }}
+      >
+        <div>
+          <p style={{ fontFamily: "monospace", color: "#b78cff", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+            {loadError ? "Catalog unavailable" : "Loading versioned catalog"}
+          </p>
+          <p style={{ opacity: 0.72 }}>
+            {loadError ? loadError : "Preparing filters and relationship previews…"}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="explorer-shell" style={shellStyle}>
       <style>{`
