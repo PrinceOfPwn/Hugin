@@ -66,7 +66,7 @@ function Section({
         onClick={onToggle}
         aria-expanded={open}
         style={{
-          background: "transparent", border: "none", color: "#00f0ff",
+          background: "transparent", border: "none", color: "var(--nav-accent)",
           fontFamily: "monospace", fontSize: 10, cursor: "pointer",
           textTransform: "uppercase", letterSpacing: "0.14em",
           padding: "2px 0 6px", width: "100%", textAlign: "left",
@@ -173,13 +173,13 @@ export default function FilterSidebar({ entities, filter, onChange, storageKey =
       width: 320, maxWidth: "90vw", height: "100%",
       maxHeight: "calc(100vh - 96px)",
       background: "linear-gradient(180deg, rgba(0,8,20,0.92), rgba(0,4,12,0.85))",
-      borderRight: "1px solid rgba(0,240,255,0.15)", backdropFilter: "blur(8px)",
+      borderRight: "1px solid rgba(157,124,244,0.15)", backdropFilter: "blur(8px)",
       fontFamily: "'Fira Code', ui-monospace, monospace", fontSize: 12,
       color: "#dae4f0", padding: "16px 14px", overflowY: "auto",
       boxSizing: "border-box",
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-        <div style={{ fontSize: 10, opacity: 0.65, letterSpacing: "0.14em", textTransform: "uppercase", color: "#00f0ff" }}>Filters</div>
+        <div style={{ fontSize: 10, opacity: 0.65, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--nav-accent)" }}>Filters</div>
         <button onClick={clearAll} style={{
           background: "transparent", border: "1px solid rgba(255,255,255,0.15)", color: "#c8d4e8",
           fontFamily: "monospace", fontSize: 10, padding: "2px 8px", cursor: "pointer",
@@ -526,18 +526,18 @@ const chipRow: React.CSSProperties = {
   display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6,
 };
 const chipStyle: React.CSSProperties = {
-  background: "rgba(0,240,255,0.15)", color: "#00f0ff",
-  border: "1px solid rgba(0,240,255,0.35)", padding: "2px 6px",
+  background: "rgba(157,124,244,0.15)", color: "var(--nav-accent)",
+  border: "1px solid rgba(157,124,244,0.35)", padding: "2px 6px",
   fontFamily: "monospace", fontSize: 10, cursor: "pointer",
 };
 const chipStyleActive: React.CSSProperties = {
-  background: "rgba(0,240,255,0.55)", color: "#001018",
-  border: "1px solid #00f0ff", padding: "2px 6px",
+  background: "rgba(157,124,244,0.55)", color: "#001018",
+  border: "1px solid var(--nav-accent)", padding: "2px 6px",
   fontFamily: "monospace", fontSize: 10, cursor: "pointer",
   fontWeight: 700,
 };
 const linkBtn: React.CSSProperties = {
-  background: "transparent", border: "none", color: "#00f0ff",
+  background: "transparent", border: "none", color: "var(--nav-accent)",
   fontFamily: "monospace", fontSize: 10, cursor: "pointer",
   padding: "4px 0", textDecoration: "underline",
 };

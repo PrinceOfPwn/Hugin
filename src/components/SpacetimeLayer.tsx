@@ -21,7 +21,7 @@ import GravityPulse from "./GravityPulse";
 interface Props {
   mode: "off" | "grid" | "playground";
   entities: Entity[];
-  onNodeMoved?: (id: string, newPosition: [number, number, number]) => void;
+  onNodeMoved?: (id: string, newPosition: [number, number, number] | null) => void;
   intensity?: number;
   paletteHint?: "cool" | "warm" | "duo";
   grabTarget?: "nodes" | "galaxies";
@@ -207,15 +207,27 @@ export default function SpacetimeLayer({
       origin: [finalPos.x, 0.1, finalPos.z],
       triggerId: Date.now(),
     });
+    // Keep drag state alive until PlanetGrabber completes its spring-back.
+    // Otherwise a galaxy loses its member map while the spring is still
+    // emitting positions and only the invisible hitbox returns to origin.
+  };
+
+  const handleSpringComplete = (id: string) => {
     if (id.startsWith(GALAXY_ID_PREFIX)) {
       overridesRef.current.delete(id);
       const members = galaxyDragMembersRef.current;
-      if (members) for (const memberId of members.keys()) overridesRef.current.delete(memberId);
+      if (members) {
+        for (const memberId of members.keys()) {
+          overridesRef.current.delete(memberId);
+          onNodeMoved?.(memberId, null);
+        }
+      }
       galaxyDragOriginRef.current = null;
       galaxyDragMembersRef.current = null;
-    } else {
-      overridesRef.current.delete(id);
+      return;
     }
+    overridesRef.current.delete(id);
+    onNodeMoved?.(id, null);
   };
 
   return (
@@ -236,12 +248,13 @@ export default function SpacetimeLayer({
             onGrabStart={handleGrabStart}
             onGrabMove={handleGrabMove}
             onGrabEnd={handleGrabEnd}
+            onSpringComplete={handleSpringComplete}
           />
 
           <GravityPulse
             origin={pulse?.origin ?? null}
             triggerId={pulse?.triggerId}
-            color={grabTarget === "galaxies" ? "#ff6f00" : "#00f0ff"}
+            color={grabTarget === "galaxies" ? "#ff6f00" : "#9d7cf4"}
             speed={grabTarget === "galaxies" ? 400 : 250}
             duration={grabTarget === "galaxies" ? 2.4 : 1.8}
           />

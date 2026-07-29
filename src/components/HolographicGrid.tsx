@@ -62,7 +62,7 @@ function HolographicGrid({
   y = -400,
   size = 3000,
   divisions = 300,
-  color = "#00f0ff",
+  color = "#9d7cf4",
   pulseSpeed = 0.8,
 }: Props) {
   const matRef = useRef<THREE.ShaderMaterial>(null);

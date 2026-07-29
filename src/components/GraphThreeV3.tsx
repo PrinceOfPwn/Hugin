@@ -196,7 +196,12 @@ export default function GraphThreeV3({
   // of the whole positionsMap while still invalidating downstream memos.
   const positionOverridesRef = useRef<Map<string, THREE.Vector3>>(new Map());
   const [posBump, setPosBump] = useState(0);
-  const handleNodeMoved = useCallback((id: string, pos: [number, number, number]) => {
+  const handleNodeMoved = useCallback((id: string, pos: [number, number, number] | null) => {
+    if (pos === null) {
+      positionOverridesRef.current.delete(id);
+      setPosBump((b) => b + 1);
+      return;
+    }
     const v = positionOverridesRef.current.get(id);
     if (v) v.set(pos[0], pos[1], pos[2]);
     else positionOverridesRef.current.set(id, new THREE.Vector3(pos[0], pos[1], pos[2]));
@@ -703,7 +708,7 @@ export default function GraphThreeV3({
         {hovered && !selected && (() => {
           const node = nodeById.get(hovered.id);
           if (!node) return null;
-          const gc = GALAXY_COLORS[node.galaxyId] || "#00f0ff";
+          const gc = GALAXY_COLORS[node.galaxyId] || "#9d7cf4";
           return (
             <div style={{
               position: "fixed", left: hovered.screen.x + 16, top: hovered.screen.y + 16,
@@ -728,7 +733,7 @@ export default function GraphThreeV3({
         <aside style={{
           position: "absolute", top: 0, right: 0, bottom: 0, width: 360,
           background: "linear-gradient(180deg, rgba(0,10,24,0.95), rgba(0,4,12,0.85))",
-          borderLeft: `1px solid ${GALAXY_COLORS[selected.galaxyId] ?? "#00f0ff"}55`,
+          borderLeft: `1px solid ${GALAXY_COLORS[selected.galaxyId] ?? "#9d7cf4"}55`,
           backdropFilter: "blur(10px)", padding: "18px 20px", overflowY: "auto", zIndex: 6,
           fontFamily: "system-ui, sans-serif", fontSize: 13, lineHeight: 1.55,
         }}>
@@ -749,7 +754,7 @@ export default function GraphThreeV3({
 
           {selectedRoute && (
             <a href={`/Hugin${selectedRoute}`} style={{
-              display: "inline-block", padding: "8px 14px", background: GALAXY_COLORS[selected.galaxyId] ?? "#00f0ff",
+              display: "inline-block", padding: "8px 14px", background: GALAXY_COLORS[selected.galaxyId] ?? "#9d7cf4",
               color: "#000", textDecoration: "none", fontFamily: "monospace", fontSize: 11,
               textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 20,
             }}>Open full record →</a>

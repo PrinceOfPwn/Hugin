@@ -190,7 +190,7 @@ const GALAXY_COLORS: Record<string, string> = {
   architecture: "#9d4edd",
   tradecraft_qa: "#00e5bf",
 };
-const gColor = GALAXY_COLORS[entity.galaxyId] ?? "#00f0ff";
+const gColor = GALAXY_COLORS[entity.galaxyId] ?? "#9d7cf4";
 
 const tierColor = (t?: string) => {
   if (!t) return "#8896b0";
@@ -942,7 +942,7 @@ const jsonLd = buildJsonLd(entity, cleanSummary || entity.summary);
     --fg-faint: #4a5060;
     --border: rgba(255, 255, 255, 0.08);
     --border-strong: rgba(255, 255, 255, 0.18);
-    --accent: #00f0ff;
+    --accent: #9d7cf4;
     --bg-panel: rgba(255, 255, 255, 0.015);
     --bg-panel-hover: rgba(255, 255, 255, 0.045);
     max-width: 1180px;

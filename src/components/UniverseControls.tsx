@@ -63,7 +63,7 @@ const resetBtnStyle: CSSProperties = {
   marginBottom: 8,
   background: "rgba(0,240,255,0.08)",
   border: "1px solid rgba(0,240,255,0.35)",
-  color: "#00f0ff",
+  color: "var(--nav-accent)",
   fontFamily: "monospace",
   fontSize: 10,
   textTransform: "uppercase",
@@ -78,7 +78,7 @@ const labelStyle: CSSProperties = {
   textTransform: "uppercase",
   opacity: 0.6,
   marginBottom: 4,
-  color: "#00f0ff",
+  color: "var(--nav-accent)",
 };
 
 const chipStyle = (active: boolean): CSSProperties => ({
@@ -88,7 +88,7 @@ const chipStyle = (active: boolean): CSSProperties => ({
   marginBottom: 3,
   background: active ? "rgba(0,240,255,0.18)" : "transparent",
   border: `1px solid ${active ? "rgba(0,240,255,0.45)" : "rgba(255,255,255,0.10)"}`,
-  color: active ? "#00f0ff" : "#c8d4e8",
+  color: active ? "var(--nav-accent)" : "#c8d4e8",
   cursor: "pointer",
   fontSize: 10,
 });
@@ -99,8 +99,10 @@ const SPACETIME_MODES: Array<{ v: SpacetimeMode; label: string }> = [
   { v: "playground", label: "Playground" },
 ];
 
+// Spacetime palette dots are shader-side hex values, not CSS chrome —
+// need literal hex here so SpacetimeGrid can parse them.
 const PALETTE_COLORS: Record<SpacetimePalette, string> = {
-  cool: "#00f0ff",
+  cool: "#22d3ee",
   warm: "#ff7a4a",
   duo:  "#c86adf",
 };

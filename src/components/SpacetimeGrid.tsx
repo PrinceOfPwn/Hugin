@@ -166,7 +166,7 @@ const frag = /* glsl */ `
 
 function palette(hint: "cool" | "warm" | "duo") {
   // Restrained. Low-saturation. Additive.
-  if (hint === "cool") return { a: new THREE.Color("#4b7fbf"), b: new THREE.Color("#00f0ff") };
+  if (hint === "cool") return { a: new THREE.Color("#4b7fbf"), b: new THREE.Color("#22d3ee") };
   if (hint === "warm") return { a: new THREE.Color("#b06a7f"), b: new THREE.Color("#ff7a4a") };
   // duo: cyan grid fading into magenta wells
   return { a: new THREE.Color("#3aa8c8"), b: new THREE.Color("#c86adf") };

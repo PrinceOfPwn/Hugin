@@ -334,7 +334,7 @@ function ExplorerHeader({
   return (
     <div style={headerBar}>
       <div style={{ fontFamily: "monospace", fontSize: 12, color: "#c8d4e8" }}>
-        <strong style={{ color: "#00f0ff" }}>{count.toLocaleString()}</strong> / {total.toLocaleString()} entities
+        <strong style={{ color: "var(--nav-accent)" }}>{count.toLocaleString()}</strong> / {total.toLocaleString()} entities
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -388,7 +388,7 @@ const shellStyle: CSSProperties = {
   height: "calc(100vh - var(--header, 68px) - 8px)",
   minHeight: 500,
   background: "rgba(0,4,12,0.4)",
-  border: "1px solid rgba(0,240,255,0.08)",
+  border: "1px solid rgba(157,124,244,0.08)",
 };
 
 const centerCol: CSSProperties = {
@@ -412,7 +412,7 @@ const headerBar: CSSProperties = {
   display: "flex", alignItems: "center", justifyContent: "space-between",
   gap: 12,
   padding: "8px 14px",
-  borderBottom: "1px solid rgba(0,240,255,0.15)",
+  borderBottom: "1px solid rgba(157,124,244,0.15)",
   background: "rgba(0,8,20,0.6)",
   flex: "0 0 auto",
 };
@@ -429,8 +429,8 @@ const selectStyle: CSSProperties = {
 
 const iconBtn: CSSProperties = {
   background: "rgba(0,0,0,0.35)",
-  color: "#00f0ff",
-  border: "1px solid rgba(0,240,255,0.28)",
+  color: "var(--nav-accent)",
+  border: "1px solid rgba(157,124,244,0.28)",
   fontFamily: "monospace",
   fontSize: 12,
   padding: "3px 8px",
@@ -450,8 +450,8 @@ const toggleBtn: CSSProperties = {
 };
 const toggleBtnActive: CSSProperties = {
   ...toggleBtn,
-  background: "rgba(0,240,255,0.2)",
-  borderColor: "#00f0ff",
-  color: "#00f0ff",
+  background: "rgba(157,124,244,0.2)",
+  borderColor: "var(--nav-accent)",
+  color: "var(--nav-accent)",
   fontWeight: 700,
 };

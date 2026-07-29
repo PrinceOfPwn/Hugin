@@ -22,7 +22,7 @@ const graphNodes = entities.map((e) => ({
   orbit: e.orbit ?? null,
   isAttractor: e.isAttractor ?? false,
   position: e.position,
-  color: "#00f0ff",
+  color: "#9d7cf4",
   tier: e.tier as "S" | "A" | "B" | "C" | undefined,
 }));
 
@@ -68,6 +68,10 @@ const entitiesForFilter = entities.map((e) => ({
   orbitOf: e.orbitOf ?? null,
   firstSeenAt: e.firstSeenAt ?? null,
   lastUpdatedAt: e.lastUpdatedAt ?? null,
+  // Positions are needed by the Minimap (bottom-right top-down projection)
+  // so it can plot per-node dots. Server-computed once, ~3 floats × N nodes
+  // adds ~60 KB to the island payload — trivial vs the full graph.
+  position: e.position ?? undefined,
 }));
 ---
 

@@ -129,18 +129,18 @@ function FreeFlyCamera({ active, onExit, initialPosition, worldUp }: Props) {
     <Html fullscreen style={{ pointerEvents: "none" }}>
       <div style={{
         position: "absolute", inset: 0,
-        color: "#00f0ff", fontFamily: "monospace", fontSize: "12px",
-        textShadow: "0 0 6px #00f0ff",
+        color: "#9d7cf4", fontFamily: "monospace", fontSize: "12px",
+        textShadow: "0 0 6px #9d7cf4",
       }}>
         <svg viewBox="-20 -20 40 40" width="40" height="40"
              style={{ position: "absolute", top: "50%", left: "50%",
                       transform: "translate(-50%, -50%)", opacity: 0.9 }}>
-          <circle cx="0" cy="0" r="12" fill="none" stroke="#00f0ff" strokeWidth="0.6" />
-          <line x1="-16" y1="0" x2="-6" y2="0" stroke="#00f0ff" strokeWidth="0.8" />
-          <line x1="6" y1="0" x2="16" y2="0" stroke="#00f0ff" strokeWidth="0.8" />
-          <line x1="0" y1="-16" x2="0" y2="-6" stroke="#00f0ff" strokeWidth="0.8" />
-          <line x1="0" y1="6" x2="0" y2="16" stroke="#00f0ff" strokeWidth="0.8" />
-          <circle cx="0" cy="0" r="1.5" fill="#00f0ff" />
+          <circle cx="0" cy="0" r="12" fill="none" stroke="#9d7cf4" strokeWidth="0.6" />
+          <line x1="-16" y1="0" x2="-6" y2="0" stroke="#9d7cf4" strokeWidth="0.8" />
+          <line x1="6" y1="0" x2="16" y2="0" stroke="#9d7cf4" strokeWidth="0.8" />
+          <line x1="0" y1="-16" x2="0" y2="-6" stroke="#9d7cf4" strokeWidth="0.8" />
+          <line x1="0" y1="6" x2="0" y2="16" stroke="#9d7cf4" strokeWidth="0.8" />
+          <circle cx="0" cy="0" r="1.5" fill="#9d7cf4" />
         </svg>
         <div style={{ position: "absolute", bottom: 24, left: 24, textTransform: "uppercase", letterSpacing: "0.15em" }}>
           <div style={{ opacity: 0.65, fontSize: 10 }}>FREE FLIGHT MODE</div>
