@@ -31,6 +31,8 @@ jobs:
       - run: npm ci
       - name: Pipeline E2E smoke test (deterministic, no LLM)
         run: node tests/pipeline-e2e.test.mjs
+      - name: Mercury audit deterministic tests
+        run: npm run test:mercury
       - name: Build semantic dataset in the cloud
         env:
           HUGIN_SIMILARITY_ENGINE: transformers

@@ -1,0 +1,90 @@
+name: Mercury graph audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Maximum nodes to audit; 0 audits the full graph"
+        required: true
+        default: "0"
+        type: string
+      concurrency:
+        description: "Parallel Mercury requests"
+        required: true
+        default: "6"
+        type: string
+      reasoning_effort:
+        description: "Mercury reasoning effort"
+        required: true
+        default: "instant"
+        type: choice
+        options: [instant, low, medium]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mercury-graph-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+
+      - name: Test deterministic helpers
+        run: npm run test:mercury
+
+      - name: Audit graph
+        shell: bash
+        env:
+          INCEPTION_API_KEY: ${{ secrets.INCEPTION_API_KEY }}
+          MERCURY_MODEL: mercury-2
+          MERCURY_REASONING_EFFORT: ${{ inputs.reasoning_effort }}
+          AUDIT_LIMIT: ${{ inputs.limit }}
+          AUDIT_CONCURRENCY: ${{ inputs.concurrency }}
+        run: |
+          set -euo pipefail
+          test -n "${INCEPTION_API_KEY:-}" || { echo "Repository secret INCEPTION_API_KEY is required" >&2; exit 2; }
+          [[ "$AUDIT_LIMIT" =~ ^[0-9]+$ ]] || { echo "limit must be a non-negative integer" >&2; exit 2; }
+          [[ "$AUDIT_CONCURRENCY" =~ ^[0-9]+$ ]] || { echo "concurrency must be a positive integer" >&2; exit 2; }
+          (( AUDIT_CONCURRENCY >= 1 )) || { echo "concurrency must be at least 1" >&2; exit 2; }
+
+          node scripts/mercury-audit-graph.mjs \
+            --graph data/source/public-graph.json \
+            --out-dir artifacts/mercury-audit \
+            --limit "$AUDIT_LIMIT" \
+            --concurrency "$AUDIT_CONCURRENCY"
+
+      - name: Verify audit artifact
+        if: success()
+        shell: bash
+        run: |
+          test -s artifacts/mercury-audit/audit.jsonl
+          test -s artifacts/mercury-audit/summary.json
+          test -s artifacts/mercury-audit/REPORT.md
+
+      - name: Run summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f artifacts/mercury-audit/REPORT.md ]]; then
+            cat artifacts/mercury-audit/REPORT.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hugin-mercury-audit-${{ github.run_id }}
+          path: artifacts/mercury-audit/**
+          if-no-files-found: warn
+          retention-days: 30

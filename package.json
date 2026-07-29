@@ -19,6 +19,7 @@
     "data:mitre": "node scripts/build-mitre-index.mjs",
     "data:mitre:sync": "node scripts/sync-mitre-enterprise.mjs",
     "data:validate": "node scripts/validate-data.mjs",
+    "data:mercury:audit": "node scripts/mercury-audit-graph.mjs",
     "ingest:detect": "node scripts/detect-format.v2.mjs",
     "ingest:normalize": "node scripts/apply-mapping.v2.mjs",
     "ingest:enrich": "node scripts/enrich-records.mjs",
@@ -39,7 +40,8 @@
     "test:e2e": "playwright test",
     "test:a11y": "playwright test tests/accessibility.spec.ts",
     "test:budgets": "node scripts/check-budgets.mjs",
-    "test:mitre": "node tests/mitre-index.test.mjs"
+    "test:mitre": "node tests/mitre-index.test.mjs",
+    "test:mercury": "node --check scripts/mercury-audit-graph.mjs && node tests/mercury-audit.test.mjs"
   },
   "dependencies": {
     "@astrojs/react": "latest",
