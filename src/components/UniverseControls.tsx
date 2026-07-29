@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 export type EdgesMode = "none" | "selected" | "top5" | "top20" | "all";
 export type SpacetimeMode = "off" | "grid" | "playground";
 export type SpacetimePalette = "cool" | "warm" | "duo";
+export type SpacetimeGrabTarget = "nodes" | "galaxies";
 
 export interface UniverseSettings {
   edgesMode: EdgesMode;
@@ -25,6 +26,8 @@ interface Props {
   onSpacetimeIntensityChange?: (n: number) => void;
   spacetimePalette?: SpacetimePalette;
   onSpacetimePaletteChange?: (p: SpacetimePalette) => void;
+  spacetimeGrabTarget?: SpacetimeGrabTarget;
+  onSpacetimeGrabTargetChange?: (t: SpacetimeGrabTarget) => void;
 }
 
 const EDGE_LABELS: Array<{ v: EdgesMode; label: string }> = [
@@ -128,6 +131,8 @@ export default function UniverseControls({
   onSpacetimeIntensityChange,
   spacetimePalette,
   onSpacetimePaletteChange,
+  spacetimeGrabTarget,
+  onSpacetimeGrabTargetChange,
 }: Props) {
   const showSpacetime =
     spacetimeMode !== undefined && onSpacetimeModeChange !== undefined;
@@ -219,6 +224,26 @@ export default function UniverseControls({
                       style={paletteChipStyle(PALETTE_COLORS[p], spacetimePalette === p)}
                       onClick={() => onSpacetimePaletteChange(p)}
                     />
+                  ))}
+                </div>
+              )}
+
+              {spacetimeMode === "playground" && onSpacetimeGrabTargetChange && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ ...labelStyle, marginBottom: 2 }}>Drag</div>
+                  {(["nodes", "galaxies"] as SpacetimeGrabTarget[]).map((t) => (
+                    <button
+                      key={t}
+                      style={chipStyle((spacetimeGrabTarget ?? "nodes") === t)}
+                      onClick={() => onSpacetimeGrabTargetChange(t)}
+                      title={
+                        t === "galaxies"
+                          ? "Grab a whole galaxy — its members translate together and the fabric warps around the moving center of mass."
+                          : "Grab individual heavy nodes."
+                      }
+                    >
+                      {t === "nodes" ? "Nodes" : "Galaxies"}
+                    </button>
                   ))}
                 </div>
               )}
