@@ -36,18 +36,27 @@ function readEntities() {
   }
 }
 
-/** Pull MITRE technique ids from an entity's tags[] and (if present) mitre[]. */
+/** Pull MITRE technique ids from tags, mitre (string or array), mitre_secondary, mitre_candidates, etc. */
 function extractMitreIds(entity) {
   const out = new Set();
   const push = (value) => {
-    if (!value || typeof value !== "string") return;
-    const norm = value.trim().toUpperCase();
-    if (MITRE_RE.test(norm)) out.add(norm);
+    if (!value) return;
+    if (typeof value === "string") {
+      const norm = value.trim().toUpperCase();
+      if (MITRE_RE.test(norm)) out.add(norm);
+    } else if (Array.isArray(value)) {
+      for (const item of value) push(item);
+    }
   };
-  const tags = Array.isArray(entity.tags) ? entity.tags : [];
-  for (const tag of tags) push(tag);
-  const mitre = Array.isArray(entity.mitre) ? entity.mitre : [];
-  for (const m of mitre) push(m);
+  push(entity.tags);
+  push(entity.mitre);
+  push(entity.mitre_secondary);
+  push(entity.mitre_candidates);
+  push(entity.mitre_technique);
+  push(entity._ai?.mitre);
+  push(entity._ai?.mitre_candidates);
+  push(entity.facets?.mitre);
+  push(entity.facets?.mitre_candidates);
   return Array.from(out);
 }
 
@@ -85,7 +94,7 @@ function main() {
 
     for (const rawId of ids) {
       const parent = parentOf(rawId);
-      const tactics = getTacticsFor(parent);
+      const tactics = getTacticsFor(parent, entity.category);
 
       let techEntry = techniques.get(parent);
       if (!techEntry) {
