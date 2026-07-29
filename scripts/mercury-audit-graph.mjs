@@ -35,13 +35,26 @@ function loadExisting(file) {
   return map;
 }
 
+function fallbackTitle(node) {
+  const label = String(node.label ?? node.name ?? "").replace(/^QA\s*(?:·|:)\s*/i, "").trim();
+  const parts = label.split(/\s+·\s+/).map((part) => part.trim()).filter(Boolean);
+  return parts.at(-1) ?? label || null;
+}
+
+function prepareNode(graph, node) {
+  const content = String(graph.contents?.[String(node.id)] ?? node.content ?? node.body ?? "");
+  const heuristic = inspectHeuristically(node, content);
+  const sourceHash = stableHash(JSON.stringify({ node, content: heuristic.answer })).slice(0, 20);
+  return { node, content, heuristic, sourceHash };
+}
+
 function fallback(node, h, reason = "heuristic-only") {
-  const wrongQa = h.qaTyped && h.codeLike && (!h.questionLike || h.filenamePrompt);
+  const wrongQa = h.issues.includes("incorrect_qa_classification");
   return normalizeAudit({
     detected_content_type: wrongQa ? "source_code" : h.qaTyped ? "qa" : h.codeLike ? "code_snippet" : "unknown",
     current_type_valid: !wrongQa,
     language: h.language,
-    suggested_title: wrongQa ? String(node.label ?? node.name ?? "").replace(/^QA\s*[·:-]\s*/i, "").replace(/^.*?\s*[·:-]\s*/, "") : null,
+    suggested_title: wrongQa ? fallbackTitle(node) : null,
     summary: String(node.summary ?? node.description ?? ""),
     tags: Array.isArray(node.tags) ? node.tags : [],
     mitre_candidates: [], entities: [], relation_candidates: [],
@@ -96,32 +109,39 @@ async function main() {
   fs.mkdirSync(outDir, { recursive: true });
   const graph = JSON.parse(fs.readFileSync(graphPath, "utf8"));
   const nodes = (graph.nodes ?? []).slice(opt.startAt, opt.limit > 0 ? opt.startAt + opt.limit : undefined);
+  const entries = nodes.map((node) => prepareNode(graph, node));
   const existing = opt.resume ? loadExisting(jsonl) : new Map();
   if (!opt.resume) fs.writeFileSync(jsonl, "");
-  const queue = nodes.filter((n) => !existing.has(String(n.id)));
+  const queue = entries.filter(({ node, sourceHash }) => existing.get(String(node.id))?.source_hash !== sourceHash);
   let cursor = 0, ok = 0, failed = 0;
+
   async function worker() {
     while (true) {
       const i = cursor++;
       if (i >= queue.length) return;
-      const node = queue[i];
-      const content = String(graph.contents?.[String(node.id)] ?? node.content ?? node.body ?? "");
-      const h = inspectHeuristically(node, content);
+      const { node, content, heuristic } = queue[i];
       try {
-        const raw = opt.heuristicOnly ? null : await callMercury(buildMessages(node, content, h), `hugin-${stableHash(String(node.id)).slice(0, 24)}`);
-        const audit = opt.heuristicOnly ? fallback(node, h) : normalizeAudit(raw, node, h);
+        const raw = opt.heuristicOnly ? null : await callMercury(buildMessages(node, content, heuristic), `hugin-${stableHash(String(node.id)).slice(0, 24)}`);
+        const audit = opt.heuristicOnly ? fallback(node, heuristic) : normalizeAudit(raw, node, heuristic);
         fs.appendFileSync(jsonl, `${JSON.stringify(audit)}\n`); existing.set(String(node.id), audit); ok++;
       } catch (error) {
-        const audit = fallback(node, h, `Mercury failed: ${error.message}`);
+        const audit = fallback(node, heuristic, `Mercury failed: ${error.message}`);
         fs.appendFileSync(jsonl, `${JSON.stringify(audit)}\n`); existing.set(String(node.id), audit); failed++;
       }
     }
   }
+
   await Promise.all(Array.from({ length: Math.min(opt.concurrency, Math.max(1, queue.length)) }, worker));
-  const selected = new Set(nodes.map((n) => String(n.id)));
-  const results = [...existing.values()].filter((x) => selected.has(String(x.entity_id)));
-  writeReports(outDir, results, { graph: opt.graph, model: opt.heuristicOnly ? "heuristic-only" : MODEL, reasoning_effort: opt.heuristicOnly ? null : EFFORT, success: ok, failed });
-  console.log(`Audit complete: ${results.length} entities; ${failed} Mercury failures; artifact=${outDir}`);
+  const selected = new Set(nodes.map((node) => String(node.id)));
+  const allResults = [...existing.values()];
+  const results = allResults.filter((item) => selected.has(String(item.entity_id)));
+  fs.writeFileSync(jsonl, allResults.length ? `${allResults.map((item) => JSON.stringify(item)).join("\n")}\n` : "");
+  writeReports(outDir, results, { graph: opt.graph, model: opt.heuristicOnly ? "heuristic-only" : MODEL, reasoning_effort: opt.heuristicOnly ? null : EFFORT, success: ok, failed, skipped_unchanged: entries.length - queue.length });
+  console.log(`Audit complete: ${results.length} entities; ${failed} Mercury failures; ${entries.length - queue.length} unchanged; artifact=${outDir}`);
+
+  if (!opt.heuristicOnly && queue.length > 0 && ok === 0) {
+    throw new Error(`Mercury failed for all ${failed} queued entities; inspect the uploaded artifact for HTTP/API errors`);
+  }
 }
 
 main().catch((error) => { console.error(error.stack ?? error.message); process.exit(1); });
