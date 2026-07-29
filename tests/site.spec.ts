@@ -28,9 +28,9 @@ test("deep entity routes stay readable under the GitHub Pages base path", async 
   await expect(page).toHaveURL(/q=Recycled\+Gate/);
   await page.getByRole("option", { name: /Recycled Gate/i }).first().click();
   await page.getByRole("link", { name: /Open full record/i }).click();
+  await expect(page).toHaveURL(/\/Hugin\/techniques\//);
   await expect(page.locator("[data-pagefind-body]")).toBeVisible();
   await expect(page.getByRole("heading", { name: /What this record contributes/i })).toBeVisible();
-  await expect(page).toHaveURL(/\/Hugin\/techniques\//);
 });
 
 test("quality report exposes the quarantine", async ({ page }) => {
@@ -51,7 +51,7 @@ test("MITRE matrix preserves exact sub-techniques and official links", async ({ 
   const technique = page.locator('[data-mitre-id="T1055.004"]').first();
   await expect(technique).toBeVisible();
   await expect(technique.getByText("Asynchronous Procedure Call")).toBeVisible();
-  await technique.getByRole("button").click();
+  await expect(technique.getByRole("button")).toHaveAttribute("aria-expanded", "true");
   await expect(
     technique.getByRole("link", { name: /View T1055\.004 on attack\.mitre\.org/i }),
   ).toHaveAttribute("href", "https://attack.mitre.org/techniques/T1055/004/");

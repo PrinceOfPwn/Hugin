@@ -70,7 +70,14 @@ export default function MitreMatrix({ index, routePrefix = "/Hugin" }: Props) {
     if (!highlightId) return;
     const el = document.querySelector(`[data-mitre-id="${CSS.escape(highlightId)}"]`);
     if (el && "scrollIntoView" in el) {
-      (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+      const tacticId = el.closest<HTMLElement>("[data-tactic-id]")?.dataset.tacticId;
+      if (tacticId) {
+        const key = `${tacticId}::${highlightId}`;
+        setExpanded((prev) => new Set(prev).add(key));
+      }
+      // Immediate positioning avoids a long, unstable smooth-scroll across the
+      // matrix on narrow screens and leaves the revealed official link usable.
+      (el as HTMLElement).scrollIntoView({ behavior: "auto", block: "center" });
     }
   };
 

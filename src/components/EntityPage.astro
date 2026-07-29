@@ -296,6 +296,7 @@ const jsonLd = buildJsonLd(entity, cleanSummary || entity.summary);
 <BaseLayout title={entity.title} description={cleanSummary || entity.summary} jsonLd={jsonLd}>
   <article
     class="ep"
+    data-pagefind-body
     style={`--accent:${gColor};--gcolor:${gColor};--tcolor:${tColor};`}
   >
     {/* === BREADCRUMB === */}
