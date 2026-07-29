@@ -1,9 +1,0 @@
-{
-  "input": "data/incoming/offensive_x64_assembly.jsonl",
-  "output": "data/normalized/offensive_x64_assembly.jsonl",
-  "total_lines": 13,
-  "normalized": 13,
-  "parse_failures": [],
-  "degraded_records": [],
-  "status": "completed"
-}
