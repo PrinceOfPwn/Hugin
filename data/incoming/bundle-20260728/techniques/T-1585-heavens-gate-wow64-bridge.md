@@ -1,0 +1,31 @@
+---
+id: T-1585
+title: "Heaven's Gate 32→64-bit WOW64 Syscall Bridge"
+category: "edr-evasion"
+tier: "A"
+tags: [research, gap, generated]
+mitre: []
+origin: local-model-expand
+source_cluster: "heavens-gate-wow64-bridge"
+member_notes: ["lgtm:vault-gap-heavens-gate"]
+---
+
+## Summary
+This card covers the research gap identified as Heaven's Gate 32→64-bit WOW64 Syscall Bridge. It represents an area of convergence that requires further investigation.
+
+## Technical Deep Dive
+Documents the Heaven's Gate technique: a 32-bit Wow64 process jumps to 64-bit code via ntdll.Wow64Transition (the 0x33 segment selector FAR jump into the 64-bit code segment) and wow64cpu.dll's TurboDispatch, allowing direct 64-bit syscalls that bypass 32-bit ntdll hooks. The 32-bit process must construct a 64-bit syscall stub in memory, switch CS to 0x33 via a far return with a manually crafted frame, issue the syscall, and return to 0x23 (32-bit CS). Operationally valuable because 32-bit EDR hooks cannot observe the transition; superseded in part by SysWhispers3 WoW64 stubs and the modern Hells Gate-style SSN extraction.
+
+
+## Evidence
+- lgtm:vault-gap-heavens-gate: Identified gap in the research corpus.
+
+## Detection & Mitigation
+To be determined based on specific technical implementation.
+
+## Related Techniques
+- T-001: Related technique identified in gap analysis.
+- T-002: Related technique identified in gap analysis.
+
+## References
+- To be added.
