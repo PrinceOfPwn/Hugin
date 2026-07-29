@@ -1,6 +1,8 @@
 import type { CSSProperties } from "react";
 
 export type EdgesMode = "none" | "selected" | "top5" | "top20" | "all";
+export type SpacetimeMode = "off" | "grid" | "playground";
+export type SpacetimePalette = "cool" | "warm" | "duo";
 
 export interface UniverseSettings {
   edgesMode: EdgesMode;
@@ -12,6 +14,14 @@ interface Props {
   value: UniverseSettings;
   onChange: (next: UniverseSettings) => void;
   style?: CSSProperties;
+
+  // ── Spacetime (F5) — optional; if omitted the section is not rendered ────
+  spacetimeMode?: SpacetimeMode;
+  onSpacetimeModeChange?: (mode: SpacetimeMode) => void;
+  spacetimeIntensity?: number;
+  onSpacetimeIntensityChange?: (n: number) => void;
+  spacetimePalette?: SpacetimePalette;
+  onSpacetimePaletteChange?: (p: SpacetimePalette) => void;
 }
 
 const EDGE_LABELS: Array<{ v: EdgesMode; label: string }> = [
@@ -59,7 +69,47 @@ const chipStyle = (active: boolean): CSSProperties => ({
   fontSize: 10,
 });
 
-export default function UniverseControls({ value, onChange, style }: Props) {
+const SPACETIME_MODES: Array<{ v: SpacetimeMode; label: string }> = [
+  { v: "off",        label: "Off" },
+  { v: "grid",       label: "Grid" },
+  { v: "playground", label: "Playground" },
+];
+
+const PALETTE_COLORS: Record<SpacetimePalette, string> = {
+  cool: "#00f0ff",
+  warm: "#ff7a4a",
+  duo:  "#c86adf",
+};
+
+const paletteChipStyle = (color: string, active: boolean): CSSProperties => ({
+  display: "inline-block",
+  width: 14,
+  height: 14,
+  marginRight: 5,
+  borderRadius: 3,
+  background: color,
+  border: active
+    ? `1px solid rgba(255,255,255,0.9)`
+    : `1px solid rgba(255,255,255,0.15)`,
+  boxShadow: active ? `0 0 6px ${color}` : "none",
+  cursor: "pointer",
+  verticalAlign: "middle",
+});
+
+export default function UniverseControls({
+  value,
+  onChange,
+  style,
+  spacetimeMode,
+  onSpacetimeModeChange,
+  spacetimeIntensity,
+  onSpacetimeIntensityChange,
+  spacetimePalette,
+  onSpacetimePaletteChange,
+}: Props) {
+  const showSpacetime =
+    spacetimeMode !== undefined && onSpacetimeModeChange !== undefined;
+
   return (
     <div style={{ ...panelStyle, ...style }}>
       <div style={rowStyle}>
@@ -96,6 +146,58 @@ export default function UniverseControls({ value, onChange, style }: Props) {
           Cinematic
         </label>
       </div>
+
+      {showSpacetime && (
+        <div style={rowStyle}>
+          <div style={labelStyle}>Spacetime</div>
+          <div>
+            {SPACETIME_MODES.map(({ v, label }) => (
+              <button
+                key={v}
+                style={chipStyle(spacetimeMode === v)}
+                onClick={() => onSpacetimeModeChange!(v)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {spacetimeMode !== "off" && (
+            <>
+              {onSpacetimeIntensityChange && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ ...labelStyle, marginBottom: 2 }}>
+                    Intensity {(spacetimeIntensity ?? 0.6).toFixed(2)}
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.02}
+                    value={spacetimeIntensity ?? 0.6}
+                    onChange={(e) => onSpacetimeIntensityChange(parseFloat(e.target.value))}
+                    style={{ width: "100%" }}
+                  />
+                </div>
+              )}
+
+              {onSpacetimePaletteChange && (
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ ...labelStyle, marginBottom: 2 }}>Palette</div>
+                  {(Object.keys(PALETTE_COLORS) as SpacetimePalette[]).map((p) => (
+                    <span
+                      key={p}
+                      title={p}
+                      style={paletteChipStyle(PALETTE_COLORS[p], spacetimePalette === p)}
+                      onClick={() => onSpacetimePaletteChange(p)}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

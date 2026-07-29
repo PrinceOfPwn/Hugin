@@ -1,5 +1,5 @@
 import {
-  useCallback, useEffect, useMemo, useState,
+  useCallback, useEffect, useMemo, useRef, useState,
 } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
@@ -9,12 +9,15 @@ import type { DatasetManifest } from "../lib/types";
 
 import NodeCloud, { buildSpinRotation } from "./NodeCloud";
 import type { NodeDatum, OrbitDescriptor } from "./NodeCloud";
+import NodeHitboxes from "./NodeHitboxes";
+import BeamOfLight from "./BeamOfLight";
 import EdgeSet, { EDGE_COLOR } from "./EdgeSet";
 import SpacetimeWarp, { type HeavyNode } from "./SpacetimeWarp";
-import CinematicCamera from "./CinematicCamera";
+import CinematicCamera, { type HitCandidate } from "./CinematicCamera";
 import NebulaField, { type NebulaGalaxy } from "./NebulaField";
 import SatelliteTrails, { type TrailOrbit } from "./SatelliteTrails";
-import UniverseControls, { type UniverseSettings, type EdgesMode } from "./UniverseControls";
+import UniverseControls, { type UniverseSettings, type EdgesMode, type SpacetimeMode, type SpacetimePalette } from "./UniverseControls";
+import SpacetimeLayer from "./SpacetimeLayer";
 
 type Mode = "universe" | "galaxy" | "neighborhood";
 
@@ -148,11 +151,43 @@ export default function GraphThreeV3({
   const [hovered, setHovered] = useState<{ id: string; screen: { x: number; y: number } } | null>(null);
   const [focusPos, setFocusPos] = useState<THREE.Vector3 | null>(null);
   const [galaxyFilter, setGalaxyFilter] = useState<string | null>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
+
+  // Push a cursor onto the underlying <canvas> element. Camera writes
+  // "grab" / "grabbing" during drag; parent writes "pointer" when hovering a
+  // node. Last write wins per pointer event.
+  const setCanvasCursor = useCallback((c: string) => {
+    const el = canvasWrapRef.current?.querySelector("canvas") as HTMLCanvasElement | null;
+    if (el && el.style.cursor !== c) el.style.cursor = c;
+  }, []);
 
   // Local fallback if parent doesn't lift universe settings.
   const [universeLocal, setUniverseLocal] = useState<UniverseSettings>(DEFAULT_UNIVERSE);
   const universe = universeProp ?? universeLocal;
   const setUniverse = onUniverseChange ?? setUniverseLocal;
+
+  // Spacetime layer state (F): fabric grid + planet grab + gravitational ripple.
+  const [spacetimeMode, setSpacetimeMode] = useState<SpacetimeMode>("off");
+  const [spacetimeIntensity, setSpacetimeIntensity] = useState(0.6);
+  const [spacetimePalette, setSpacetimePalette] = useState<SpacetimePalette>("duo");
+
+  // Live position overrides for grabbed nodes so the SpacetimeGrid deformation
+  // matches where the user is dragging. Ref + bump avoids per-frame re-renders
+  // of the whole positionsMap while still invalidating downstream memos.
+  const positionOverridesRef = useRef<Map<string, THREE.Vector3>>(new Map());
+  const [posBump, setPosBump] = useState(0);
+  const handleNodeMoved = useCallback((id: string, pos: [number, number, number]) => {
+    const v = positionOverridesRef.current.get(id);
+    if (v) v.set(pos[0], pos[1], pos[2]);
+    else positionOverridesRef.current.set(id, new THREE.Vector3(pos[0], pos[1], pos[2]));
+    // Throttle re-renders — only bump every ~66ms.
+    const now = performance.now();
+    if (now - lastBumpRef.current > 66) {
+      lastBumpRef.current = now;
+      setPosBump((b) => b + 1);
+    }
+  }, []);
+  const lastBumpRef = useRef(0);
 
   // ─── Positions ───────────────────────────────────────────────────────────
   const positionsMap = useMemo<Map<string, THREE.Vector3>>(() => {
@@ -180,8 +215,28 @@ export default function GraphThreeV3({
         ));
       }
     }
+    // Apply live drag overrides so the graph reacts to SpacetimeLayer grabs.
+    for (const [id, override] of positionOverridesRef.current) {
+      m.set(id, override.clone());
+    }
     return m;
-  }, [graphData]);
+    // posBump forces re-derivation while user drags a planet.
+  }, [graphData, posBump]);
+
+  // ─── Spacetime entities (id + mass + live position) for SpacetimeLayer ──
+  const spacetimeEntities = useMemo(() => {
+    if (spacetimeMode === "off") return [] as Array<{ id: string; mass?: number; position?: { x: number; y: number; z: number } }>;
+    const out: Array<{ id: string; mass?: number; position?: { x: number; y: number; z: number } }> = [];
+    for (const n of graphData.nodes) {
+      const p = positionsMap.get(n.id);
+      out.push({
+        id: n.id,
+        mass: (n as any).mass ?? 0,
+        position: p ? { x: p.x, y: p.y, z: p.z } : undefined,
+      });
+    }
+    return out;
+  }, [graphData.nodes, positionsMap, spacetimeMode]);
 
   // ─── Galaxy centroids ────────────────────────────────────────────────────
   const galaxyCenters = useMemo<Record<string, [number, number, number]>>(() => {
@@ -399,6 +454,23 @@ export default function GraphThreeV3({
     return selBase;
   }, [selected, adjacency, filteredIds]);
 
+  // Hit-testing candidates for CinematicCamera's own raycasts (wheel and
+  // dblclick). Rebuilt only when the visible-node set changes.
+  const hitCandidates = useMemo<HitCandidate[]>(() => {
+    return visibleNodes.map((n) => ({
+      id: n.id,
+      position: n.position,
+      size: n.size,
+    }));
+  }, [visibleNodes]);
+
+  // Curated edge list feeding BeamOfLight — same filter as adjacency.
+  const beamEdges = useMemo(() => {
+    return graphData.edges
+      .filter((e) => !NOISE_EDGE.has(e.type))
+      .map((e) => ({ source: e.source, target: e.target, type: e.type }));
+  }, [graphData.edges]);
+
   const related = useMemo(() => {
     if (!selected) return [];
     const grouped = new Map<string, Array<{ id: string; label: string; kind: string; direction: "out" | "in" }>>();
@@ -513,7 +585,7 @@ export default function GraphThreeV3({
       </aside>
 
       {/* ─── CANVAS ──────────────────────────────────────────────────────── */}
-      <div style={{ position: "absolute", top: 0, left: 240, right: selected ? 360 : 0, bottom: 0, transition: "right 0.25s ease" }}>
+      <div ref={canvasWrapRef} style={{ position: "absolute", top: 0, left: 240, right: selected ? 360 : 0, bottom: 0, transition: "right 0.25s ease" }}>
         <Canvas
           camera={{ position: [0, 0, 8000], fov: 55, near: 0.1, far: 20000 }}
           dpr={[1, 1.6]}
@@ -542,26 +614,58 @@ export default function GraphThreeV3({
             hoveredId={hovered?.id ?? null}
             selectedId={selected?.id ?? null}
             dimmedSet={dimmedSet}
-            onHover={(id, screen) => setHovered(id ? { id, screen: screen ?? { x: 0, y: 0 } } : null)}
-            onClick={handleNodeClick}
+            interactive={false}
           />
 
+          <NodeHitboxes
+            nodes={visibleNodes}
+            orbits={orbits}
+            onHover={(id, screen) => {
+              setHovered(id ? { id, screen: screen ?? { x: 0, y: 0 } } : null);
+              setCanvasCursor(id ? "pointer" : "grab");
+            }}
+            onSelect={handleNodeClick}
+            onDoubleClick={handleNodeClick}
+          />
+
+          {/* Non-selection edges: dim to darkness when a node is selected so the
+              beam becomes the only visible signal traffic. */}
           {globalEdges.length > 0 && (
-            <EdgeSet edges={globalEdges} positions={positionsMap} opacity={0.10} />
+            <EdgeSet
+              edges={globalEdges}
+              positions={positionsMap}
+              opacity={selected ? 0.02 : 0.10}
+            />
           )}
-          {focusEdges.length > 0 && (
+          {focusEdges.length > 0 && !selected && (
             <EdgeSet
               edges={focusEdges}
               positions={positionsMap}
-              opacity={selected ? 0.9 : 0.45}
-              focusColor={selected ? undefined : "#00e5ff"}
+              opacity={0.45}
+              focusColor="#00e5ff"
             />
           )}
+
+          <BeamOfLight
+            selectedId={selected?.id ?? null}
+            edges={beamEdges}
+            positions={positionsMap}
+          />
 
           <CinematicCamera
             bounds={universeBounds}
             autoOrbit={universe.autoOrbit}
             focus={cameraFocus}
+            hitCandidates={hitCandidates}
+            onDoubleClickNode={handleNodeClick}
+          />
+
+          <SpacetimeLayer
+            mode={spacetimeMode}
+            entities={spacetimeEntities as any}
+            intensity={spacetimeIntensity}
+            paletteHint={spacetimePalette}
+            onNodeMoved={handleNodeMoved}
           />
 
           <EffectComposer>
@@ -580,7 +684,16 @@ export default function GraphThreeV3({
           cursor: "pointer", backdropFilter: "blur(6px)",
         }}>Reset view</button>
 
-        <UniverseControls value={universe} onChange={setUniverse} />
+        <UniverseControls
+          value={universe}
+          onChange={setUniverse}
+          spacetimeMode={spacetimeMode}
+          onSpacetimeModeChange={setSpacetimeMode}
+          spacetimeIntensity={spacetimeIntensity}
+          onSpacetimeIntensityChange={setSpacetimeIntensity}
+          spacetimePalette={spacetimePalette}
+          onSpacetimePaletteChange={setSpacetimePalette}
+        />
 
         {hovered && !selected && (() => {
           const node = nodeById.get(hovered.id);

@@ -133,6 +133,13 @@ jobs:
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             git fetch origin main --depth=2 2>/dev/null || true
             git diff --name-only HEAD~1 HEAD 2>/dev/null | grep '^data/incoming/.*\.jsonl$' | sort > /tmp/hugin-inputs.txt || true
+            # Include JSONLs produced by wrap-inputs / ingest-video in this run
+            # (untracked working-tree files under data/incoming/).
+            git status --porcelain data/incoming 2>/dev/null \
+              | awk '/^\?\? data\/incoming\/.*\.jsonl$/ {print $2}' \
+              | grep -v '/\.wrapped/' \
+              >> /tmp/hugin-inputs.txt || true
+            sort -u /tmp/hugin-inputs.txt -o /tmp/hugin-inputs.txt
           fi
           echo "count=$(wc -l < /tmp/hugin-inputs.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
 
