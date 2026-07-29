@@ -19,6 +19,9 @@ test("graph exposes structured modes and an accessible catalog", async ({ page }
   await page.goto("./graph/");
   await expect(page.getByRole("img", { name: /HUGIN knowledge nodes/i })).toBeVisible();
   await expect(page.getByLabel("Graph view controls")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Fit universe/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Focus selected/i })).toBeDisabled();
+  await expect(page.getByLabel(/Cinematic/i)).toHaveCount(0);
   await expect(page.getByRole("link", { name: /accessible catalog/i })).toBeVisible();
 });
 

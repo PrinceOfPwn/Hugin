@@ -3,7 +3,7 @@ import {
 } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
-import { EffectComposer, Bloom, DepthOfField } from "@react-three/postprocessing";
+import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { DatasetManifest } from "../lib/types";
 
@@ -156,8 +156,7 @@ function CameraExposer({ cameraRef }: { cameraRef?: React.MutableRefObject<THREE
 
 const DEFAULT_UNIVERSE: UniverseSettings = {
   edgesMode: "selected",
-  autoOrbit: true,
-  cinematic: true,
+  autoOrbit: false,
 };
 
 export default function GraphThreeV3({
@@ -170,6 +169,7 @@ export default function GraphThreeV3({
   const [hovered, setHovered] = useState<{ id: string; screen: { x: number; y: number } } | null>(null);
   const [focusPos, setFocusPos] = useState<THREE.Vector3 | null>(null);
   const [galaxyFilter, setGalaxyFilter] = useState<string | null>(null);
+  const [fitSignal, setFitSignal] = useState(0);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
 
   // Push a cursor onto the underlying <canvas> element. Camera writes
@@ -537,9 +537,16 @@ export default function GraphThreeV3({
     setGalaxyFilter(null);
     setMode("universe");
     setFocusPos(null);
+    setFitSignal((n) => n + 1);
     onNodeSelect?.(null);
     onGalaxySelect?.(null);
   }, [onNodeSelect, onGalaxySelect]);
+
+  const handleRefocus = useCallback(() => {
+    if (!selected) return;
+    const pos = positionsMap.get(selected.id);
+    if (pos) setFocusPos(pos.clone());
+  }, [selected, positionsMap]);
 
   // Ronda I: external drivers — CommandPalette selects a node by id, Minimap
   // teleports the camera to an XZ world coordinate. Both funnel through the
@@ -580,13 +587,6 @@ export default function GraphThreeV3({
     return { position: focusPos, distance: selected ? 220 : 500 };
   }, [focusPos, selected]);
 
-  // Stable world-space focus for the DOF pass. Prefer the selected node's
-  // position; else fall back to the universe centroid.
-  const dofTarget = useMemo(() => {
-    if (focusPos) return focusPos;
-    return new THREE.Vector3(universeBounds.center[0], universeBounds.center[1], universeBounds.center[2]);
-  }, [focusPos, universeBounds]);
-
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh", background: "#000005", color: "#e8f0ff", overflow: "hidden" }}>
       {/* ─── CANVAS ──────────────────────────────────────────────────────── */}
@@ -603,7 +603,7 @@ export default function GraphThreeV3({
         >
           <CameraExposer cameraRef={cameraRef} />
           <color attach="background" args={["#000005"]} />
-          <fogExp2 attach="fog" args={["#0a0a15", universe.cinematic ? 0.00025 : 0.00045]} />
+          <fogExp2 attach="fog" args={["#0a0a15", 0.00025]} />
 
           <ambientLight intensity={0.15} color="#4455ff" />
           <pointLight position={[400, 400, 300]}  intensity={1.2} color="#00d0ff" distance={2500} />
@@ -611,13 +611,11 @@ export default function GraphThreeV3({
 
           <Stars radius={universeBounds.size * 2} depth={universeBounds.size} count={6000} factor={6} saturation={0} fade speed={0.3} />
 
-          <NebulaField galaxies={nebulaGalaxies} intensity={universe.cinematic ? 0.18 : 0.10} />
+          <NebulaField galaxies={nebulaGalaxies} intensity={0.14} />
           <GalaxyOrbs centers={galaxies} onSelect={handleGalaxyClick} />
           <SpacetimeWarp heavyNodes={heavyNodes} />
 
-          {universe.cinematic && (
-            <SatelliteTrails orbits={trailOrbits} trailLength={24} intensity={0.55} />
-          )}
+          <SatelliteTrails orbits={trailOrbits} trailLength={24} intensity={0.42} />
 
           <NodeCloud
             nodes={visibleNodes}
@@ -675,6 +673,7 @@ export default function GraphThreeV3({
             bounds={universeBounds}
             autoOrbit={universe.autoOrbit}
             focus={cameraFocus}
+            fitSignal={fitSignal}
             hitCandidates={hitCandidates}
             onDoubleClickNode={handleNodeClick}
           />
@@ -690,9 +689,6 @@ export default function GraphThreeV3({
 
           <EffectComposer>
             <Bloom intensity={0.45} luminanceThreshold={0.75} luminanceSmoothing={0.9} radius={0.6} mipmapBlur />
-            {universe.cinematic ? (
-              <DepthOfField target={dofTarget} focalLength={0.05} bokehScale={3} height={480} />
-            ) : <></>}
           </EffectComposer>
         </Canvas>
 
@@ -700,6 +696,8 @@ export default function GraphThreeV3({
           value={universe}
           onChange={setUniverse}
           onReset={handleReset}
+          onFocusSelected={handleRefocus}
+          canFocusSelected={Boolean(selected)}
           spacetimeMode={spacetimeMode}
           onSpacetimeModeChange={setSpacetimeMode}
           spacetimeIntensity={spacetimeIntensity}

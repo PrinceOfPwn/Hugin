@@ -8,7 +8,6 @@ export type SpacetimeGrabTarget = "nodes" | "galaxies";
 export interface UniverseSettings {
   edgesMode: EdgesMode;
   autoOrbit: boolean;
-  cinematic: boolean;
 }
 
 interface Props {
@@ -18,6 +17,8 @@ interface Props {
 
   // ── Reset view — optional; if omitted the button is not rendered ─────────
   onReset?: () => void;
+  onFocusSelected?: () => void;
+  canFocusSelected?: boolean;
 
   // ── Spacetime (F5) — optional; if omitted the section is not rendered ────
   spacetimeMode?: SpacetimeMode;
@@ -127,6 +128,8 @@ export default function UniverseControls({
   onChange,
   style,
   onReset,
+  onFocusSelected,
+  canFocusSelected = false,
   spacetimeMode,
   onSpacetimeModeChange,
   spacetimeIntensity,
@@ -143,7 +146,17 @@ export default function UniverseControls({
     <div role="group" aria-label="Graph view controls" style={{ ...panelStyle, ...style }}>
       {onReset && (
         <button type="button" onClick={onReset} style={resetBtnStyle}>
-          Reset view
+          Fit universe
+        </button>
+      )}
+      {onFocusSelected && (
+        <button
+          type="button"
+          onClick={onFocusSelected}
+          disabled={!canFocusSelected}
+          style={{ ...resetBtnStyle, opacity: canFocusSelected ? 1 : 0.45 }}
+        >
+          Focus selected
         </button>
       )}
 
@@ -172,14 +185,11 @@ export default function UniverseControls({
           />
           Auto-orbit
         </label>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <input
-            type="checkbox"
-            checked={value.cinematic}
-            onChange={(e) => onChange({ ...value, cinematic: e.target.checked })}
-          />
-          Cinematic
-        </label>
+        <div style={{ marginTop: 6, fontSize: 9, lineHeight: 1.55, opacity: 0.72 }}>
+          Drag rotate · Shift/right-drag pan · Wheel/pinch zoom
+          <br />
+          WASD/arrows move · Q/E vertical · F focus · Space fit
+        </div>
       </div>
 
       {showSpacetime && (

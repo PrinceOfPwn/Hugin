@@ -13,8 +13,7 @@ import AffordanceHint from "./AffordanceHint";
 
 const DEFAULT_UNIVERSE_SETTINGS: UniverseSettings = {
   edgesMode: "selected",
-  autoOrbit: true,
-  cinematic: true,
+  autoOrbit: false,
 };
 
 // Human-readable galaxy labels — mirrors GraphThreeV3.GALAXY_LABELS.
