@@ -3,8 +3,16 @@
   "version": "2.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24 <25" },
-  "overrides": { "adm-zip": "^0.6.0", "onnxruntime-node": "1.25.1", "sharp": "^0.35.0", "tmp": "^0.2.6", "uuid": "^11.1.1" },
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "overrides": {
+    "adm-zip": "^0.6.0",
+    "onnxruntime-node": "1.25.1",
+    "sharp": "^0.35.0",
+    "tmp": "^0.2.6",
+    "uuid": "^11.1.1"
+  },
   "scripts": {
     "data:import": "node scripts/import-public-data.mjs",
     "data:build": "node scripts/build-data.mjs",
@@ -33,17 +41,38 @@
     "test:a11y": "playwright test tests/accessibility.spec.ts",
     "test:budgets": "node scripts/check-budgets.mjs",
     "test:mitre": "node tests/mitre-index.test.mjs",
-    "test:mercury": "node tests/mercury-audit.test.mjs"
+    "test:mercury": "node --check scripts/mercury-audit-graph.mjs && node tests/mercury-audit.test.mjs"
   },
   "dependencies": {
-    "@astrojs/react": "latest", "@astrojs/sitemap": "latest", "@google/genai": "latest", "@huggingface/transformers": "latest",
-    "@react-three/drei": "latest", "@react-three/fiber": "latest", "@react-three/postprocessing": "latest", "astro": "latest",
-    "d3-force-3d": "latest", "graphology": "latest", "marked": "latest", "react": "latest", "react-dom": "latest",
-    "sanitize-html": "latest", "sigma": "latest", "three": "latest"
+    "@astrojs/react": "latest",
+    "@astrojs/sitemap": "latest",
+    "@google/genai": "latest",
+    "@huggingface/transformers": "latest",
+    "@react-three/drei": "latest",
+    "@react-three/fiber": "latest",
+    "@react-three/postprocessing": "latest",
+    "astro": "latest",
+    "d3-force-3d": "latest",
+    "graphology": "latest",
+    "marked": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "sanitize-html": "latest",
+    "sigma": "latest",
+    "three": "latest"
   },
   "devDependencies": {
-    "@astrojs/check": "latest", "@axe-core/playwright": "latest", "@emnapi/core": "1.11.2", "@emnapi/runtime": "1.11.2",
-    "@lhci/cli": "latest", "@playwright/test": "latest", "@types/react": "latest", "@types/react-dom": "latest",
-    "@types/sanitize-html": "latest", "@types/three": "latest", "pagefind": "latest", "typescript": "latest"
+    "@astrojs/check": "latest",
+    "@axe-core/playwright": "latest",
+    "@emnapi/core": "1.11.2",
+    "@emnapi/runtime": "1.11.2",
+    "@lhci/cli": "latest",
+    "@playwright/test": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@types/sanitize-html": "latest",
+    "@types/three": "latest",
+    "pagefind": "latest",
+    "typescript": "latest"
   }
 }
