@@ -11,6 +11,7 @@ interface Props {
     size: number;
   };
   autoOrbit?: boolean;
+  fitSignal?: number;
   // Optional external focus target. When set, the camera tweens to look at
   // this point from `distance` away (cubic-in-out over ~1.2s).
   focus?: { position: THREE.Vector3; distance?: number } | null;
@@ -65,6 +66,7 @@ function raySphereFirst(
 export default function CinematicCamera({
   bounds,
   autoOrbit = true,
+  fitSignal = 0,
   focus,
   onFocusChange,
   onDoubleClickNode,
@@ -93,8 +95,10 @@ export default function CinematicCamera({
   const lastInteractionAt = useRef(performance.now() - 999_999);
 
   // Drag / pointer state.
-  const dragMode = useRef<"none" | "rotate" | "pan">("none");
+  const dragMode = useRef<"none" | "rotate" | "pan" | "pinch">("none");
   const lastMouse = useRef<{ x: number; y: number } | null>(null);
+  const activePointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinchState = useRef<{ distance: number; x: number; y: number } | null>(null);
 
   // Momentum from a rotation drag.
   const angularVel = useRef({ theta: 0, phi: 0 });
@@ -113,6 +117,7 @@ export default function CinematicCamera({
 
   // Double-click detection at the DOM layer.
   const lastPointerUpAt = useRef(0);
+  const lastFitSignal = useRef(fitSignal);
 
   // Keyboard state.
   const keys = useRef(new Set<string>());
@@ -257,14 +262,30 @@ export default function CinematicCamera({
     startFlyTween(focus.position, dist, toPhi, toTheta, 1200);
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (fitSignal === lastFitSignal.current) return;
+    lastFitSignal.current = fitSignal;
+    startFlyTween(boundsCenter, fitDistance, Math.PI * 0.42, Math.PI * 0.25, 850);
+  }, [fitSignal, boundsCenter, fitDistance]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── DOM handlers (rotate / pan / wheel / dblclick / keys) ────────────────
   useEffect(() => {
     const dom = gl.domElement;
     setCursor("grab");
+    dom.style.touchAction = "none";
 
     const onDown = (ev: PointerEvent) => {
-      // 0=left, 1=middle, 2=right.
-      if (ev.button === 2 || ev.shiftKey || ev.altKey) {
+      activePointers.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (activePointers.current.size >= 2) {
+        const [a, b] = [...activePointers.current.values()];
+        pinchState.current = {
+          distance: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+          x: (a.x + b.x) * 0.5,
+          y: (a.y + b.y) * 0.5,
+        };
+        dragMode.current = "pinch";
+      } else if (ev.button === 2 || ev.shiftKey || ev.altKey) {
+        // 0=left, 1=middle, 2=right.
         dragMode.current = "pan";
       } else if (ev.button === 0) {
         dragMode.current = "rotate";
@@ -283,6 +304,37 @@ export default function CinematicCamera({
     };
 
     const onMove = (ev: PointerEvent) => {
+      if (activePointers.current.has(ev.pointerId)) {
+        activePointers.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      }
+      if (activePointers.current.size >= 2) {
+        const [a, b] = [...activePointers.current.values()];
+        const next = {
+          distance: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+          x: (a.x + b.x) * 0.5,
+          y: (a.y + b.y) * 0.5,
+        };
+        const prev = pinchState.current;
+        if (prev) {
+          spherical.current.radius = clamp(
+            spherical.current.radius * clamp(prev.distance / next.distance, 0.8, 1.2),
+            20,
+            20000,
+          );
+          camera.getWorldDirection(scratchForward);
+          scratchRight.crossVectors(scratchForward, camera.up).normalize();
+          scratchUp.crossVectors(scratchRight, scratchForward).normalize();
+          const rect = gl.domElement.getBoundingClientRect();
+          const worldPerPixel = (spherical.current.radius * 2) / Math.max(200, rect.height);
+          target.current.addScaledVector(scratchRight, -(next.x - prev.x) * worldPerPixel);
+          target.current.addScaledVector(scratchUp, (next.y - prev.y) * worldPerPixel);
+        }
+        pinchState.current = next;
+        dragMode.current = "pinch";
+        lastInteractionAt.current = performance.now();
+        flyTween.current = null;
+        return;
+      }
       if (dragMode.current === "none" || !lastMouse.current) return;
       const dx = ev.clientX - lastMouse.current.x;
       const dy = ev.clientY - lastMouse.current.y;
@@ -317,8 +369,11 @@ export default function CinematicCamera({
           momentumActive.current = true;
         }
       }
-      dragMode.current = "none";
-      lastMouse.current = null;
+      activePointers.current.delete(ev.pointerId);
+      pinchState.current = null;
+      const remaining = [...activePointers.current.values()][0];
+      dragMode.current = remaining ? "rotate" : "none";
+      lastMouse.current = remaining ?? null;
       lastPointerUpAt.current = performance.now();
       setCursor("grab");
       (dom as any).releasePointerCapture?.(ev.pointerId);
@@ -336,7 +391,8 @@ export default function CinematicCamera({
       const hit = raySphereFirst(scratchOrigin, scratchDir, boundsCenter, boundsRadius, scratchHit)
         ?? scratchHit.copy(scratchDir).multiplyScalar(spherical.current.radius).add(scratchOrigin);
 
-      const factor = Math.exp(ev.deltaY * 0.0012); // >1 = zoom out, <1 = zoom in
+      const normalizedDelta = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 120 : 1);
+      const factor = clamp(Math.exp(normalizedDelta * 0.0012), 0.65, 1.55);
       // Move camera and target toward hit by (1 - factor) fraction.
       // newCam = lerp(hit, cam, factor); newTarget = lerp(hit, target, factor).
       const camPos = camera.position;
@@ -376,7 +432,7 @@ export default function CinematicCamera({
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       const k = ev.key.toLowerCase();
       keys.current.add(k);
-      if (k === " ") {
+      if (k === " " || k === "home" || k === "0") {
         // Reset to fit-bounds.
         startFlyTween(
           boundsCenter,
@@ -401,6 +457,15 @@ export default function CinematicCamera({
         const toPhi = clamp(Math.acos(dy / r), 0.05, Math.PI - 0.05);
         const toTheta = Math.atan2(dx, dz);
         startFlyTween(f.position, dist, toPhi, toTheta, 1000);
+        ev.preventDefault();
+      } else if (k === "=" || k === "+" || k === "-" || k === "_") {
+        const factor = k === "=" || k === "+" ? 0.82 : 1.22;
+        spherical.current.radius = clamp(spherical.current.radius * factor, 20, 20000);
+        flyTween.current = null;
+        warpStart.current = null;
+        ev.preventDefault();
+      } else if (k.startsWith("arrow") || k === "pageup" || k === "pagedown") {
+        ev.preventDefault();
       }
       lastInteractionAt.current = performance.now();
     };
@@ -495,12 +560,12 @@ export default function CinematicCamera({
       camera.getWorldDirection(scratchForward);
       scratchRight.crossVectors(scratchForward, camera.up).normalize();
       scratchUp.crossVectors(scratchRight, scratchForward).normalize();
-      if (keys.current.has("w")) target.current.addScaledVector(scratchForward,  speed);
-      if (keys.current.has("s")) target.current.addScaledVector(scratchForward, -speed);
-      if (keys.current.has("a")) target.current.addScaledVector(scratchRight,   -speed);
-      if (keys.current.has("d")) target.current.addScaledVector(scratchRight,    speed);
-      if (keys.current.has("e")) target.current.y += speed;
-      if (keys.current.has("q")) target.current.y -= speed;
+      if (keys.current.has("w") || keys.current.has("arrowup")) target.current.addScaledVector(scratchForward,  speed);
+      if (keys.current.has("s") || keys.current.has("arrowdown")) target.current.addScaledVector(scratchForward, -speed);
+      if (keys.current.has("a") || keys.current.has("arrowleft")) target.current.addScaledVector(scratchRight,   -speed);
+      if (keys.current.has("d") || keys.current.has("arrowright")) target.current.addScaledVector(scratchRight,    speed);
+      if (keys.current.has("e") || keys.current.has("pageup")) target.current.y += speed;
+      if (keys.current.has("q") || keys.current.has("pagedown")) target.current.y -= speed;
       lastInteractionAt.current = now;
     }
 

@@ -70,7 +70,7 @@ const EDGE_LABEL: Record<string, string> = {
 };
 
 const EDGE_COLORS: Record<string, string> = {
-  enables: "#00f0ff", counters: "#ff334c", detects: "#38ff6b",
+  enables: "var(--nav-accent)", counters: "#ff334c", detects: "#38ff6b",
   chains_to: "#ffb800", requires: "#e13ffb", implements: "#ffffff",
   derived_from: "#00e5bf", alternative_to: "#9d4edd", related: "#8896b0",
   concept_link: "#00b3e6", reference: "#6b7280", enhances: "#ffdc4c",
@@ -132,7 +132,7 @@ export default function RichInspector({ node, related, galaxyColors, totals, onN
     );
   }
 
-  const galaxyColor = galaxyColors[node.galaxyId] || "#00f0ff";
+  const galaxyColor = galaxyColors[node.galaxyId] || "var(--nav-accent)";
   const kindLabel = KIND_LABEL[node.kind] || node.kind.toUpperCase();
 
   const outgoing = related.filter(r => r.direction === "outgoing");
@@ -187,7 +187,7 @@ export default function RichInspector({ node, related, galaxyColors, totals, onN
 
       {/* Kind-specific sections */}
       {structured?.files && structured.files.length > 0 && (
-        <section style={{ marginTop: 14, padding: "10px 12px", background: "rgba(0, 240, 255, 0.04)", borderLeft: `2px solid #00f0ff` }}>
+        <section style={{ marginTop: 14, padding: "10px 12px", background: "rgba(157, 124, 244, 0.06)", borderLeft: `2px solid var(--nav-accent)` }}>
           <p style={{ margin: 0, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.15em", opacity: 0.7 }}>Implementation</p>
           {structured.files.map((f: string) => (
             <div key={f} style={{ fontFamily: "monospace", fontSize: 12, marginTop: 4, color: "#7dd8ff" }}>{f}</div>

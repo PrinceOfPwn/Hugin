@@ -16,6 +16,7 @@
     "data:import": "node scripts/import-public-data.mjs",
     "data:build": "node scripts/build-data.mjs",
     "data:mitre": "node scripts/build-mitre-index.mjs",
+    "data:mitre:sync": "node scripts/sync-mitre-enterprise.mjs",
     "data:validate": "node scripts/validate-data.mjs",
     "ingest:detect": "node scripts/detect-format.v2.mjs",
     "ingest:normalize": "node scripts/apply-mapping.v2.mjs",
@@ -36,7 +37,8 @@
     "check": "astro check && npm run data:validate",
     "test:e2e": "playwright test",
     "test:a11y": "playwright test tests/accessibility.spec.ts",
-    "test:budgets": "node scripts/check-budgets.mjs"
+    "test:budgets": "node scripts/check-budgets.mjs",
+    "test:mitre": "node tests/mitre-index.test.mjs"
   },
   "dependencies": {
     "@astrojs/react": "latest",

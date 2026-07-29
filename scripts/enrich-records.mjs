@@ -23,27 +23,29 @@ import {
 
 const argv = process.argv.slice(2);
 const force = argv.includes("--force");
-const inputArg = argv.find((arg) => !arg.startsWith("--"));
-if (!inputArg) {
-  console.error("Usage: node scripts/enrich-records.mjs <canonical.jsonl> [--force]");
+const inputArgs = argv.filter((arg) => !arg.startsWith("--"));
+if (inputArgs.length === 0) {
+  console.error("Usage: node scripts/enrich-records.mjs <canonical.jsonl> [more.jsonl ...] [--force]");
   process.exit(1);
 }
 
-const input = path.resolve(inputArg);
-const base = path.basename(input, ".jsonl");
-const output = path.resolve("data/enriched", `${base}.jsonl`);
-const reportPath = path.resolve("data/enriched", `${base}.report.json`);
-const policy = JSON.parse(fs.readFileSync(path.resolve("scripts/ingest-model-policy.json"), "utf8"));
-const { records } = readJsonl(input);
-const canonical = records.map(({ value }) => value);
-const enrichedById = new Map();
-const report = { local: 0, remote: 0, remote_cache: 0, skipped: 0, degraded: 0, remote_errors: [] };
-
-const skipped = canonical.filter((record) => (record.routing?.requested_enrichment?.length ?? 0) === 0);
-const requested = canonical.filter((record) => !skipped.includes(record));
-const complex = requested.filter((record) => record.routing?.semantic_complexity === "complex");
-const localRecords = requested.filter((record) => record.routing?.semantic_complexity !== "complex");
-const local = localRecords.length
+const policy = JSON.parse(fs.readFileSync(new URL("./ingest-model-policy.json", import.meta.url), "utf8"));
+const jobs = inputArgs.map((inputArg) => {
+  const input = path.resolve(inputArg);
+  const base = path.basename(input, ".jsonl");
+  const { records } = readJsonl(input);
+  return {
+    input,
+    output: path.resolve("data/enriched", `${base}.jsonl`),
+    reportPath: path.resolve("data/enriched", `${base}.report.json`),
+    canonical: records.map(({ value }) => value),
+  };
+});
+const needsLocalModel = jobs.some(({ canonical }) => canonical.some((record) =>
+  (record.routing?.requested_enrichment?.length ?? 0) > 0
+  && record.routing?.semantic_complexity !== "complex"
+));
+const local = needsLocalModel
   ? new LocalTextModel({
       modelId: process.env.HUGIN_SIMPLE_MODEL ?? policy.local.model,
       cacheDir: process.env.HUGIN_MODEL_CACHE ?? ".hf-cache",
@@ -57,6 +59,24 @@ const cloud = new NvidiaModelsClient({
 });
 
 try {
+  console.log(`[enrich] batch start: ${jobs.length} file(s); shared local model=${needsLocalModel ? "enabled" : "not needed"}`);
+  for (let index = 0; index < jobs.length; index++) {
+    const job = jobs[index];
+    console.log(`[enrich] file ${index + 1}/${jobs.length}: ${path.relative(process.cwd(), job.input)}`);
+    await enrichJob(job);
+  }
+} finally {
+  await local?.dispose();
+}
+
+async function enrichJob({ input, output, reportPath, canonical }) {
+  const enrichedById = new Map();
+  const report = { local: 0, remote: 0, remote_cache: 0, skipped: 0, degraded: 0, remote_errors: [] };
+  const skipped = canonical.filter((record) => (record.routing?.requested_enrichment?.length ?? 0) === 0);
+  const requested = canonical.filter((record) => !skipped.includes(record));
+  const complex = requested.filter((record) => record.routing?.semantic_complexity === "complex");
+  const localRecords = requested.filter((record) => record.routing?.semantic_complexity !== "complex");
+
   for (const record of skipped) {
     enrichedById.set(record.id, deterministicFallback(record, "not_requested"));
     report.skipped++;
@@ -103,18 +123,19 @@ try {
       }
     }
   }
-} finally {
-  await local?.dispose();
-}
 
-const outputRecords = canonical.map((record) => ({
-  ...record,
-  enrichment: enrichedById.get(record.id) ?? deterministicFallback(record, "degraded"),
-}));
-writeJsonl(output, outputRecords);
-fs.writeFileSync(reportPath, `${JSON.stringify({ input: path.relative(process.cwd(), input), output: path.relative(process.cwd(), output), ...report }, null, 2)}\n`);
-console.log(`Enriched ${outputRecords.length} records -> ${output}`);
-console.log(JSON.stringify(report, null, 2));
+  const outputRecords = canonical.map((record) => ({
+    ...record,
+    enrichment: enrichedById.get(record.id) ?? deterministicFallback(record, "degraded"),
+  }));
+  writeJsonl(output, outputRecords);
+  fs.writeFileSync(reportPath, `${JSON.stringify({
+    input: path.relative(process.cwd(), input),
+    output: path.relative(process.cwd(), output),
+    ...report,
+  }, null, 2)}\n`);
+  console.log(`[enrich] complete: ${path.relative(process.cwd(), input)} -> ${path.relative(process.cwd(), output)} ${JSON.stringify(report)}`);
+}
 
 async function enrichSimple(record, model) {
   try {

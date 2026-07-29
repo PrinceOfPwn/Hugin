@@ -48,7 +48,7 @@ const CLICKABLE: React.CSSProperties = {
 };
 
 const ACTIVE: React.CSSProperties = {
-  color: "#00f0ff",
+  color: "var(--nav-accent)",
   fontWeight: 600,
 };
 

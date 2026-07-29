@@ -126,12 +126,12 @@ export default function LatestListShell({ entities, galaxies, routePrefix }: Pro
       <div style={{ flex: 1, minWidth: 0, padding: "10px 4px" }}>
         <div style={{
           padding: "10px 14px", marginBottom: 16,
-          background: "rgba(0,8,20,0.55)", border: "1px solid rgba(0,240,255,0.18)",
+          background: "rgba(0,8,20,0.55)", border: "1px solid rgba(157,124,244,0.18)",
           color: "#c8d4e8", fontFamily: "monospace", fontSize: 12,
         }}>
-          <strong style={{ color: "#00f0ff" }}>{stats.total.toLocaleString()}</strong> entities ·{" "}
-          <strong style={{ color: "#00f0ff" }}>{stats.n7.toLocaleString()}</strong> new this week ·{" "}
-          <strong style={{ color: "#00f0ff" }}>{stats.n30.toLocaleString()}</strong> this month
+          <strong style={{ color: "var(--nav-accent)" }}>{stats.total.toLocaleString()}</strong> entities ·{" "}
+          <strong style={{ color: "var(--nav-accent)" }}>{stats.n7.toLocaleString()}</strong> new this week ·{" "}
+          <strong style={{ color: "var(--nav-accent)" }}>{stats.n30.toLocaleString()}</strong> this month
         </div>
 
         {results.length === 0 && (
@@ -145,7 +145,7 @@ export default function LatestListShell({ entities, galaxies, routePrefix }: Pro
             const href = `${routePrefix}${e.route}`;
             return (
               <li key={e.id} style={{
-                border: "1px solid rgba(0,240,255,0.14)",
+                border: "1px solid rgba(157,124,244,0.14)",
                 background: "rgba(0,8,20,0.5)",
                 padding: "12px 14px",
                 borderRadius: 3,
@@ -156,7 +156,7 @@ export default function LatestListShell({ entities, galaxies, routePrefix }: Pro
                   </a>
                   <span style={{
                     fontFamily: "monospace", fontSize: 10,
-                    background: "rgba(0,240,255,0.15)", color: "#00f0ff",
+                    background: "rgba(157,124,244,0.15)", color: "var(--nav-accent)",
                     padding: "2px 6px", whiteSpace: "nowrap",
                   }}>{delta}</span>
                 </div>
@@ -182,8 +182,8 @@ export default function LatestListShell({ entities, galaxies, routePrefix }: Pro
 
 const badge: React.CSSProperties = {
   padding: "2px 6px",
-  background: "rgba(0,240,255,0.12)", color: "#00f0ff",
-  border: "1px solid rgba(0,240,255,0.28)",
+  background: "rgba(157,124,244,0.12)", color: "var(--nav-accent)",
+  border: "1px solid rgba(157,124,244,0.28)",
 };
 const badgeMuted: React.CSSProperties = {
   padding: "2px 6px",

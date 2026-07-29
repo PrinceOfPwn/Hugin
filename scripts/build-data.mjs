@@ -1025,7 +1025,7 @@ for (const item of evidence) {
 
 const assetPayloads = {
   catalog: entities,
-  graph: { nodes: graphNodes, edges: curated },
+  graph: { nodes: graphNodes, edges: curated, spinAxes: galaxySpinAxes },
   similarity,
   membership,
   evidence: {

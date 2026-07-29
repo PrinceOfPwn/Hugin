@@ -18,7 +18,10 @@ export default function MitreTechniqueRow({
   onToggle,
   highlight = false,
 }: Props) {
-  const attackUrl = `https://attack.mitre.org/techniques/${technique.id}/`;
+  const [parentId, subId] = technique.id.split(".");
+  const attackUrl = subId
+    ? `https://attack.mitre.org/techniques/${parentId}/${subId}/`
+    : `https://attack.mitre.org/techniques/${parentId}/`;
   const cardStyle: CSSProperties = {
     ...cardBase,
     borderColor: highlight ? "#ffd447" : cardBase.borderColor,
@@ -33,6 +36,7 @@ export default function MitreTechniqueRow({
         style={headerButton}
       >
         <span style={idBadge}>{technique.id}</span>
+        <span style={name} title={technique.name}>{technique.name}</span>
         <span style={countPill}>{technique.cardCount}</span>
         <span style={caret} aria-hidden="true">{expanded ? "▾" : "▸"}</span>
       </button>
@@ -65,10 +69,10 @@ export default function MitreTechniqueRow({
 }
 
 const cardBase: CSSProperties = {
-  border: "1px solid rgba(0,240,255,0.24)",
+  border: "1px solid rgba(157,124,244,0.24)",
   background: "rgba(0,8,20,0.6)",
   borderRadius: 3,
-  minWidth: 130,
+  minWidth: 250,
   flex: "0 0 auto",
   transition: "border-color 0.2s",
 };
@@ -87,15 +91,25 @@ const headerButton: CSSProperties = {
   textAlign: "left",
 };
 const idBadge: CSSProperties = {
-  color: "#00f0ff",
+  color: "var(--nav-accent)",
   fontWeight: 700,
+  whiteSpace: "nowrap",
+};
+const name: CSSProperties = {
+  color: "#d8dcea",
+  fontFamily: "system-ui, sans-serif",
+  fontSize: 11,
+  maxWidth: 220,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 };
 const countPill: CSSProperties = {
   marginLeft: "auto",
   padding: "1px 7px",
-  background: "rgba(0,240,255,0.18)",
-  color: "#00f0ff",
-  border: "1px solid rgba(0,240,255,0.32)",
+  background: "rgba(157,124,244,0.18)",
+  color: "var(--nav-accent)",
+  border: "1px solid rgba(157,124,244,0.32)",
   fontSize: 11,
 };
 const caret: CSSProperties = {
@@ -104,7 +118,7 @@ const caret: CSSProperties = {
 };
 const expandedWrap: CSSProperties = {
   padding: "6px 10px 10px",
-  borderTop: "1px solid rgba(0,240,255,0.14)",
+  borderTop: "1px solid rgba(157,124,244,0.14)",
 };
 const list: CSSProperties = {
   listStyle: "none",

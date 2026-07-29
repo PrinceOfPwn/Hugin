@@ -76,7 +76,7 @@ export default function EntityListCard({
 const listCardStyle: CSSProperties = {
   display: "block",
   padding: "10px 12px",
-  border: "1px solid rgba(0,240,255,0.14)",
+  border: "1px solid rgba(157,124,244,0.14)",
   background: "rgba(0,8,20,0.5)",
   color: "#e8f0ff",
   textDecoration: "none",
@@ -91,9 +91,9 @@ const gridCardStyle: CSSProperties = {
 };
 
 const selectedStyle: CSSProperties = {
-  borderColor: "#00f0ff",
+  borderColor: "var(--nav-accent)",
   background: "rgba(0,60,90,0.55)",
-  boxShadow: "0 0 0 1px rgba(0,240,255,0.4)",
+  boxShadow: "0 0 0 1px rgba(157,124,244,0.4)",
 };
 
 const titleStyle: CSSProperties = {
@@ -111,8 +111,8 @@ const titleStyle: CSSProperties = {
 const deltaStyle: CSSProperties = {
   fontFamily: "monospace",
   fontSize: 10,
-  background: "rgba(0,240,255,0.12)",
-  color: "#00f0ff",
+  background: "rgba(157,124,244,0.12)",
+  color: "var(--nav-accent)",
   padding: "1px 6px",
   whiteSpace: "nowrap",
 };
@@ -128,8 +128,8 @@ const metaRowStyle: CSSProperties = {
 
 const badge: CSSProperties = {
   padding: "1px 6px",
-  background: "rgba(0,240,255,0.12)", color: "#00f0ff",
-  border: "1px solid rgba(0,240,255,0.28)",
+  background: "rgba(157,124,244,0.12)", color: "var(--nav-accent)",
+  border: "1px solid rgba(157,124,244,0.28)",
 };
 const badgeMuted: CSSProperties = {
   padding: "1px 6px",

@@ -51,7 +51,7 @@ export default function KindLegend({ activeKinds, onToggleKind, activeEdgeTypes,
     }}>
       <button onClick={() => setCollapsed(!collapsed)}
         style={{
-          background: "transparent", border: "none", color: "#00f0ff",
+          background: "transparent", border: "none", color: "var(--nav-accent)",
           fontFamily: "monospace", fontSize: 10, cursor: "pointer",
           textTransform: "uppercase", letterSpacing: "0.15em",
           padding: 0, marginBottom: collapsed ? 0 : 8,

@@ -13,8 +13,7 @@ import AffordanceHint from "./AffordanceHint";
 
 const DEFAULT_UNIVERSE_SETTINGS: UniverseSettings = {
   edgesMode: "selected",
-  autoOrbit: true,
-  cinematic: true,
+  autoOrbit: false,
 };
 
 // Human-readable galaxy labels — mirrors GraphThreeV3.GALAXY_LABELS.
@@ -25,12 +24,60 @@ const GALAXY_LABELS: Record<string, string> = {
 };
 
 interface Props {
-  graphData: any;
+  graphData?: any;
   manifest: DatasetManifest;
-  entities: Entity[];
+  entities?: Entity[];
+  dataUrls?: { graph: string; catalog: string };
 }
 
-export default function GraphPageShell({ graphData, manifest, entities }: Props) {
+export default function GraphPageShell({
+  graphData: initialGraphData,
+  manifest,
+  entities: initialEntities = [],
+  dataUrls,
+}: Props) {
+  const [remoteData, setRemoteData] = useState<{ graphData: any; entities: Entity[] } | null>(
+    initialGraphData ? { graphData: initialGraphData, entities: initialEntities } : null,
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (remoteData || !dataUrls) return;
+    const controller = new AbortController();
+    Promise.all([
+      fetch(dataUrls.graph, { signal: controller.signal }).then((r) => {
+        if (!r.ok) throw new Error(`graph ${r.status}`);
+        return r.json();
+      }),
+      fetch(dataUrls.catalog, { signal: controller.signal }).then((r) => {
+        if (!r.ok) throw new Error(`catalog ${r.status}`);
+        return r.json();
+      }),
+    ]).then(([rawGraph, catalog]) => {
+      const nodes = rawGraph.nodes.map((node: any) => ({
+        ...node,
+        position: { x: node.x, y: node.y, z: node.z },
+      }));
+      const positions = Object.fromEntries(
+        nodes.map((node: any) => [node.id, node.position]),
+      );
+      setRemoteData({
+        graphData: {
+          nodes,
+          edges: rawGraph.edges,
+          positions,
+          spinAxes: rawGraph.spinAxes ?? {},
+        },
+        entities: catalog,
+      });
+    }).catch((error) => {
+      if (error?.name !== "AbortError") setLoadError(String(error?.message ?? error));
+    });
+    return () => controller.abort();
+  }, [dataUrls, remoteData]);
+
+  const graphData = remoteData?.graphData ?? initialGraphData;
+  const entities = remoteData?.entities ?? initialEntities;
   const [filter, setFilter] = useState<FilterState>(() => {
     if (typeof window === "undefined") return EMPTY_FILTER;
     return decodeFilters(window.location.search);
@@ -123,6 +170,33 @@ export default function GraphPageShell({ graphData, manifest, entities }: Props)
   // every palette pick, even when the same id is selected twice in a row.
   // Child splits off the id before using it.
 
+  if (!graphData) {
+    return (
+      <main
+        aria-busy={!loadError}
+        style={{
+          minHeight: "100vh", display: "grid", placeItems: "center",
+          background: "radial-gradient(circle at 50% 45%, #17102c 0, #05030b 38%, #000005 72%)",
+          color: "#e8f0ff", padding: 24, textAlign: "center",
+        }}
+      >
+        <div>
+          <p style={{ color: "#b78cff", fontFamily: "monospace", letterSpacing: "0.18em", textTransform: "uppercase" }}>
+            Knowledge universe
+          </p>
+          <h1 style={{ margin: "8px 0", fontSize: "clamp(2rem, 7vw, 5rem)" }}>
+            {loadError ? "The graph could not be loaded." : "Mapping the universe…"}
+          </h1>
+          <p style={{ maxWidth: 620, opacity: 0.72 }}>
+            {loadError
+              ? `Static data request failed: ${loadError}`
+              : `${manifest.counts.graphEntities.toLocaleString()} nodes are loading from versioned static assets.`}
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <div style={{ display: "flex", width: "100%", height: "100vh", background: "#000005", position: "relative" }}>
       {/* Filter sidebar (collapsible) */}
@@ -147,8 +221,8 @@ export default function GraphPageShell({ graphData, manifest, entities }: Props)
           left: sidebarOpen ? 328 : 8,
           zIndex: 20,
           background: "rgba(0,8,20,0.85)",
-          border: "1px solid rgba(0,240,255,0.3)",
-          color: "#00f0ff",
+          border: "1px solid rgba(157,124,244,0.32)",
+          color: "var(--nav-accent)",
           fontFamily: "monospace", fontSize: 11,
           padding: "4px 10px", cursor: "pointer",
           transition: "left 0.2s ease",
@@ -163,7 +237,7 @@ export default function GraphPageShell({ graphData, manifest, entities }: Props)
           position: "absolute", top: 10,
           left: sidebarOpen ? 420 : 90, zIndex: 20,
           background: "rgba(0,8,20,0.75)",
-          border: "1px solid rgba(0,240,255,0.2)",
+          border: "1px solid rgba(157,124,244,0.24)",
           color: "#c8d4e8",
           fontFamily: "monospace", fontSize: 11,
           padding: "4px 10px",
@@ -204,6 +278,17 @@ export default function GraphPageShell({ graphData, manifest, entities }: Props)
         <CommandPalette entities={visibleEntities} onSelect={handleSelectFromPalette} />
         <AffordanceHint />
         <WelcomeTour />
+        <a
+          href="/Hugin/explore/"
+          style={{
+            position: "absolute", right: 16, bottom: 16, zIndex: 25,
+            padding: "8px 12px", border: "1px solid rgba(157,124,244,0.35)",
+            background: "rgba(0,8,20,0.82)", color: "var(--nav-accent)",
+            fontFamily: "monospace", fontSize: 11, textDecoration: "none",
+          }}
+        >
+          Open accessible catalog →
+        </a>
       </div>
     </div>
   );

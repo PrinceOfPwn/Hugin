@@ -36,6 +36,8 @@ jobs:
           HUGIN_SIMILARITY_ENGINE: transformers
           HUGIN_MODEL_CACHE: .hf-cache
         run: npm run data:build
+      - name: Build and audit MITRE ATT&CK index
+        run: npm run data:mitre && npm run test:mitre
       - run: npm run data:validate
       - name: Hand generated data to the site job
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

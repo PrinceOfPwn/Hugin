@@ -1,43 +1,10 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import ExplorerShell from "../../components/ExplorerShell";
-import { entities, galaxies, curatedRelations, manifest } from "../../lib/data";
+import { galaxies, manifest } from "../../lib/data";
 
-// Slim entity subset (avoid serializing bodyRef/provenance/position).
-const slimEntities = entities.map((e) => ({
-  id: e.id,
-  slug: e.slug,
-  route: e.route,
-  title: e.title,
-  kind: e.kind,
-  category: e.category,
-  galaxyId: e.galaxyId,
-  subgalaxy: e.subgalaxy,
-  summary: e.summary,
-  tags: e.tags,
-  tier: e.tier,
-  mitre: e.mitre,
-  bodyRef: "",
-  bodyShard: 0,
-  degree: e.degree,
-  publishState: e.publishState,
-  evidenceId: "",
-  provenance: [],
-  mass: e.mass,
-  charCount: e.charCount,
-  orbitOf: e.orbitOf ?? null,
-  firstSeenAt: e.firstSeenAt ?? null,
-  lastUpdatedAt: e.lastUpdatedAt ?? null,
-}));
-
-// Trim relations to source+target+type only — that's all the preview pane needs.
-const slimRelations = curatedRelations.map((r) => ({
-  id: r.id,
-  source: r.source,
-  target: r.target,
-  type: r.type,
-  origin: r.origin,
-}));
+const catalogUrl = `/Hugin${manifest.assets.catalog}`;
+const graphUrl = `/Hugin${manifest.assets.graph}`;
 ---
 
 <BaseLayout
@@ -54,11 +21,10 @@ const slimRelations = curatedRelations.map((r) => ({
   </header>
   <section class="explorer-outer">
     <ExplorerShell
-      client:only="react"
-      entities={slimEntities}
+      client:load
       galaxies={galaxies}
-      relations={slimRelations}
       routePrefix="/Hugin"
+      dataUrls={{ catalog: catalogUrl, graph: graphUrl }}
     />
   </section>
 </BaseLayout>
@@ -67,6 +33,7 @@ const slimRelations = curatedRelations.map((r) => ({
   .explorer-outer {
     width: 100%;
     max-width: 100%;
+    min-height: 620px;
     padding: 0;
     margin: 0;
   }

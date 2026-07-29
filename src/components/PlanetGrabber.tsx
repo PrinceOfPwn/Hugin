@@ -33,6 +33,7 @@ interface Props {
   onGrabStart?: (id: string, position: THREE.Vector3) => void;
   onGrabMove?: (id: string, position: THREE.Vector3) => void;
   onGrabEnd?: (id: string, finalPosition: THREE.Vector3, released: boolean) => void;
+  onSpringComplete?: (id: string, origin: THREE.Vector3) => void;
   mode?: "spring-back" | "leave-it";
 }
 
@@ -51,6 +52,7 @@ export default function PlanetGrabber({
   onGrabStart,
   onGrabMove,
   onGrabEnd,
+  onSpringComplete,
   mode = "spring-back",
 }: Props) {
   const { camera, gl, pointer, raycaster } = useThree();
@@ -223,6 +225,7 @@ export default function PlanetGrabber({
       onGrabMove?.(id, p);
       springStartT.current = -1;
       springId.current = null;
+      onSpringComplete?.(id, target);
     }
   });
 
