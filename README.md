@@ -1,6 +1,6 @@
 #  HUGIN Knowledge Universe
 
-**HUGIN** is a state-of-the-art, fully static technical knowledge graph meticulously engineered for GitHub Pages. It projects a massive curated knowledge layer, anonymized supporting evidence, immutable HTML records, and eight stunning WebGL galaxies—all without requiring a backend, browser tokens, paid services, or runtime AI dependencies. 
+**HUGIN** is a fully static technical knowledge graph meticulously engineered for GitHub Pages. It projects a massive curated knowledge layer, anonymized supporting evidence, immutable HTML records, and eight stunning WebGL galaxies—all without requiring a backend, browser tokens, paid services, or runtime AI dependencies. 
 
 It is blazing fast, perfectly secure, and purely static: the ultimate platform for visualizing and navigating complex technical intelligence.
 
