@@ -41,6 +41,8 @@ on:
       - "scripts/compile-canonical.mjs"
       - "scripts/lib/**"
       - "scripts/ingest-model-policy.json"
+      - "package.json"
+      - "package-lock.json"
   workflow_dispatch:
     inputs:
       target:
