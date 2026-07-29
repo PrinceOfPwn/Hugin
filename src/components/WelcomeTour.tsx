@@ -11,7 +11,7 @@ const STEPS: Step[] = [
   { title: "Zoom",    body: "Scroll or pinch to zoom into the universe." },
   { title: "Rotate",  body: "Click and drag to orbit around the galaxies." },
   { title: "Inspect", body: "Click any node to see its details. Double-click to fly there." },
-  { title: "Search",  body: "Press ⌘K (or /) to search anything by name or tag." },
+  { title: "Search",  body: "Press Ctrl+K (or /) to search anything by name or tag." },
 ];
 
 export default function WelcomeTour() {

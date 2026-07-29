@@ -17,7 +17,7 @@ import SpacetimeWarp, { type HeavyNode } from "./SpacetimeWarp";
 import CinematicCamera, { type HitCandidate } from "./CinematicCamera";
 import NebulaField, { type NebulaGalaxy } from "./NebulaField";
 import SatelliteTrails, { type TrailOrbit } from "./SatelliteTrails";
-import UniverseControls, { type UniverseSettings, type EdgesMode, type SpacetimeMode, type SpacetimePalette } from "./UniverseControls";
+import UniverseControls, { type UniverseSettings, type EdgesMode, type SpacetimeMode, type SpacetimePalette, type SpacetimeGrabTarget } from "./UniverseControls";
 import SpacetimeLayer from "./SpacetimeLayer";
 
 type Mode = "universe" | "galaxy" | "neighborhood";
@@ -189,6 +189,7 @@ export default function GraphThreeV3({
   const [spacetimeMode, setSpacetimeMode] = useState<SpacetimeMode>("off");
   const [spacetimeIntensity, setSpacetimeIntensity] = useState(0.6);
   const [spacetimePalette, setSpacetimePalette] = useState<SpacetimePalette>("duo");
+  const [spacetimeGrabTarget, setSpacetimeGrabTarget] = useState<SpacetimeGrabTarget>("nodes");
 
   // Live position overrides for grabbed nodes so the SpacetimeGrid deformation
   // matches where the user is dragging. Ref + bump avoids per-frame re-renders
@@ -242,15 +243,16 @@ export default function GraphThreeV3({
     // posBump forces re-derivation while user drags a planet.
   }, [graphData, posBump]);
 
-  // ─── Spacetime entities (id + mass + live position) for SpacetimeLayer ──
+  // ─── Spacetime entities (id + mass + galaxyId + live position) for SpacetimeLayer ──
   const spacetimeEntities = useMemo(() => {
-    if (spacetimeMode === "off") return [] as Array<{ id: string; mass?: number; position?: { x: number; y: number; z: number } }>;
-    const out: Array<{ id: string; mass?: number; position?: { x: number; y: number; z: number } }> = [];
+    if (spacetimeMode === "off") return [] as Array<{ id: string; mass?: number; galaxyId?: string; position?: { x: number; y: number; z: number } }>;
+    const out: Array<{ id: string; mass?: number; galaxyId?: string; position?: { x: number; y: number; z: number } }> = [];
     for (const n of graphData.nodes) {
       const p = positionsMap.get(n.id);
       out.push({
         id: n.id,
         mass: (n as any).mass ?? 0,
+        galaxyId: (n as any).galaxyId ?? (n as any).galaxy ?? undefined,
         position: p ? { x: p.x, y: p.y, z: p.z } : undefined,
       });
     }
@@ -672,6 +674,7 @@ export default function GraphThreeV3({
             entities={spacetimeEntities as any}
             intensity={spacetimeIntensity}
             paletteHint={spacetimePalette}
+            grabTarget={spacetimeGrabTarget}
             onNodeMoved={handleNodeMoved}
           />
 
@@ -693,6 +696,8 @@ export default function GraphThreeV3({
           onSpacetimeIntensityChange={setSpacetimeIntensity}
           spacetimePalette={spacetimePalette}
           onSpacetimePaletteChange={setSpacetimePalette}
+          spacetimeGrabTarget={spacetimeGrabTarget}
+          onSpacetimeGrabTargetChange={setSpacetimeGrabTarget}
         />
 
         {hovered && !selected && (() => {
