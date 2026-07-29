@@ -60,6 +60,15 @@ Hugin operates at a massive scale while remaining entirely static:
 
 ---
 
+## 🤖 Training Data Factory (QA Pipeline)
+
+Beyond its visual universe, Hugin operates as an autonomous factory for machine learning datasets (Supervised Fine-Tuning / SFT). The built-in QA pipeline extracts, sanitizes, and normalizes intelligence into strictly formatted question-and-answer pairs:
+- **`npm run qa:normalize`**: Aggregates heterogeneous records, standardizing them into a canonical schema while rigorously redacting private URLs, absolute paths, and secrets.
+- **`npm run qa:enrich` & `qa:import`**: Infuses normalized QA pairs with AI-driven supervision and integrates them into the broader knowledge ecosystem.
+- **`npm run qa:ingest`**: Orchestrates the master pipeline, weaving raw fine-tuning traces seamlessly into the global layer.
+
+---
+
 ## 🛠️ Reproduce Locally
 
 The supported runtime is **Node.js 24 LTS**.
