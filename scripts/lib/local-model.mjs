@@ -1,21 +1,44 @@
 import path from "node:path";
 
 export class LocalTextModel {
-  constructor({ modelId, cacheDir, dtype = "q4", maxNewTokens = 800 }) {
+  constructor({ modelId, revision = "main", cacheDir, dtype = "q4", maxNewTokens = 800 }) {
     this.modelId = modelId;
+    this.revision = revision;
     this.cacheDir = path.resolve(cacheDir);
     this.dtype = dtype;
     this.maxNewTokens = maxNewTokens;
     this.generator = null;
+    this.loadPromise = null;
+    this.loadError = null;
   }
 
   async load() {
     if (this.generator) return;
+    if (this.loadError) throw this.loadError;
+    if (this.loadPromise) return this.loadPromise;
+    this.loadPromise = this.loadInternal();
+    try {
+      await this.loadPromise;
+    } catch (error) {
+      this.loadError = error;
+      throw error;
+    } finally {
+      this.loadPromise = null;
+    }
+  }
+
+  async loadInternal() {
     const { env, pipeline } = await import("@huggingface/transformers");
     env.cacheDir = this.cacheDir;
     env.useFSCache = true;
     env.allowRemoteModels = true;
-    this.generator = await pipeline("text-generation", this.modelId, { dtype: this.dtype, device: "cpu" });
+    console.log(`[local-model] loading ${this.modelId}@${this.revision} (${this.dtype}, cpu)`);
+    this.generator = await pipeline("text-generation", this.modelId, {
+      revision: this.revision,
+      dtype: this.dtype,
+      device: "cpu",
+    });
+    console.log(`[local-model] ready ${this.modelId}@${this.revision}`);
   }
 
   async generateJson({ system, user, maxNewTokens = this.maxNewTokens }) {
@@ -40,6 +63,7 @@ export class LocalTextModel {
   async dispose() {
     try { await this.generator?.dispose?.(); } catch {}
     this.generator = null;
+    this.loadPromise = null;
   }
 }
 

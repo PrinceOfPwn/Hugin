@@ -1,6 +1,7 @@
 {
   "local": {
-    "model": "onnx-community/Qwen3.5-4B-Instruct-ONNX",
+    "model": "onnx-community/Qwen3.5-4B-ONNX-OPT",
+    "revision": "57b13b4dce7be073be0df3eaf1c842a6bbb2e0a7",
     "dtype": "q4",
     "max_output_tokens": 700,
     "use_for": [

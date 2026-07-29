@@ -54,6 +54,20 @@ Body used only by the pipeline E2E test.
 Deterministic content — no LLM calls needed.
 `,
   );
+  fs.writeFileSync(
+    path.join(TMP, "data/incoming/bundle-19700101/techniques/T-998-degraded-card.md"),
+    `---
+id: T-998
+name: 'E2E Degraded Card'
+category: syscalls
+tier: A
+---
+
+# E2E Degraded Card
+
+This existing card must be emitted again when its manifest-owned graph node is degraded.
+`,
+  );
 
   // Fixture 2: loose top-level markdown doc
   fs.writeFileSync(
@@ -79,10 +93,30 @@ pub fn hello() { println!("hi"); }
 `,
   );
 
-  // Empty compiled graph so wrap-bundle-techniques sees T-999 as missing
+  // T-999 is missing; T-998 exists but must be repaired because its owned
+  // graph node carries a degraded enrichment status.
   fs.writeFileSync(
     path.join(TMP, "data/source/public-graph.json"),
-    JSON.stringify({ nodes: [], edges: [] }),
+    JSON.stringify({
+      nodes: [{
+        id: "documentation:fixture-degraded",
+        label: "E2E Degraded Card",
+        enrichment_status: "degraded",
+      }],
+      edges: [],
+    }),
+  );
+  fs.writeFileSync(
+    path.join(TMP, "data/source/ingest-manifest.json"),
+    JSON.stringify({
+      version: 2,
+      sources: {
+        "data/incoming/tech-T-998.jsonl": {
+          node_ids: ["documentation:fixture-degraded"],
+          edge_ids: [],
+        },
+      },
+    }),
   );
 }
 
@@ -123,6 +157,8 @@ fixtureLayout();
 step("wrap-bundle-techniques emits missing card as tech-T-999.jsonl", () => {
   const out = run("wrap-bundle-techniques.mjs");
   assert.match(out, /emit T-999/, "expected emit log for T-999");
+  assert.match(out, /repair T-998/, "expected degraded T-998 to be repaired");
+  assert.ok(fs.existsSync(path.join(TMP, "data/incoming/tech-T-998.jsonl")), "tech-T-998 repair JSONL not created");
   const wrap = path.join(TMP, "data/incoming/tech-T-999.jsonl");
   assert.ok(fs.existsSync(wrap), "tech-T-999.jsonl not created");
   const rec = JSON.parse(fs.readFileSync(wrap, "utf8").trim());
