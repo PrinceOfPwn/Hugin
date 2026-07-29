@@ -48,6 +48,7 @@ const needsLocalModel = jobs.some(({ canonical }) => canonical.some((record) =>
 const local = needsLocalModel
   ? new LocalTextModel({
       modelId: process.env.HUGIN_SIMPLE_MODEL ?? policy.local.model,
+      revision: process.env.HUGIN_SIMPLE_REVISION ?? policy.local.revision ?? "main",
       cacheDir: process.env.HUGIN_MODEL_CACHE ?? ".hf-cache",
       dtype: process.env.HUGIN_SIMPLE_DTYPE ?? policy.local.dtype ?? "q4",
       maxNewTokens: policy.local.max_output_tokens ?? 700,
@@ -63,7 +64,10 @@ try {
   for (let index = 0; index < jobs.length; index++) {
     const job = jobs[index];
     console.log(`[enrich] file ${index + 1}/${jobs.length}: ${path.relative(process.cwd(), job.input)}`);
-    await enrichJob(job);
+    const report = await enrichJob(job);
+    if (process.env.HUGIN_FAIL_ON_DEGRADED === "true" && report.degraded > 0) {
+      throw new Error(`Strict enrichment gate rejected ${report.degraded} degraded record(s) in ${path.basename(job.input)}; inspect ${path.relative(process.cwd(), job.reportPath)}`);
+    }
   }
 } finally {
   await local?.dispose();
@@ -71,7 +75,15 @@ try {
 
 async function enrichJob({ input, output, reportPath, canonical }) {
   const enrichedById = new Map();
-  const report = { local: 0, remote: 0, remote_cache: 0, skipped: 0, degraded: 0, remote_errors: [] };
+  const report = {
+    local: 0,
+    remote: 0,
+    remote_cache: 0,
+    skipped: 0,
+    degraded: 0,
+    local_errors: [],
+    remote_errors: [],
+  };
   const skipped = canonical.filter((record) => (record.routing?.requested_enrichment?.length ?? 0) === 0);
   const requested = canonical.filter((record) => !skipped.includes(record));
   const complex = requested.filter((record) => record.routing?.semantic_complexity === "complex");
@@ -83,8 +95,14 @@ async function enrichJob({ input, output, reportPath, canonical }) {
   }
 
   for (const record of localRecords) {
-    enrichedById.set(record.id, await enrichSimple(record, local));
-    report.local++;
+    const result = await enrichSimple(record, local);
+    enrichedById.set(record.id, result.enrichment);
+    if (result.error) {
+      report.degraded++;
+      report.local_errors.push(`${record.id}: ${result.error}`);
+    } else {
+      report.local++;
+    }
   }
 
   // One complex source per GLM request gives the card enough context and makes
@@ -135,6 +153,7 @@ async function enrichJob({ input, output, reportPath, canonical }) {
     ...report,
   }, null, 2)}\n`);
   console.log(`[enrich] complete: ${path.relative(process.cwd(), input)} -> ${path.relative(process.cwd(), output)} ${JSON.stringify(report)}`);
+  return report;
 }
 
 async function enrichSimple(record, model) {
@@ -142,19 +161,30 @@ async function enrichSimple(record, model) {
     const prompt = JSON.stringify({ id: record.id, kind: record.kind, title: record.title, content: record.content, facets: record.facets ?? {} }, null, 2);
     const result = await model.generateJson({ system: LOCAL_SIMPLE_ENRICHMENT_SYSTEM_PROMPT, user: prompt, maxNewTokens: policy.local.max_output_tokens ?? 700 });
     const parsed = result.parsed;
-    if (!parsed || typeof parsed.summary !== "string" || typeof parsed.abstract !== "string") return deterministicFallback(record, "degraded");
+    if (!parsed || typeof parsed.summary !== "string" || typeof parsed.abstract !== "string") {
+      return {
+        enrichment: deterministicFallback(record, "degraded"),
+        error: "model output did not contain valid summary and abstract fields",
+      };
+    }
     const entities = Array.isArray(parsed.entities) ? parsed.entities.filter((item) => item && evidenceExists(record, item.evidence)).map((item) => ({
       name: String(item.name ?? "").trim(), type: String(item.type ?? "other").trim(), confidence: 0.65, evidence: [String(item.evidence)],
     })).filter((item) => item.name) : [];
-    return sanitize({
-      schema_version: ENRICHMENT_VERSION, status: "complete", provider: "local-qwen", model: model.modelId,
-      summary: String(parsed.summary).slice(0, 600), abstract: String(parsed.abstract).slice(0, 1600),
-      card: fallbackCard(record, { title: record.title, purpose: String(parsed.summary), mechanism: String(parsed.abstract) }),
-      tags: Array.isArray(parsed.tags) ? parsed.tags.map((tag) => normalizeWhitespace(tag)).filter(Boolean).slice(0, 16) : [],
-      concepts: [], techniques: [], relations: [], mitre_candidates: [], entities,
-    });
-  } catch {
-    return deterministicFallback(record, "degraded");
+    return {
+      enrichment: sanitize({
+        schema_version: ENRICHMENT_VERSION, status: "complete", provider: "local-qwen", model: model.modelId,
+        summary: String(parsed.summary).slice(0, 600), abstract: String(parsed.abstract).slice(0, 1600),
+        card: fallbackCard(record, { title: record.title, purpose: String(parsed.summary), mechanism: String(parsed.abstract) }),
+        tags: Array.isArray(parsed.tags) ? parsed.tags.map((tag) => normalizeWhitespace(tag)).filter(Boolean).slice(0, 16) : [],
+        concepts: [], techniques: [], relations: [], mitre_candidates: [], entities,
+      }),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      enrichment: deterministicFallback(record, "degraded"),
+      error: normalizeWhitespace(error?.message ?? String(error)).slice(0, 500),
+    };
   }
 }
 
