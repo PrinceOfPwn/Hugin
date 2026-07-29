@@ -32,8 +32,11 @@ interface Props {
   hoveredId: string | null;
   selectedId: string | null;
   dimmedSet: Set<string> | null;     // when non-null, nodes NOT in set render dim
-  onHover: (id: string | null, screen?: { x: number; y: number }) => void;
-  onClick: (id: string) => void;
+  onHover?: (id: string | null, screen?: { x: number; y: number }) => void;
+  onClick?: (id: string) => void;
+  // When false, the Points object refuses to raycast. Use this when an
+  // external hitbox layer is present so we don't get double-fired events.
+  interactive?: boolean;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -101,19 +104,20 @@ const frag = /* glsl */`
       // hovered — bright center, colored ring
       col = mix(vColor, vec3(1.0), 0.5) * core * 1.4 + vColor * ring;
     } else if (vState > 2.5) {
-      // dimmed
-      col = vColor * core * 0.25;
+      // dimmed — recede into darkness so the beam+selection dominates.
+      col = vColor * core * 0.08;
     } else {
       col = vColor * core * 1.15 + vColor * ring * 0.45;
     }
 
-    float alpha = (vState > 2.5 ? core * 0.35 : core * 0.9) * vLodAlpha;
+    float alpha = (vState > 2.5 ? core * 0.08 : core * 0.9) * vLodAlpha;
     gl_FragColor = vec4(col, alpha);
   }
 `;
 
 export default function NodeCloud({
   nodes, orbits, hoveredId, selectedId, dimmedSet, onHover, onClick,
+  interactive = true,
 }: Props) {
   const pointsRef = useRef<THREE.Points>(null);
 
@@ -163,6 +167,11 @@ export default function NodeCloud({
     const pts = pointsRef.current;
     if (!pts) return;
     pts.frustumCulled = false;
+    if (!interactive) {
+      // No-op raycast: external hitbox layer owns picking.
+      (pts as any).raycast = () => {};
+      return;
+    }
     (pts as any).raycast = function (this: THREE.Points, raycaster: THREE.Raycaster, intersects: THREE.Intersection[]) {
       const threshold = 12;
       const ray = raycaster.ray;
@@ -239,26 +248,30 @@ export default function NodeCloud({
     e.stopPropagation();
     if (e.index == null) return;
     const id = nodes[e.index]?.id ?? null;
-    onHover(id, { x: (e as any).clientX ?? e.nativeEvent?.clientX ?? 0, y: (e as any).clientY ?? e.nativeEvent?.clientY ?? 0 });
+    onHover?.(id, { x: (e as any).clientX ?? e.nativeEvent?.clientX ?? 0, y: (e as any).clientY ?? e.nativeEvent?.clientY ?? 0 });
   };
-  const handleOut = () => onHover(null);
+  const handleOut = () => onHover?.(null);
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     if (e.index == null) return;
     const id = nodes[e.index]?.id;
-    if (id) onClick(id);
+    if (id) onClick?.(id);
   };
 
   if (nodes.length === 0) return null;
+
+  // Skip handler binding entirely when non-interactive so we don't pay for
+  // event bubbling on a dead layer.
+  const handlers = interactive
+    ? { onPointerMove: handleMove, onPointerOut: handleOut, onClick: handleClick }
+    : {};
 
   return (
     <points
       ref={pointsRef}
       geometry={geometry}
       material={material}
-      onPointerMove={handleMove}
-      onPointerOut={handleOut}
-      onClick={handleClick}
+      {...handlers}
     />
   );
 }

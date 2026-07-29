@@ -1,3 +1,22 @@
+// ─── Bug fix (2026-07-28) ──────────────────────────────────────────────────
+// Symptom: on /latest, toggling any filter caused *different* entries to
+// surface — often ones the user had never seen at the top of the page —
+// which felt like "the filter isn't filtering, more entries appear."
+//
+// Root cause: `results` used to run `filterEntities(entities, filter)` FIRST
+// and *then* pick the top-50 by recency of the filtered subset. That means
+// the pool the top-50 was drawn from changed with the filter — so filtering
+// could reveal entries that were not in the original "50 most recently added
+// across the graph" pool advertised in the page header. That is the opposite
+// of "Narrow with filters below."
+//
+// Fix: pin the pool to the top-50 by recency of ALL entities first, then run
+// `filterEntities` over that fixed pool. Filtering can only ever narrow the
+// visible list now — it can never surface entries outside the recent-50.
+// The filter engine (`filterEntities`) and the /explore + /graph consumers
+// are unchanged. `stats.total` still counts the total filter matches across
+// the full dataset (useful context in the header bar).
+// ────────────────────────────────────────────────────────────────────────────
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Entity, Galaxy } from "../lib/types";
 import { decodeFilters, encodeFilters, EMPTY_FILTER, filterEntities, type FilterState } from "../lib/filters";
@@ -60,13 +79,23 @@ export default function LatestListShell({ entities, galaxies, routePrefix }: Pro
     return m;
   }, [galaxies]);
 
-  const results = useMemo(() => {
-    const filtered = filterEntities(entities, filter);
-    return filtered
+  // Pool of "the 50 most recently added entities across the graph"
+  // — fixed, filter-independent. Filtering only ever narrows this pool.
+  const recentPool = useMemo(() => {
+    return entities
       .slice()
       .sort((a, b) => tsOf(b) - tsOf(a))
       .slice(0, 50);
-  }, [entities, filter]);
+  }, [entities]);
+
+  const results = useMemo(() => {
+    // `filterEntities` re-sorts by `filter.sortBy` at the end, which would
+    // clobber our recency order — so re-sort by tsOf desc to preserve the
+    // "most recently added first" contract of /latest.
+    return filterEntities(recentPool, filter)
+      .slice()
+      .sort((a, b) => tsOf(b) - tsOf(a));
+  }, [recentPool, filter]);
 
   // Stats: total filtered, "new this week" (7d), "this month" (30d)
   const stats = useMemo(() => {
