@@ -54,8 +54,8 @@ const vert = /* glsl */`
   varying float vState;
   varying float vLodAlpha;
 
-  const float NEAR_DIST = 200.0;
-  const float FAR_DIST  = 1200.0;
+  const float NEAR_DIST = 250.0;
+  const float FAR_DIST  = 1500.0;
 
   void main() {
     vColor = aColor;

@@ -244,10 +244,11 @@ function isActive(href: string): boolean {
         height: 100%;
         margin: 0 auto;
         max-width: var(--max, 1500px);
-        padding: 0 24px;
+        padding: 0 20px;
         display: flex;
         align-items: center;
-        gap: 24px;
+        gap: 16px;
+        min-width: 0;
       }
 
       /* Brand ------------------------------------------------------------ */
@@ -326,7 +327,7 @@ function isActive(href: string): boolean {
         display: inline-flex;
         align-items: center;
         height: 40px;
-        padding: 0 14px;
+        padding: 0 12px;
         color: var(--nav-ink-dim);
         text-decoration: none;
         font-family: var(--sans, Inter, system-ui, sans-serif);
@@ -334,14 +335,15 @@ function isActive(href: string): boolean {
         font-weight: 500;
         letter-spacing: 0.02em;
         border-radius: 6px;
+        white-space: nowrap;
         transition: color 160ms ease, background-color 160ms ease;
       }
 
       .nav-link::after {
         content: "";
         position: absolute;
-        left: 14px;
-        right: 14px;
+        left: 12px;
+        right: 12px;
         bottom: 6px;
         height: 2px;
         border-radius: 2px;
@@ -562,6 +564,20 @@ function isActive(href: string): boolean {
       }
 
       /* Responsive ------------------------------------------------------ */
+      /* Medium widths (below ~1200px): drop the "Quality verified" label,
+         keep the dot as a subtle status indicator so the nav has room. */
+      @media (max-width: 1199.98px) {
+        .nav-status {
+          padding: 6px 8px;
+        }
+        .nav-status-label {
+          display: none;
+        }
+        .nav-brand-sub {
+          display: none;
+        }
+      }
+
       @media (max-width: 719.98px) {
         body { padding-top: var(--nav-height-mobile); }
         .nav-shell { height: var(--nav-height-mobile); }

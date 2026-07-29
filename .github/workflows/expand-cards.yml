@@ -1,0 +1,151 @@
+name: Expand LGTM clusters into technique cards (GLM-5.2)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Which clusters to target"
+        type: choice
+        options: [pending, gaps, cluster, refresh]
+        default: pending
+      priority:
+        description: "Priority filter"
+        type: choice
+        options: [high, medium, low, any]
+        default: high
+      limit:
+        description: "Max cards to generate in this run"
+        type: number
+        default: 2
+      cluster_id:
+        description: "Specific cluster_id (only used when mode=cluster)"
+        type: string
+        default: ""
+      dry_run:
+        description: "Call GLM but do not commit; upload artifacts only"
+        type: boolean
+        default: false
+  schedule:
+    # Every 4 hours at :15 (offset to avoid runner-hour spikes).
+    # Coverage detection makes empty ticks cheap (~1min, exit 0).
+    - cron: "15 */4 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hugin-expand-cards
+  cancel-in-progress: false
+
+jobs:
+  expand:
+    if: github.actor != 'hugin-bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EXPAND_MODE: ${{ github.event.inputs.mode || 'pending' }}
+      EXPAND_PRIORITY: ${{ github.event.inputs.priority || 'high' }}
+      EXPAND_LIMIT: ${{ github.event.inputs.limit || '2' }}
+      EXPAND_CLUSTER_ID: ${{ github.event.inputs.cluster_id || '' }}
+      EXPAND_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            .cache/nvidia-models
+          key: hugin-expand-cards-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            hugin-expand-cards-
+
+      - name: Install dependencies (retry transient failures)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if npm ci; then exit 0; fi
+            if [[ "$attempt" == "3" ]]; then exit 1; fi
+            echo "npm ci failed; retrying ($attempt/3)"
+            sleep $((attempt * 10))
+          done
+
+      - name: Expand clusters with GLM-5.2
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          HUGIN_NVIDIA_CACHE: .cache/nvidia-models
+        shell: bash
+        run: node scripts/expand-cards.mjs
+
+      - name: Upload dry-run payload
+        if: env.EXPAND_DRY_RUN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: expand-cards-dryrun-${{ github.run_id }}
+          path: |
+            expand-cards-dryrun.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload generated cards (dry-run reference)
+        if: env.EXPAND_DRY_RUN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: expand-cards-preview-${{ github.run_id }}
+          path: |
+            data/incoming/expand-*/**
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Commit generated cards
+        if: env.EXPAND_DRY_RUN != 'true' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "hugin-bot"
+          git config user.email "[private-email]"
+
+          # Only stage the new expand-* directories under data/incoming.
+          git add data/incoming/expand-* 2>/dev/null || true
+
+          if git diff --staged --quiet; then
+            echo "No new cards generated; nothing to commit."
+            exit 0
+          fi
+
+          git commit -m "expand: generate technique cards from LGTM clusters (mode=${EXPAND_MODE}, priority=${EXPAND_PRIORITY})"
+
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 3))
+          done
+          echo "Unable to push generated cards after retries" >&2
+          exit 1
+
+      - name: Run summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## HUGIN expand-cards"
+            echo ""
+            echo "- mode: ${EXPAND_MODE}"
+            echo "- priority: ${EXPAND_PRIORITY}"
+            echo "- limit: ${EXPAND_LIMIT}"
+            echo "- dry_run: ${EXPAND_DRY_RUN}"
+            echo ""
+            echo "### Generated cards"
+            for card in data/incoming/expand-*/T-*.md; do
+              [[ -f "$card" ]] || continue
+              echo "- $card"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
