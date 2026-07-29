@@ -25,6 +25,9 @@ interface Props {
   intensity?: number;
   paletteHint?: "cool" | "warm" | "duo";
   grabTarget?: "nodes" | "galaxies";
+  // Gravity Lab may provide live worker-derived attractors. This affects only
+  // the visual potential fabric; canonical entity positions stay untouched.
+  heavyNodesOverride?: SpacetimeHeavyNode[];
 }
 
 const HEAVY_K = 16;
@@ -81,6 +84,7 @@ export default function SpacetimeLayer({
   intensity = 0.6,
   paletteHint = "duo",
   grabTarget = "nodes",
+  heavyNodesOverride,
 }: Props) {
   // ── Galaxy structure — computed once per entities/mode change ────────────
   const galaxies = useMemo(
@@ -98,6 +102,7 @@ export default function SpacetimeLayer({
   // centroids. The grid vertex shader supports up to HEAVY_K entries; galaxies
   // are ranked by totalMass so the biggest clusters dominate the warp.
   const heavyNodes: SpacetimeHeavyNode[] = useMemo(() => {
+    if (heavyNodesOverride) return heavyNodesOverride;
     if (mode === "off") return [];
     if (grabTarget === "galaxies") {
       const sorted = [...galaxies].sort((a, b) => b.totalMass - a.totalMass);
@@ -118,7 +123,7 @@ export default function SpacetimeLayer({
       position: [e.position!.x, e.position!.y, e.position!.z] as [number, number, number],
       mass: e.mass ?? 1,
     }));
-  }, [entities, mode, grabTarget, galaxies]);
+  }, [entities, mode, grabTarget, galaxies, heavyNodesOverride]);
 
   // ── Grabber candidates ────────────────────────────────────────────────────
   const hitCandidates: GrabCandidate[] = useMemo(() => {

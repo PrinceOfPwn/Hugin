@@ -34,6 +34,10 @@ interface Props {
   dimmedSet: Set<string> | null;     // when non-null, nodes NOT in set render dim
   onHover?: (id: string | null, screen?: { x: number; y: number }) => void;
   onClick?: (id: string) => void;
+  // Gravity Lab positions. The physics worker owns a contiguous array in
+  // graph-data order; positionIndices maps this visible subset onto it.
+  livePositions?: Float32Array | null;
+  positionIndices?: Int32Array | null;
   // When false, the Points object refuses to raycast. Use this when an
   // external hitbox layer is present so we don't get double-fired events.
   interactive?: boolean;
@@ -117,6 +121,7 @@ const frag = /* glsl */`
 
 export default function NodeCloud({
   nodes, orbits, hoveredId, selectedId, dimmedSet, onHover, onClick,
+  livePositions, positionIndices,
   interactive = true,
 }: Props) {
   const pointsRef = useRef<THREE.Points>(null);
@@ -225,11 +230,21 @@ export default function NodeCloud({
   const scratch = useMemo(() => new Float32Array(3), []);
 
   useFrame(({ clock }) => {
-    if (!orbits || orbits.length === 0) return;
     const pts = pointsRef.current;
     if (!pts) return;
     const attr = pts.geometry.getAttribute("position") as THREE.BufferAttribute;
     const arr = attr.array as Float32Array;
+    // Worker simulation takes precedence over analytic satellite motion.
+    if (livePositions && positionIndices) {
+      for (let i = 0; i < nodes.length; i++) {
+        const source = positionIndices[i] * 3;
+        const target = i * 3;
+        arr[target] = livePositions[source]; arr[target + 1] = livePositions[source + 1]; arr[target + 2] = livePositions[source + 2];
+      }
+      attr.needsUpdate = true;
+      return;
+    }
+    if (!orbits || orbits.length === 0) return;
     const t = clock.getElapsedTime();
     for (let k = 0; k < orbits.length; k++) {
       const o = orbits[k];

@@ -18,6 +18,8 @@ interface Props {
   onHover: (id: string | null, screen?: { x: number; y: number }) => void;
   onSelect: (id: string) => void;
   onDoubleClick?: (id: string) => void;
+  livePositions?: Float32Array | null;
+  positionIndices?: Int32Array | null;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -33,7 +35,7 @@ interface Props {
 const HITBOX_SCALE = 2.5;
 
 export default function NodeHitboxes({
-  nodes, orbits, onHover, onSelect, onDoubleClick,
+  nodes, orbits, onHover, onSelect, onDoubleClick, livePositions, positionIndices,
 }: Props) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
 
@@ -78,9 +80,19 @@ export default function NodeHitboxes({
 
   // Per-frame update — mirror NodeCloud's Kepler solve for satellites.
   useFrame(({ clock }) => {
-    if (!orbits || orbits.length === 0) return;
     const mesh = meshRef.current;
     if (!mesh) return;
+    if (livePositions && positionIndices) {
+      for (let n = 0; n < nodes.length; n++) {
+        const source = positionIndices[n] * 3, target = n * 3;
+        posBuf[target] = livePositions[source]; posBuf[target + 1] = livePositions[source + 1]; posBuf[target + 2] = livePositions[source + 2];
+        scratchPos.set(posBuf[target], posBuf[target + 1], posBuf[target + 2]);
+        scratchScale.setScalar(sizes[n]); scratchMatrix.compose(scratchPos, scratchQuat, scratchScale); mesh.setMatrixAt(n, scratchMatrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      return;
+    }
+    if (!orbits || orbits.length === 0) return;
     const t = clock.getElapsedTime();
     for (let k = 0; k < orbits.length; k++) {
       const o = orbits[k];

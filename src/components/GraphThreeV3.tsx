@@ -19,6 +19,11 @@ import NebulaField, { type NebulaGalaxy } from "./NebulaField";
 import SatelliteTrails, { type TrailOrbit } from "./SatelliteTrails";
 import UniverseControls, { type UniverseSettings, type EdgesMode, type SpacetimeMode, type SpacetimePalette, type SpacetimeGrabTarget } from "./UniverseControls";
 import SpacetimeLayer from "./SpacetimeLayer";
+import GravityLabPanel from "./GravityLabPanel";
+import { useGravityWorker } from "../lib/gravity/useGravityWorker";
+import type { CollisionEvent, GravityBodyInput, SolverMode } from "../lib/gravity/physics";
+import { createScenario, type StoredScenario } from "../lib/gravity/scenario-store";
+import { deriveCelestialReadout } from "../lib/gravity/celestial";
 
 type Mode = "universe" | "galaxy" | "neighborhood";
 
@@ -190,6 +195,13 @@ export default function GraphThreeV3({
   const [spacetimeIntensity, setSpacetimeIntensity] = useState(0.6);
   const [spacetimePalette, setSpacetimePalette] = useState<SpacetimePalette>("duo");
   const [spacetimeGrabTarget, setSpacetimeGrabTarget] = useState<SpacetimeGrabTarget>("nodes");
+  const [gravityLabOpen, setGravityLabOpen] = useState(false);
+  const [gravityRunning, setGravityRunning] = useState(false);
+  const [gravitySolver, setGravitySolver] = useState<SolverMode>("adaptive");
+  const [gravityTimeScale, setGravityTimeScale] = useState(1);
+  const [gravityActiveLimit, setGravityActiveLimit] = useState(256);
+  const [gravityEvents, setGravityEvents] = useState<CollisionEvent[]>([]);
+  const [gravityScenario, setGravityScenario] = useState<StoredScenario>(() => createScenario("Untitled gravity scenario", manifest.datasetVersion));
 
   // Live position overrides for grabbed nodes so the SpacetimeGrid deformation
   // matches where the user is dragging. Ref + bump avoids per-frame re-renders
@@ -247,6 +259,36 @@ export default function GraphThreeV3({
     return m;
     // posBump forces re-derivation while user drags a planet.
   }, [graphData, posBump]);
+
+  // The physics engine operates in graph-data order. Its frames are supplied
+  // straight to instanced render/hitbox buffers; canonical graph positions are
+  // never mutated by a scenario.
+  const gravityBodies = useMemo<GravityBodyInput[]>(() => graphData.nodes
+    .filter((n) => !n.isGalaxy)
+    .map((n) => {
+      const p = n.position ?? (graphData.positions && !(graphData.positions instanceof Map) ? (graphData.positions as any)[n.id] : null) ?? { x: 0, y: 0, z: 0 };
+      return { id: n.id, mass: Math.max(0.1, n.mass ?? 1), radius: Math.max(1, n.size * 0.55), position: [p.x, p.y, p.z] as [number, number, number] };
+    }), [graphData.nodes, graphData.positions]);
+  const gravityIndexById = useMemo(() => new Map(gravityBodies.map((body, index) => [body.id, index])), [gravityBodies]);
+  const { positions: gravityPositions, velocities: gravityVelocities, metrics: gravityMetrics, configure: configureGravity, run: runGravity, setBody: setGravityBody, reset: resetGravity } = useGravityWorker(gravityBodies, { solver: gravitySolver, activeLimit: gravityActiveLimit }, gravityLabOpen);
+
+  useEffect(() => { configureGravity({ solver: gravitySolver, activeLimit: gravityActiveLimit }); }, [configureGravity, gravitySolver, gravityActiveLimit]);
+  useEffect(() => { runGravity(gravityRunning, gravityTimeScale); }, [runGravity, gravityRunning, gravityTimeScale]);
+  useEffect(() => {
+    if (!gravityMetrics?.collisions.length) return;
+    setGravityEvents((current) => [...current, ...gravityMetrics.collisions].slice(-32));
+  }, [gravityMetrics]);
+  useEffect(() => {
+    if (!gravityLabOpen) return;
+    setSpacetimeMode((current) => current === "off" ? "grid" : current);
+  }, [gravityLabOpen]);
+  useEffect(() => {
+    if (!gravityLabOpen) return;
+    for (const [id, position] of positionOverridesRef.current) {
+      const index = gravityIndexById.get(id);
+      if (index !== undefined) setGravityBody(index, [position.x, position.y, position.z]);
+    }
+  }, [gravityLabOpen, gravityIndexById, posBump, setGravityBody]);
 
   // ─── Spacetime entities (id + mass + galaxyId + live position) for SpacetimeLayer ──
   const spacetimeEntities = useMemo(() => {
@@ -335,6 +377,10 @@ export default function GraphThreeV3({
         } satisfies NodeDatum;
       });
   }, [graphData.nodes, positionsMap, galaxyFilter]);
+
+  const visiblePhysicsIndices = useMemo(() => Int32Array.from(
+    visibleNodes.map((node) => gravityIndexById.get(node.id) ?? 0),
+  ), [visibleNodes, gravityIndexById]);
 
   // ─── Per-galaxy spin rotation matrices ───────────────────────────────────
   // Server emits `spinAxes` keyed by galaxyId; we build the 9-element
@@ -435,6 +481,15 @@ export default function GraphThreeV3({
       })
       .filter((x): x is HeavyNode => x !== null);
   }, [graphData.nodes, positionsMap]);
+
+  const gravityHeavyNodes = useMemo(() => heavyNodes.map((node) => {
+    const index = gravityIndexById.get(node.id);
+    if (gravityPositions && index !== undefined) {
+      const i = index * 3;
+      return { ...node, position: new THREE.Vector3(gravityPositions[i], gravityPositions[i + 1], gravityPositions[i + 2]) };
+    }
+    return node;
+  }), [heavyNodes, gravityPositions, gravityIndexById]);
 
   const nodeById = useMemo(() => {
     const m = new Map<string, GraphNodeIn>();
@@ -578,6 +633,16 @@ export default function GraphThreeV3({
   }, [visibleNodes.length, orbits.length, focusEdges.length, globalEdges.length, mode, galaxyFilter, graphData.nodes.length, graphData.edges.length, universe.edgesMode]);
 
   const selectedRoute = selected?.route;
+  const selectedCelestial = useMemo(() => {
+    if (!selected || !gravityLabOpen) return null;
+    const index = gravityIndexById.get(selected.id);
+    const live = index === undefined || !gravityPositions ? null : [gravityPositions[index * 3], gravityPositions[index * 3 + 1], gravityPositions[index * 3 + 2]] as [number, number, number];
+    const velocity = index === undefined || !gravityVelocities ? undefined : [gravityVelocities[index * 3], gravityVelocities[index * 3 + 1], gravityVelocities[index * 3 + 2]] as [number, number, number];
+    const position: [number, number, number] = live ?? (selected.position
+      ? [selected.position.x, selected.position.y, selected.position.z]
+      : [0, 0, 0]);
+    return deriveCelestialReadout({ mass: Math.max(0.1, selected.mass ?? 1), radius: Math.max(0.1, selected.size * .55), velocity, distanceFromCenter: Math.hypot(...position) });
+  }, [selected, gravityLabOpen, gravityIndexById, gravityPositions, gravityVelocities]);
   const galaxies = Object.entries(galaxyCenters) as Array<[string, [number, number, number]]>;
 
   // Focus target passed to CinematicCamera — memoised so we don't retrigger
@@ -613,7 +678,7 @@ export default function GraphThreeV3({
 
           <NebulaField galaxies={nebulaGalaxies} intensity={0.14} />
           <GalaxyOrbs centers={galaxies} onSelect={handleGalaxyClick} />
-          <SpacetimeWarp heavyNodes={heavyNodes} />
+          <SpacetimeWarp heavyNodes={gravityLabOpen ? gravityHeavyNodes : heavyNodes} />
 
           <SatelliteTrails orbits={trailOrbits} trailLength={24} intensity={0.42} />
 
@@ -624,6 +689,8 @@ export default function GraphThreeV3({
             selectedId={selected?.id ?? null}
             dimmedSet={dimmedSet}
             interactive={false}
+            livePositions={gravityLabOpen ? gravityPositions : null}
+            positionIndices={gravityLabOpen ? visiblePhysicsIndices : null}
           />
 
           <NodeLabels
@@ -643,6 +710,8 @@ export default function GraphThreeV3({
             }}
             onSelect={handleNodeClick}
             onDoubleClick={handleNodeClick}
+            livePositions={gravityLabOpen ? gravityPositions : null}
+            positionIndices={gravityLabOpen ? visiblePhysicsIndices : null}
           />
 
           {/* Non-selection edges: dim to darkness when a node is selected so the
@@ -685,6 +754,7 @@ export default function GraphThreeV3({
             paletteHint={spacetimePalette}
             grabTarget={spacetimeGrabTarget}
             onNodeMoved={handleNodeMoved}
+            heavyNodesOverride={gravityLabOpen ? gravityHeavyNodes.map((node) => ({ id: node.id, position: [node.position.x, node.position.y, node.position.z] as [number, number, number], mass: node.mass })) : undefined}
           />
 
           <EffectComposer>
@@ -706,6 +776,55 @@ export default function GraphThreeV3({
           onSpacetimePaletteChange={setSpacetimePalette}
           spacetimeGrabTarget={spacetimeGrabTarget}
           onSpacetimeGrabTargetChange={setSpacetimeGrabTarget}
+        />
+
+        <GravityLabPanel
+          open={gravityLabOpen}
+          onOpenChange={setGravityLabOpen}
+          running={gravityRunning}
+          onRunningChange={setGravityRunning}
+          solver={gravitySolver}
+          onSolverChange={setGravitySolver}
+          timeScale={gravityTimeScale}
+          onTimeScaleChange={setGravityTimeScale}
+          activeLimit={gravityActiveLimit}
+          onActiveLimitChange={setGravityActiveLimit}
+          bodyCount={gravityBodies.length}
+          metrics={gravityMetrics}
+          lastCollisions={gravityEvents}
+          onReset={() => {
+            resetGravity();
+            setGravityEvents([]);
+            setGravityRunning(false);
+            setFitSignal((n) => n + 1);
+          }}
+          onSaveScenario={() => {
+            const now = new Date().toISOString();
+            const scenario: StoredScenario = {
+              ...gravityScenario,
+              updatedAt: now,
+              simulationTime: gravityMetrics?.simulationTime ?? 0,
+              bodyOverrides: gravityPositions ? gravityBodies.map((body, index) => {
+                const i = index * 3;
+                return { entityId: body.id, position: [gravityPositions[i], gravityPositions[i + 1], gravityPositions[i + 2]], velocity: [gravityVelocities?.[i] ?? 0, gravityVelocities?.[i + 1] ?? 0, gravityVelocities?.[i + 2] ?? 0] };
+              }) : [],
+              events: gravityEvents.map((event) => ({ type: event.type, at: event.at, payload: event })),
+            };
+            setGravityScenario(scenario);
+            return scenario;
+          }}
+          onImportScenario={(scenario) => {
+            for (const override of scenario.bodyOverrides) {
+              const index = gravityIndexById.get(override.entityId);
+              if (index !== undefined) setGravityBody(index, override.position, override.velocity);
+            }
+            setGravityScenario(scenario);
+            setGravityEvents(scenario.events.map((event) => event.payload).filter((event): event is CollisionEvent => {
+              if (event === null || typeof event !== "object") return false;
+              return "outcome" in event && "a" in event && "b" in event;
+            }));
+            setGravityRunning(false);
+          }}
         />
 
         {hovered && !selected && (() => {
@@ -767,6 +886,14 @@ export default function GraphThreeV3({
             <div><div style={{ fontSize: 9, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.14em" }}>Category</div><div style={{ fontSize: 12, marginTop: 2 }}>{selected.category}</div></div>
             <div><div style={{ fontSize: 9, opacity: 0.5, textTransform: "uppercase", letterSpacing: "0.14em" }}>Connections</div><div style={{ fontSize: 12, marginTop: 2 }}>{selected.degree}</div></div>
           </div>
+
+          {selectedCelestial && <section style={{ marginBottom: 20, padding: 12, border: "1px solid rgba(126,184,255,.2)", background: "rgba(56,99,180,.08)" }}>
+            <div style={{ fontSize: 9, opacity: .65, letterSpacing: ".14em", textTransform: "uppercase", marginBottom: 7 }}>Simulated celestial readout</div>
+            <div style={{ fontSize: 11, opacity: .82, marginBottom: 8 }}>Derived from graph mass and simulated velocity; not a claim about this record.</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 10px", fontFamily: "monospace", fontSize: 11 }}>
+              <span>Class</span><strong>{selectedCelestial.classification}</strong><span>Visual temperature</span><strong>{selectedCelestial.surfaceTemperatureK} K</strong><span>Rotation</span><strong>{selectedCelestial.rotationHours} h</strong><span>Orbit</span><strong>{selectedCelestial.orbitalPeriodHu ? `${selectedCelestial.orbitalPeriodHu} HU` : "—"}</strong>
+            </div>
+          </section>}
 
           {related.length > 0 && (
             <div>
