@@ -9,6 +9,9 @@ const purge = argv.includes("--purge-source");
 const INCOMING = path.resolve("data/incoming");
 const WRAPPED = path.join(INCOMING, ".wrapped");
 const SKIP_DIRS = new Set([".wrapped", "quarantine"]);
+// Curated evidence + auto-generated batches — never wrap-in-place; they are
+// authoritative source material or already-emitted JSONL surroundings.
+const SKIP_DIR_PATTERNS = [/^bundle-\d+$/, /^expand-/, /^tech-/, /^src-/];
 
 const CODE_EXT = new Set([
   ".rs", ".py", ".go", ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp",
@@ -47,6 +50,23 @@ function kindOf(name) {
   if (CODE_EXT.has(ext)) return "source_code";
   if (DOC_EXT.has(ext)) return "documentation";
   return null;
+}
+
+function isSkippedDir(name) {
+  if (SKIP_DIRS.has(name)) return true;
+  for (const pat of SKIP_DIR_PATTERNS) if (pat.test(name)) return true;
+  return false;
+}
+
+// Latest curated bundle by lexical sort (bundle-<YYYYMMDD> pattern → newest wins).
+function findLatestBundle() {
+  try {
+    const bundles = fs.readdirSync(INCOMING, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && /^bundle-\d+$/.test(e.name))
+      .map((e) => e.name)
+      .sort();
+    return bundles.length ? path.join(INCOMING, bundles[bundles.length - 1]) : null;
+  } catch { return null; }
 }
 
 function humanize(basename) {
@@ -145,10 +165,20 @@ function wrapSingleFile(entry) {
     });
   }
   if (!dryRun) fs.writeFileSync(outPath, jsonlStringify([record]));
-  moveOrDelete(abs, WRAPPED);
+  // Route raw source_code to the latest curated bundle's source-extracts/ so
+  // it becomes authoritative evidence (preserved through the Ronda-J purge),
+  // instead of being buried under .wrapped/. Docs still go to .wrapped/ since
+  // they are more transient (spec drafts, notes).
+  let destParent = WRAPPED;
+  if (kind === "source_code") {
+    const bundle = findLatestBundle();
+    if (bundle) destParent = path.join(bundle, "source-extracts");
+  }
+  moveOrDelete(abs, destParent);
   stats.rawFiles++;
   stats.jsonlLines++;
-  return { action: "wrap-file", kind, src: entry.name, out: path.basename(outPath), lines: 1 };
+  const dest = path.relative(INCOMING, destParent);
+  return { action: "wrap-file", kind, src: entry.name, out: path.basename(outPath), dest, lines: 1 };
 }
 
 function wrapProject(dirEntry) {
@@ -202,8 +232,8 @@ function detectRole(relPath, kind) {
 const topEntries = fs.readdirSync(INCOMING, { withFileTypes: true });
 const actions = [];
 for (const entry of topEntries) {
-  if (SKIP_DIRS.has(entry.name)) continue;
   if (isHidden(entry.name)) continue;
+  if (entry.isDirectory() && isSkippedDir(entry.name)) continue;
   if (entry.isFile()) {
     if (shouldSkipFile(entry.name)) continue;
     const result = wrapSingleFile(entry);

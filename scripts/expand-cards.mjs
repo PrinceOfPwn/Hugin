@@ -24,6 +24,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { NvidiaModelsClient } from "./lib/nvidia-models.mjs";
 
 const REPO_ROOT = path.resolve(process.cwd());
@@ -39,6 +40,8 @@ const DRYRUN_PATH = path.join(REPO_ROOT, "expand-cards-dryrun.json");
 const MODEL_ID = "z-ai/glm-5.2";
 const RETRY_DELAYS_MS = [30_000, 60_000, 120_000];
 const MAX_OUTPUT_TOKENS = 8192;
+const REQUEST_TIMEOUT_MS = 90_000;
+const CACHE_DIR = path.join(REPO_ROOT, process.env.HUGIN_NVIDIA_CACHE || ".cache/nvidia-models");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -248,8 +251,28 @@ function renderPrompt(template, cluster, nextIdPadded) {
     .replaceAll("{{next_card_id}}", nextIdPadded);
 }
 
-// ---------- GLM call (markdown, not JSON) ----------
+// ---------- GLM call (markdown, not JSON) — with timeout + cache ----------
+function cacheKey(prompt) {
+  return crypto.createHash("sha256").update(`${MODEL_ID}\n${MAX_OUTPUT_TOKENS}\n${prompt}`).digest("hex");
+}
+
+function cacheGet(key) {
+  const p = path.join(CACHE_DIR, `expand-${key}.md`);
+  try { return fs.readFileSync(p, "utf8"); } catch { return null; }
+}
+
+function cachePut(key, content) {
+  try {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(CACHE_DIR, `expand-${key}.md`), content);
+  } catch (e) { console.warn(`cache write failed: ${e.message}`); }
+}
+
 async function callGlmMarkdown({ apiKey, baseUrl, prompt }) {
+  const key = cacheKey(prompt);
+  const cached = cacheGet(key);
+  if (cached) return { ok: true, content: cached, cached: true };
+
   const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
   const body = {
     model: MODEL_ID,
@@ -262,11 +285,21 @@ async function callGlmMarkdown({ apiKey, baseUrl, prompt }) {
     max_tokens: MAX_OUTPUT_TOKENS,
     seed: 42,
   };
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(new Error("request timeout")), REQUEST_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    return { ok: false, error: `network/timeout: ${e.message}` };
+  }
+  clearTimeout(timer);
   const text = await response.text();
   if (!response.ok) {
     return { ok: false, error: `${response.status} ${text.slice(0, 400)}` };
@@ -278,6 +311,7 @@ async function callGlmMarkdown({ apiKey, baseUrl, prompt }) {
   if (typeof content !== "string" || content.trim().length === 0) {
     return { ok: false, error: "empty completion" };
   }
+  cachePut(key, content);
   return { ok: true, content };
 }
 

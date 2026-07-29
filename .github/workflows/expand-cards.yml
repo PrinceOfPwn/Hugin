@@ -32,6 +32,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: hugin-expand-cards
@@ -105,6 +106,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Commit generated cards
+        id: commit
         if: env.EXPAND_DRY_RUN != 'true' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
@@ -117,19 +119,39 @@ jobs:
 
           if git diff --staged --quiet; then
             echo "No new cards generated; nothing to commit."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           git commit -m "expand: generate technique cards from LGTM clusters (mode=${EXPAND_MODE}, priority=${EXPAND_PRIORITY})"
 
           for attempt in 1 2 3; do
-            if git push origin HEAD:main; then exit 0; fi
+            if git push origin HEAD:main; then
+              echo "pushed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             git fetch origin main
             git rebase origin/main
             sleep $((attempt * 3))
           done
           echo "Unable to push generated cards after retries" >&2
           exit 1
+
+      # GitHub safety: pushes made via GITHUB_TOKEN do NOT trigger dependent
+      # workflows. workflow_dispatch is an explicit exception. Dispatch the
+      # ingest run directly so the new expand-* cards get compiled into the
+      # graph in the same cron cycle.
+      - name: Dispatch ingest workflow
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh workflow run ingest-v2.yml \
+            --ref main \
+            -f all_inputs=true \
+            -f force_redetect=false
+          echo "Dispatched ingest-v2.yml with all_inputs=true"
 
       - name: Run summary
         if: always()

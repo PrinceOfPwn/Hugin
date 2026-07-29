@@ -34,6 +34,7 @@ on:
       - "data/incoming/**/*.m4v"
       - "scripts/ingest-video.mjs"
       - "scripts/wrap-inputs.mjs"
+      - "scripts/wrap-bundle-techniques.mjs"
       - "scripts/detect-format.v2.mjs"
       - "scripts/apply-mapping.v2.mjs"
       - "scripts/enrich-records.mjs"
@@ -58,6 +59,7 @@ on:
 permissions:
   contents: write
   models: read
+  actions: write
 
 concurrency:
   group: hugin-universal-ingest-${{ github.ref }}
@@ -106,6 +108,10 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         shell: bash
         run: node scripts/ingest-video.mjs
+
+      - name: Wrap missing bundled technique cards
+        shell: bash
+        run: node scripts/wrap-bundle-techniques.mjs
 
       - name: Wrap raw inputs
         shell: bash
@@ -215,6 +221,7 @@ jobs:
           echo "purge complete"
 
       - name: Commit generated knowledge
+        id: commit
         if: steps.discover.outputs.count != '0' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
@@ -225,18 +232,33 @@ jobs:
 
           if git diff --staged --quiet; then
             echo "No generated changes"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           git commit -m "ingest: compile + purge sources"
           for attempt in 1 2 3; do
-            if git push origin HEAD:main; then exit 0; fi
+            if git push origin HEAD:main; then
+              echo "pushed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             git fetch origin main
             git rebase origin/main
             sleep $((attempt * 3))
           done
           echo "Unable to push generated knowledge after retries" >&2
           exit 1
+
+      # GITHUB_TOKEN pushes don't chain-trigger workflows. Dispatch pages
+      # explicitly so the deploy runs with the freshly compiled graph.
+      - name: Dispatch Pages deploy
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh workflow run pages.yml --ref main
+          echo "Dispatched pages.yml"
 
       - name: Run summary
         if: always()
