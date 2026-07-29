@@ -12,10 +12,11 @@ import EntityListCard from "./EntityListCard";
 import EntityPreviewPane from "./EntityPreviewPane";
 
 interface Props {
-  entities: Entity[];
+  entities?: Entity[];
   galaxies: Galaxy[];
   relations?: Relation[]; // may be omitted; preview then shows no "related"
   routePrefix: string;    // e.g. "/Hugin"
+  dataUrls?: { catalog: string; graph: string };
 }
 
 // URL param names for view-mode and selection — namespaced so they don't collide.
@@ -29,8 +30,39 @@ const GRID_ROW_H = 168;        // approx row height in grid mode (rows of 2)
 const GRID_COLS = 2;
 
 export default function ExplorerShell({
-  entities, galaxies, relations = [], routePrefix,
+  entities: initialEntities = [],
+  galaxies,
+  relations: initialRelations = [],
+  routePrefix,
+  dataUrls,
 }: Props) {
+  const [remoteData, setRemoteData] = useState<{ entities: Entity[]; relations: Relation[] } | null>(
+    initialEntities.length ? { entities: initialEntities, relations: initialRelations } : null,
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (remoteData || !dataUrls) return;
+    const controller = new AbortController();
+    Promise.all([
+      fetch(dataUrls.catalog, { signal: controller.signal }).then((r) => {
+        if (!r.ok) throw new Error(`catalog ${r.status}`);
+        return r.json();
+      }),
+      fetch(dataUrls.graph, { signal: controller.signal }).then((r) => {
+        if (!r.ok) throw new Error(`graph ${r.status}`);
+        return r.json();
+      }),
+    ]).then(([entities, graph]) => {
+      setRemoteData({ entities, relations: graph.edges ?? [] });
+    }).catch((error) => {
+      if (error?.name !== "AbortError") setLoadError(String(error?.message ?? error));
+    });
+    return () => controller.abort();
+  }, [dataUrls, remoteData]);
+
+  const entities = remoteData?.entities ?? initialEntities;
+  const relations = remoteData?.relations ?? initialRelations;
   const initialQs = typeof window === "undefined" ? "" : window.location.search;
   const initialParams = new URLSearchParams(initialQs.startsWith("?") ? initialQs.slice(1) : initialQs);
 
@@ -212,10 +244,64 @@ export default function ExplorerShell({
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
+  if (!remoteData && dataUrls) {
+    return (
+      <div
+        aria-busy={!loadError}
+        style={{
+          minHeight: 620,
+          display: "grid",
+          placeItems: "center",
+          borderTop: "1px solid rgba(157,124,244,0.18)",
+          background: "linear-gradient(180deg, rgba(12,7,24,0.7), rgba(0,0,5,0.92))",
+          padding: 24,
+          textAlign: "center",
+        }}
+      >
+        <div>
+          <p style={{ fontFamily: "monospace", color: "#b78cff", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+            {loadError ? "Catalog unavailable" : "Loading versioned catalog"}
+          </p>
+          <p style={{ opacity: 0.72 }}>
+            {loadError ? loadError : "Preparing filters and relationship previews…"}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={shellStyle}>
+    <div className="explorer-shell" style={shellStyle}>
+      <style>{`
+        @media (max-width: 900px) {
+          .explorer-shell {
+            flex-direction: column;
+            height: auto !important;
+            min-height: 100vh;
+          }
+          .explorer-sidebar {
+            height: auto !important;
+          }
+          .explorer-sidebar > aside {
+            width: 100% !important;
+            max-width: none !important;
+            max-height: 44vh !important;
+          }
+          .explorer-results {
+            min-height: 62vh;
+            height: 62vh !important;
+          }
+          .explorer-preview {
+            flex: 0 0 auto !important;
+            width: 100%;
+            max-width: none !important;
+            height: auto !important;
+            min-height: 320px;
+          }
+        }
+      `}</style>
       {/* Left: filters */}
-      <div style={{ flex: "0 0 auto", height: "100%", overflow: "hidden" }}>
+      <div className="explorer-sidebar" style={{ flex: "0 0 auto", height: "100%", overflow: "hidden" }}>
         <FilterSidebar
           entities={entities}
           filter={filter}
@@ -226,7 +312,7 @@ export default function ExplorerShell({
       </div>
 
       {/* Center: results */}
-      <div style={centerCol}>
+      <div className="explorer-results" style={centerCol}>
         <ExplorerHeader
           count={results.length}
           total={entities.length}
@@ -308,7 +394,7 @@ export default function ExplorerShell({
       </div>
 
       {/* Right: preview */}
-      <div style={rightCol}>
+      <div className="explorer-preview" style={rightCol}>
         <EntityPreviewPane
           entity={selectedEntity}
           entitiesById={entitiesById}
@@ -334,7 +420,7 @@ function ExplorerHeader({
   return (
     <div style={headerBar}>
       <div style={{ fontFamily: "monospace", fontSize: 12, color: "#c8d4e8" }}>
-        <strong style={{ color: "#00f0ff" }}>{count.toLocaleString()}</strong> / {total.toLocaleString()} entities
+        <strong style={{ color: "var(--nav-accent)" }}>{count.toLocaleString()}</strong> / {total.toLocaleString()} entities
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -388,7 +474,7 @@ const shellStyle: CSSProperties = {
   height: "calc(100vh - var(--header, 68px) - 8px)",
   minHeight: 500,
   background: "rgba(0,4,12,0.4)",
-  border: "1px solid rgba(0,240,255,0.08)",
+  border: "1px solid rgba(157,124,244,0.08)",
 };
 
 const centerCol: CSSProperties = {
@@ -412,7 +498,7 @@ const headerBar: CSSProperties = {
   display: "flex", alignItems: "center", justifyContent: "space-between",
   gap: 12,
   padding: "8px 14px",
-  borderBottom: "1px solid rgba(0,240,255,0.15)",
+  borderBottom: "1px solid rgba(157,124,244,0.15)",
   background: "rgba(0,8,20,0.6)",
   flex: "0 0 auto",
 };
@@ -429,8 +515,8 @@ const selectStyle: CSSProperties = {
 
 const iconBtn: CSSProperties = {
   background: "rgba(0,0,0,0.35)",
-  color: "#00f0ff",
-  border: "1px solid rgba(0,240,255,0.28)",
+  color: "var(--nav-accent)",
+  border: "1px solid rgba(157,124,244,0.28)",
   fontFamily: "monospace",
   fontSize: 12,
   padding: "3px 8px",
@@ -450,8 +536,8 @@ const toggleBtn: CSSProperties = {
 };
 const toggleBtnActive: CSSProperties = {
   ...toggleBtn,
-  background: "rgba(0,240,255,0.2)",
-  borderColor: "#00f0ff",
-  color: "#00f0ff",
+  background: "rgba(157,124,244,0.2)",
+  borderColor: "var(--nav-accent)",
+  color: "var(--nav-accent)",
   fontWeight: 700,
 };

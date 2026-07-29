@@ -80,11 +80,11 @@ export default function WelcomeTour() {
           maxWidth: 380,
           padding: "24px 28px",
           background: "rgba(20,20,30,0.85)",
-          border: "1px solid rgba(0,240,255,0.25)",
+          border: "1px solid rgba(157,124,244,0.28)",
           borderRadius: 14,
           backdropFilter: "blur(14px)",
           WebkitBackdropFilter: "blur(14px)",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,240,255,0.1)",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(157,124,244,0.12)",
           color: "#e8f0ff",
           fontFamily: "system-ui, sans-serif",
           animation: "hugin-tour-in 300ms ease",
@@ -95,7 +95,7 @@ export default function WelcomeTour() {
           fontSize: 10,
           letterSpacing: "0.16em",
           textTransform: "uppercase",
-          color: "#00f0ff",
+          color: "var(--nav-accent)",
           marginBottom: 8,
           opacity: 0.75,
         }}>
@@ -130,8 +130,8 @@ export default function WelcomeTour() {
             onClick={next}
             style={{
               padding: "8px 18px",
-              background: "#00f0ff",
-              color: "#001018",
+              background: "var(--nav-accent)",
+              color: "#1a0f2e",
               border: "none",
               borderRadius: 999,
               fontFamily: "monospace",

@@ -14,7 +14,7 @@ export default function MitreMatrix({ index, routePrefix = "/Hugin" }: Props) {
 
   const normalizedQuery = query.trim().toUpperCase();
   const highlightId = /^T\d{4}(?:\.\d+)?$/.test(normalizedQuery)
-    ? normalizedQuery.split(".")[0]
+    ? normalizedQuery
     : "";
 
   // Group techniques by tactic for row-strip layout.
@@ -70,12 +70,22 @@ export default function MitreMatrix({ index, routePrefix = "/Hugin" }: Props) {
     if (!highlightId) return;
     const el = document.querySelector(`[data-mitre-id="${CSS.escape(highlightId)}"]`);
     if (el && "scrollIntoView" in el) {
-      (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+      const tacticId = el.closest<HTMLElement>("[data-tactic-id]")?.dataset.tacticId;
+      if (tacticId) {
+        const key = `${tacticId}::${highlightId}`;
+        setExpanded((prev) => new Set(prev).add(key));
+      }
+      // Immediate positioning avoids a long, unstable smooth-scroll across the
+      // matrix on narrow screens and leaves the revealed official link usable.
+      (el as HTMLElement).scrollIntoView({ behavior: "auto", block: "center" });
     }
   };
 
   const meta = index.meta;
-  const coverageLabel = `${meta.coveredTechniques} of ${meta.totalKnownTechniques} ATT&CK techniques covered · ${meta.totalWithMitre} of ${meta.totalEntities} entities carry a MITRE tag`;
+  const coverageLabel =
+    `${meta.coveredTechniques} exact techniques represented · ` +
+    `${meta.totalWithMitre} of ${meta.totalEntities} entities tagged · ` +
+    `ATT&CK v${meta.attackVersion}`;
 
   if (index.tactics.length === 0) {
     return (
@@ -117,7 +127,7 @@ export default function MitreMatrix({ index, routePrefix = "/Hugin" }: Props) {
           }}
         />
         <span style={coverageText}>
-          {coverageLabel} ({meta.coveragePercent}% by technique coverage)
+          {coverageLabel} ({meta.coveragePercent}% of the active Enterprise corpus)
         </span>
       </div>
 
@@ -177,7 +187,7 @@ const search: CSSProperties = {
   minWidth: 200,
   padding: "8px 10px",
   background: "rgba(0,8,20,0.7)",
-  border: "1px solid rgba(0,240,255,0.28)",
+  border: "1px solid rgba(157,124,244,0.28)",
   color: "#e8f0ff",
   fontFamily: "monospace",
   fontSize: 13,
@@ -194,7 +204,7 @@ const toggleLabel: CSSProperties = {
 const coverageBar: CSSProperties = {
   position: "relative",
   height: 22,
-  border: "1px solid rgba(0,240,255,0.24)",
+  border: "1px solid rgba(157,124,244,0.24)",
   background: "rgba(0,8,20,0.55)",
   marginBottom: 20,
   overflow: "hidden",
@@ -202,7 +212,7 @@ const coverageBar: CSSProperties = {
 const coverageFill: CSSProperties = {
   position: "absolute",
   inset: "0 auto 0 0",
-  background: "linear-gradient(90deg, rgba(0,240,255,0.28), rgba(0,240,255,0.08))",
+  background: "linear-gradient(90deg, rgba(157,124,244,0.28), rgba(157,124,244,0.08))",
 };
 const coverageText: CSSProperties = {
   position: "relative",
@@ -222,7 +232,7 @@ const tacticRow: CSSProperties = {
   gridTemplateColumns: "220px 1fr",
   gap: 14,
   padding: "12px 14px",
-  border: "1px solid rgba(0,240,255,0.16)",
+  border: "1px solid rgba(157,124,244,0.16)",
   background: "rgba(0,8,20,0.42)",
   borderRadius: 3,
 };
@@ -240,10 +250,10 @@ const tacticIdRow: CSSProperties = {
 const tacticId: CSSProperties = {
   fontFamily: "monospace",
   fontSize: 11,
-  color: "#00f0ff",
+  color: "var(--nav-accent)",
   padding: "1px 6px",
-  border: "1px solid rgba(0,240,255,0.32)",
-  background: "rgba(0,240,255,0.12)",
+  border: "1px solid rgba(157,124,244,0.32)",
+  background: "rgba(157,124,244,0.12)",
 };
 const tacticName: CSSProperties = {
   fontSize: 14,

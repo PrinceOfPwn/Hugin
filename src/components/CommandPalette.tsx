@@ -143,7 +143,7 @@ export default function CommandPalette({ entities, onSelect }: Props) {
           background: "rgba(15,15,25,0.95)",
           border: "1px solid rgba(255,255,255,0.12)",
           borderRadius: 12,
-          boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,240,255,0.15)",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(157,124,244,0.18)",
           overflow: "hidden",
         }}
       >
@@ -176,7 +176,7 @@ export default function CommandPalette({ entities, onSelect }: Props) {
           )}
           {results.map((m, i) => {
             const active = i === cursor;
-            const gc = KIND_COLORS[m.entity.galaxyId] || "#00f0ff";
+            const gc = KIND_COLORS[m.entity.galaxyId] || "#9d7cf4";
             const title = m.entity.title || m.entity.id;
             let titleContent: React.ReactNode = title;
             if (m.matchedField === "title" && m.matchEnd > m.matchStart) {
@@ -186,7 +186,7 @@ export default function CommandPalette({ entities, onSelect }: Props) {
               titleContent = (
                 <>
                   {before}
-                  <span style={{ color: "#00f0ff", fontWeight: 700 }}>{hit}</span>
+                  <span style={{ color: "var(--nav-accent)", fontWeight: 700 }}>{hit}</span>
                   {after}
                 </>
               );
@@ -203,7 +203,7 @@ export default function CommandPalette({ entities, onSelect }: Props) {
                   gap: 12,
                   width: "100%",
                   padding: "10px 20px",
-                  background: active ? "rgba(0,240,255,0.08)" : "transparent",
+                  background: active ? "rgba(157,124,244,0.10)" : "transparent",
                   border: "none",
                   borderLeft: `2px solid ${active ? gc : "transparent"}`,
                   cursor: "pointer",

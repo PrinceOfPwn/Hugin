@@ -201,14 +201,18 @@ function isActive(href: string): boolean {
     <style is:global>
       /* ─── Nav bar — glass-morphic, sticky, premium ────────────────────── */
       :root {
-        --nav-accent: #00f0ff;
-        --nav-accent-soft: rgba(0, 240, 255, 0.14);
+        /* Accent switched from electric cyan to violet — matches the repo
+         * palette (--violet in global.css), complements the red brand logo,
+         * and reads as sophisticated on the deep-ink bg. All chrome that
+         * used var(--nav-accent) picks this up automatically. */
+        --nav-accent: #9d7cf4;
+        --nav-accent-soft: rgba(157, 124, 244, 0.16);
         --nav-height: 64px;
         --nav-height-mobile: 56px;
         --nav-glass: rgba(10, 10, 20, 0.55);
         --nav-glass-strong: rgba(8, 8, 18, 0.78);
         --nav-hairline: rgba(255, 255, 255, 0.06);
-        --nav-hairline-strong: rgba(0, 240, 255, 0.22);
+        --nav-hairline-strong: rgba(157, 124, 244, 0.28);
         --nav-ink: #e8f0ff;
         --nav-ink-dim: #a4adc2;
       }
@@ -236,7 +240,7 @@ function isActive(href: string): boolean {
         -webkit-backdrop-filter: blur(28px) saturate(200%);
         backdrop-filter: blur(28px) saturate(200%);
         box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.55),
-                    0 1px 0 rgba(0, 240, 255, 0.05) inset;
+                    0 1px 0 rgba(157, 124, 244, 0.05) inset;
         border-bottom-color: rgba(255, 255, 255, 0.08);
       }
 
@@ -305,7 +309,7 @@ function isActive(href: string): boolean {
         position: absolute;
         inset: auto 8px -6px 8px;
         height: 12px;
-        background: radial-gradient(ellipse at center, rgba(0, 240, 255, 0.22), transparent 70%);
+        background: radial-gradient(ellipse at center, rgba(157, 124, 244, 0.22), transparent 70%);
         opacity: 0;
         transition: opacity 260ms ease;
         pointer-events: none;
@@ -351,7 +355,7 @@ function isActive(href: string): boolean {
         transform: scaleX(0);
         transform-origin: center;
         transition: transform 150ms ease-out, opacity 150ms ease-out, box-shadow 200ms ease-out;
-        box-shadow: 0 0 0 rgba(0, 240, 255, 0);
+        box-shadow: 0 0 0 rgba(157, 124, 244, 0);
         opacity: 0.9;
       }
 
@@ -369,7 +373,7 @@ function isActive(href: string): boolean {
 
       .nav-link.is-active::after {
         transform: scaleX(1);
-        box-shadow: 0 0 12px rgba(0, 240, 255, 0.6);
+        box-shadow: 0 0 12px rgba(157, 124, 244, 0.6);
         opacity: 1;
       }
 
@@ -406,7 +410,7 @@ function isActive(href: string): boolean {
       .nav-status:hover {
         color: var(--nav-ink);
         border-color: var(--nav-hairline-strong);
-        background: rgba(0, 240, 255, 0.05);
+        background: rgba(157, 124, 244, 0.05);
       }
       .nav-status:focus-visible {
         outline: 2px solid var(--nav-accent);
@@ -418,7 +422,7 @@ function isActive(href: string): boolean {
         height: 7px;
         border-radius: 50%;
         background: var(--nav-accent);
-        box-shadow: 0 0 8px rgba(0, 240, 255, 0.65);
+        box-shadow: 0 0 8px rgba(157, 124, 244, 0.65);
       }
 
       .nav-toggle {
@@ -440,7 +444,7 @@ function isActive(href: string): boolean {
       .nav-toggle:hover {
         border-color: var(--nav-hairline-strong);
         color: var(--nav-accent);
-        background: rgba(0, 240, 255, 0.06);
+        background: rgba(157, 124, 244, 0.06);
       }
       .nav-toggle:focus-visible {
         outline: 2px solid var(--nav-accent);
@@ -544,12 +548,12 @@ function isActive(href: string): boolean {
       }
       .nav-drawer-link:hover {
         color: var(--nav-accent);
-        background: rgba(0, 240, 255, 0.05);
+        background: rgba(157, 124, 244, 0.05);
       }
       .nav-drawer-link.is-active {
         color: #ffffff;
-        background: rgba(0, 240, 255, 0.08);
-        border-color: rgba(0, 240, 255, 0.28);
+        background: rgba(157, 124, 244, 0.08);
+        border-color: rgba(157, 124, 244, 0.28);
       }
       .nav-drawer-link:focus-visible {
         outline: 2px solid var(--nav-accent);

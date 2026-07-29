@@ -61,7 +61,7 @@ export default function AffordanceHint() {
         whiteSpace: "nowrap",
       }}
     >
-      Try: scroll to zoom · drag to rotate · Ctrl+K to search
+      Drag rotate · Shift/right-drag pan · Wheel/pinch zoom · Ctrl+K search
     </div>
   );
 }

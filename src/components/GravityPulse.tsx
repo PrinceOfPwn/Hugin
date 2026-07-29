@@ -71,7 +71,7 @@ const frag = /* glsl */ `
 export default function GravityPulse({
   origin,
   triggerId,
-  color = "#00f0ff",
+  color = "#9d7cf4",
   speed = 250,
   duration = 1.8,
 }: Props) {

@@ -7,6 +7,8 @@
 //   2. Loose top-level docs (kind=documentation)
 //   3. Project source-code bundles (kind=project_source_code + nested facets)
 // Also asserts wrap-inputs preserves curated bundles (never moves bundle-*).
+// The final fixture verifies that multi-file enrichment keeps one shared model
+// lifecycle while preserving one output/report pair per source.
 //
 // Run: node tests/pipeline-e2e.test.mjs
 // Exit non-zero on any assertion failure — safe to wire into CI.
@@ -221,6 +223,35 @@ step("apply-mapping.v2 produces canonical records with resolved facets", () => {
     const proj = anyProjectRec.facets?.project;
     assert.ok(proj, "canonical project facet missing");
     assert.equal(typeof proj.name, "string", "facets.project.name should resolve to a string");
+  }
+});
+
+// ── Step 7: multi-file enrichment preserves independent outputs ─────────────
+step("enrich-records batches files without merging their outputs", () => {
+  const canonical = (id, title) => ({
+    id,
+    title,
+    content: `${title} fixture content`,
+    kind: "training_preference",
+    category: "fixture",
+    language: "en",
+    routing: { semantic_complexity: "simple", requested_enrichment: [] },
+  });
+  const first = path.join(TMP, "data/normalized/batch-a.jsonl");
+  const second = path.join(TMP, "data/normalized/batch-b.jsonl");
+  fs.writeFileSync(first, `${JSON.stringify(canonical("batch-a", "Batch A"))}\n`);
+  fs.writeFileSync(second, `${JSON.stringify(canonical("batch-b", "Batch B"))}\n`);
+
+  const out = run("enrich-records.mjs", first, second);
+  assert.match(out, /batch start: 2 file\(s\); shared local model=not needed/);
+  for (const name of ["batch-a", "batch-b"]) {
+    const enrichedPath = path.join(TMP, `data/enriched/${name}.jsonl`);
+    const reportPath = path.join(TMP, `data/enriched/${name}.report.json`);
+    assert.ok(fs.existsSync(enrichedPath), `${name} enriched output missing`);
+    assert.ok(fs.existsSync(reportPath), `${name} report missing`);
+    const enriched = JSON.parse(fs.readFileSync(enrichedPath, "utf8").trim());
+    assert.equal(enriched.id, name);
+    assert.equal(enriched.enrichment.status, "not_requested");
   }
 });
 

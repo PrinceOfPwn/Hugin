@@ -98,14 +98,14 @@ export default function Minimap({ entities, cameraRef, onTeleport }: Props) {
         // Rough view size — higher camera = wider footprint on the map.
         const viewWorld = Math.min(4000, heightAbs * 0.9);
         const viewPx = (viewWorld / UNIVERSE_HALF) * 0.5 * MAP_SIZE;
-        ctx.strokeStyle = "rgba(0,240,255,0.75)";
+        ctx.strokeStyle = "rgba(157,124,244,0.78)";
         ctx.lineWidth = 1;
-        ctx.fillStyle = "rgba(0,240,255,0.08)";
+        ctx.fillStyle = "rgba(157,124,244,0.10)";
         ctx.fillRect(cx - viewPx / 2, cy - viewPx / 2, viewPx, viewPx);
         ctx.strokeRect(cx - viewPx / 2, cy - viewPx / 2, viewPx, viewPx);
 
-        // Camera dot.
-        ctx.fillStyle = "#00f0ff";
+        // Camera dot — violet accent (matches --nav-accent).
+        ctx.fillStyle = "#9d7cf4";
         ctx.beginPath();
         ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
         ctx.fill();

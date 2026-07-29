@@ -1,53 +1,48 @@
 #!/usr/bin/env node
-// Build a MITRE ATT&CK matrix index from generated entities.json.
-// Runs AFTER scripts/build-data.mjs; consumed by src/pages/mitre/index.astro
-// and the client-side MitreMatrix component.
-//
-// Output shape:
-// {
-//   tactics: [ { id, name, slug, order, techniqueCount, cardCount } ],
-//   techniques: { "T1055": { id, tacticIds, entityIds, cardCount } },
-//   byTactic: { "TA0004": { tacticId, techniqueIds, entities: [{id,title,mass,galaxyId,route}, ...] } },
-//   meta: { generatedAt, totalEntities, totalWithMitre, coveragePercent }
-// }
+// Build the static MITRE ATT&CK matrix index consumed by /mitre.
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { TACTICS, TECHNIQUE_TO_TACTICS, getTacticsFor } from "./lib/mitre-tactics.mjs";
+import { TACTICS, getTacticsFor } from "./lib/mitre-tactics.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const ENTITIES_PATH = path.join(ROOT, "src/generated/entities.json");
+const REFERENCE_PATH = path.join(ROOT, "data/reference/mitre-enterprise.json");
 const OUT_PATH = path.join(ROOT, "src/generated/mitre-index.json");
+const MITRE_RE = /\bT\d{4}(?:\.\d{3})?\b/gi;
+const UNMAPPED_TACTIC = {
+  id: "UNMAPPED",
+  name: "Unmapped",
+  slug: "unmapped",
+  shortDesc: "Technique IDs not present in the pinned ATT&CK release.",
+  order: 99,
+};
 
-const MITRE_RE = /^T\d{4}(?:\.\d+)?$/;
-
-function readEntities() {
-  if (!fs.existsSync(ENTITIES_PATH)) {
-    console.warn(`[mitre-index] entities.json not found at ${ENTITIES_PATH} — skipping (run data:build first).`);
-    return null;
+function readJson(filePath, label) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`${label} not found at ${filePath}`);
   }
-  try {
-    return JSON.parse(fs.readFileSync(ENTITIES_PATH, "utf8"));
-  } catch (err) {
-    console.warn(`[mitre-index] Failed to parse entities.json: ${err.message} — skipping.`);
-    return null;
-  }
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
-/** Pull MITRE technique ids from tags, mitre (string or array), mitre_secondary, mitre_candidates, etc. */
-function extractMitreIds(entity) {
+/**
+ * Extract every ATT&CK ID embedded in strings and nested arrays. This handles
+ * legacy values such as "T1547, T1546, T1053" without silently dropping them.
+ */
+export function extractMitreIds(entity) {
   const out = new Set();
   const push = (value) => {
     if (!value) return;
-    if (typeof value === "string") {
-      const norm = value.trim().toUpperCase();
-      if (MITRE_RE.test(norm)) out.add(norm);
-    } else if (Array.isArray(value)) {
+    if (Array.isArray(value)) {
       for (const item of value) push(item);
+      return;
     }
+    if (typeof value !== "string") return;
+    for (const match of value.matchAll(MITRE_RE)) out.add(match[0].toUpperCase());
   };
+
   push(entity.tags);
   push(entity.mitre);
   push(entity.mitre_secondary);
@@ -57,25 +52,29 @@ function extractMitreIds(entity) {
   push(entity._ai?.mitre_candidates);
   push(entity.facets?.mitre);
   push(entity.facets?.mitre_candidates);
-  return Array.from(out);
+  return Array.from(out).sort();
 }
 
-function parentOf(id) {
-  return id.split(".")[0];
+function tacticsFor(id, entity, referenceTechnique) {
+  if (referenceTechnique?.tacticIds?.length) return referenceTechnique.tacticIds;
+  const fallback = getTacticsFor(id, entity.category);
+  return fallback.length > 0 ? fallback : [UNMAPPED_TACTIC.id];
 }
 
 function main() {
-  const entities = readEntities();
-  if (!entities) {
-    process.exit(0);
-  }
+  const entities = readJson(ENTITIES_PATH, "entities.json");
+  const reference = readJson(REFERENCE_PATH, "MITRE Enterprise reference");
+  const officialTechniques = reference.techniques ?? {};
+  const activeOfficialIds = new Set(
+    Object.values(officialTechniques)
+      .filter((technique) => !technique.revoked && !technique.deprecated)
+      .map((technique) => technique.id),
+  );
 
-  // techniques: parent-technique id -> { entityIds:Set, tacticIds:Set }
   const techniques = new Map();
-  // byTactic: tactic id -> { entityIds:Set, techniqueIds:Set }
   const byTactic = new Map();
-  const entityMeta = new Map(); // id -> {id,title,mass,galaxyId,route}
-
+  const entityMeta = new Map();
+  const unknownTechniqueIds = new Set();
   let totalWithMitre = 0;
 
   for (const entity of entities) {
@@ -92,98 +91,111 @@ function main() {
       route: entity.route || "",
     });
 
-    for (const rawId of ids) {
-      const parent = parentOf(rawId);
-      const tactics = getTacticsFor(parent, entity.category);
-
-      let techEntry = techniques.get(parent);
-      if (!techEntry) {
-        techEntry = { id: parent, entityIds: new Set(), tacticIds: new Set(tactics) };
-        techniques.set(parent, techEntry);
-      } else {
-        for (const t of tactics) techEntry.tacticIds.add(t);
+    for (const id of ids) {
+      const official = officialTechniques[id];
+      if (!official) unknownTechniqueIds.add(id);
+      const tacticIds = tacticsFor(id, entity, official);
+      let technique = techniques.get(id);
+      if (!technique) {
+        technique = {
+          id,
+          name: official?.name ?? "Unknown ATT&CK technique",
+          parentId: official?.parentId ?? null,
+          isSubtechnique: Boolean(official?.isSubtechnique || id.includes(".")),
+          revoked: Boolean(official?.revoked),
+          deprecated: Boolean(official?.deprecated),
+          entityIds: new Set(),
+          tacticIds: new Set(),
+        };
+        techniques.set(id, technique);
       }
-      techEntry.entityIds.add(entity.id);
-
-      for (const tacticId of tactics) {
-        let tEntry = byTactic.get(tacticId);
-        if (!tEntry) {
-          tEntry = { tacticId, entityIds: new Set(), techniqueIds: new Set() };
-          byTactic.set(tacticId, tEntry);
+      technique.entityIds.add(entity.id);
+      for (const tacticId of tacticIds) {
+        technique.tacticIds.add(tacticId);
+        let group = byTactic.get(tacticId);
+        if (!group) {
+          group = { tacticId, entityIds: new Set(), techniqueIds: new Set() };
+          byTactic.set(tacticId, group);
         }
-        tEntry.entityIds.add(entity.id);
-        tEntry.techniqueIds.add(parent);
+        group.entityIds.add(entity.id);
+        group.techniqueIds.add(id);
       }
     }
   }
 
-  // Build serialized output.
-  const tacticsOut = TACTICS
+  const tacticDefinitions = byTactic.has(UNMAPPED_TACTIC.id)
+    ? [...TACTICS, UNMAPPED_TACTIC]
+    : TACTICS;
+  const tacticsOut = tacticDefinitions
     .slice()
     .sort((a, b) => a.order - b.order)
-    .map((t) => {
-      const entry = byTactic.get(t.id);
+    .map((tactic) => {
+      const group = byTactic.get(tactic.id);
       return {
-        id: t.id,
-        name: t.name,
-        slug: t.slug,
-        shortDesc: t.shortDesc,
-        order: t.order,
-        techniqueCount: entry ? entry.techniqueIds.size : 0,
-        cardCount: entry ? entry.entityIds.size : 0,
+        ...tactic,
+        techniqueCount: group?.techniqueIds.size ?? 0,
+        cardCount: group?.entityIds.size ?? 0,
       };
     });
 
   const techniquesOut = {};
-  for (const [id, entry] of techniques) {
+  for (const [id, technique] of Array.from(techniques).sort(([a], [b]) => a.localeCompare(b))) {
     techniquesOut[id] = {
       id,
-      tacticIds: Array.from(entry.tacticIds),
-      entityIds: Array.from(entry.entityIds),
-      cardCount: entry.entityIds.size,
+      name: technique.name,
+      parentId: technique.parentId,
+      isSubtechnique: technique.isSubtechnique,
+      revoked: technique.revoked,
+      deprecated: technique.deprecated,
+      tacticIds: Array.from(technique.tacticIds).sort(),
+      entityIds: Array.from(technique.entityIds).sort(),
+      cardCount: technique.entityIds.size,
     };
   }
 
   const byTacticOut = {};
-  for (const [tacticId, entry] of byTactic) {
-    const entitiesList = Array.from(entry.entityIds)
-      .map((id) => entityMeta.get(id))
-      .filter(Boolean)
-      .sort((a, b) => (b.mass ?? 0) - (a.mass ?? 0) || a.title.localeCompare(b.title));
+  for (const [tacticId, group] of byTactic) {
     byTacticOut[tacticId] = {
       tacticId,
-      techniqueIds: Array.from(entry.techniqueIds).sort(),
-      entities: entitiesList,
+      techniqueIds: Array.from(group.techniqueIds).sort(),
+      entities: Array.from(group.entityIds)
+        .map((id) => entityMeta.get(id))
+        .filter(Boolean)
+        .sort((a, b) => (b.mass ?? 0) - (a.mass ?? 0) || a.title.localeCompare(b.title)),
     };
   }
 
-  const totalKnownTechniques = Object.keys(TECHNIQUE_TO_TACTICS).length;
-  const coveredTechniques = Object.keys(techniquesOut).length;
+  const coveredKnownTechniques = Object.keys(techniquesOut).filter((id) =>
+    activeOfficialIds.has(id),
+  ).length;
+  const totalKnownTechniques = activeOfficialIds.size;
   const coveragePercent = totalKnownTechniques
-    ? Number(((coveredTechniques / totalKnownTechniques) * 100).toFixed(1))
+    ? Number(((coveredKnownTechniques / totalKnownTechniques) * 100).toFixed(1))
     : 0;
-
   const output = {
     tactics: tacticsOut,
     techniques: techniquesOut,
     byTactic: byTacticOut,
     meta: {
       generatedAt: new Date().toISOString(),
+      attackVersion: reference.attackVersion,
+      referenceSha256: reference.sourceSha256,
       totalEntities: entities.length,
       totalWithMitre,
       totalKnownTechniques,
-      coveredTechniques,
+      coveredTechniques: Object.keys(techniquesOut).length,
+      coveredKnownTechniques,
+      unknownTechniqueIds: Array.from(unknownTechniqueIds).sort(),
       coveragePercent,
     },
   };
 
   fs.mkdirSync(path.dirname(OUT_PATH), { recursive: true });
   fs.writeFileSync(OUT_PATH, `${JSON.stringify(output)}\n`);
-
   console.log(
-    `[mitre-index] ${entities.length} entities · ${totalWithMitre} with MITRE tags · ` +
-    `${coveredTechniques} techniques across ${tacticsOut.filter((t) => t.cardCount > 0).length} tactics ` +
-    `(${coveragePercent}% of known corpus). Wrote ${path.relative(ROOT, OUT_PATH)}.`
+    `[mitre-index] ATT&CK v${reference.attackVersion}: ${entities.length} entities · ` +
+    `${totalWithMitre} tagged · ${Object.keys(techniquesOut).length} exact techniques · ` +
+    `${unknownTechniqueIds.size} unmapped · ${coveragePercent}% corpus coverage.`,
   );
 }
 

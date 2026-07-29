@@ -46,8 +46,8 @@ export default function EntityPreviewPane({
 
   return (
     <aside style={paneStyle}>
-      <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(0,240,255,0.15)" }}>
-        <div style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "#00f0ff", opacity: 0.7 }}>
+      <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(157,124,244,0.15)" }}>
+        <div style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--nav-accent)", opacity: 0.7 }}>
           {entity.kind.replace(/_/g, " ")}
         </div>
         <h2 style={{ margin: "6px 0 8px", fontSize: 18, lineHeight: 1.3, color: "#e8f0ff" }}>{entity.title}</h2>
@@ -101,7 +101,7 @@ export default function EntityPreviewPane({
         )}
       </div>
 
-      <div style={{ padding: 12, borderTop: "1px solid rgba(0,240,255,0.15)" }}>
+      <div style={{ padding: 12, borderTop: "1px solid rgba(157,124,244,0.15)" }}>
         <a href={href} style={openBtn}>Open full record →</a>
       </div>
     </aside>
@@ -111,7 +111,7 @@ export default function EntityPreviewPane({
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <div style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "#00f0ff", opacity: 0.75, marginBottom: 6 }}>
+      <div style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--nav-accent)", opacity: 0.75, marginBottom: 6 }}>
         {title}
       </div>
       {children}
@@ -126,7 +126,7 @@ const paneStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   background: "linear-gradient(180deg, rgba(0,8,20,0.92), rgba(0,4,12,0.85))",
-  borderLeft: "1px solid rgba(0,240,255,0.15)",
+  borderLeft: "1px solid rgba(157,124,244,0.15)",
   color: "#dae4f0",
   fontFamily: "'Fira Code', ui-monospace, monospace",
 };
@@ -140,8 +140,8 @@ const chipRow: CSSProperties = {
 };
 const badge: CSSProperties = {
   padding: "1px 6px",
-  background: "rgba(0,240,255,0.12)", color: "#00f0ff",
-  border: "1px solid rgba(0,240,255,0.28)",
+  background: "rgba(157,124,244,0.12)", color: "var(--nav-accent)",
+  border: "1px solid rgba(157,124,244,0.28)",
 };
 const badgeMuted: CSSProperties = {
   padding: "1px 6px",
@@ -166,9 +166,9 @@ const tagChip: CSSProperties = {
 };
 const relatedChip: CSSProperties = {
   padding: "3px 8px",
-  background: "rgba(0,240,255,0.1)",
-  color: "#00f0ff",
-  border: "1px solid rgba(0,240,255,0.28)",
+  background: "rgba(157,124,244,0.1)",
+  color: "var(--nav-accent)",
+  border: "1px solid rgba(157,124,244,0.28)",
   fontSize: 10,
   fontFamily: "monospace",
   cursor: "pointer",
@@ -177,9 +177,9 @@ const relatedChip: CSSProperties = {
 const openBtn: CSSProperties = {
   display: "inline-block",
   padding: "6px 12px",
-  background: "rgba(0,240,255,0.15)",
-  color: "#00f0ff",
-  border: "1px solid rgba(0,240,255,0.45)",
+  background: "rgba(157,124,244,0.15)",
+  color: "var(--nav-accent)",
+  border: "1px solid rgba(157,124,244,0.45)",
   textDecoration: "none",
   fontFamily: "monospace",
   fontSize: 11,

@@ -13,6 +13,11 @@ export interface MitreIndexTactic {
 
 export interface MitreIndexTechnique {
   id: string;
+  name: string;
+  parentId: string | null;
+  isSubtechnique: boolean;
+  revoked: boolean;
+  deprecated: boolean;
   tacticIds: string[];
   entityIds: string[];
   cardCount: number;
@@ -34,10 +39,14 @@ export interface MitreIndexTacticGroup {
 
 export interface MitreIndexMeta {
   generatedAt: string;
+  attackVersion: string;
+  referenceSha256: string;
   totalEntities: number;
   totalWithMitre: number;
   totalKnownTechniques: number;
   coveredTechniques: number;
+  coveredKnownTechniques: number;
+  unknownTechniqueIds: string[];
   coveragePercent: number;
 }
 
@@ -60,10 +69,14 @@ function readIndex(): MitreIndex {
       byTactic: {},
       meta: {
         generatedAt: new Date(0).toISOString(),
+        attackVersion: "unknown",
+        referenceSha256: "",
         totalEntities: 0,
         totalWithMitre: 0,
         totalKnownTechniques: 0,
         coveredTechniques: 0,
+        coveredKnownTechniques: 0,
+        unknownTechniqueIds: [],
         coveragePercent: 0,
       },
     };
