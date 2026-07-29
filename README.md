@@ -31,9 +31,9 @@ Dive into the cosmos of knowledge:
 ## 📊 Scale & Projection
 
 Hugin operates at a massive scale while remaining entirely static:
-- **1,845** core knowledge entities meticulously curated.
+- **1,872** core knowledge entities meticulously curated.
 - **3,256** anonymous evidence records dynamically loaded only in context.
-- **2,806** curated graph relations binding the universe together.
+- **2,945** curated graph relations binding the universe together.
 - **Eight** generated semantic neighbors for *every single* core entity.
 - Absolute privacy: Provider names, local paths, and private usernames are rigorously stripped from every public artifact.
 
