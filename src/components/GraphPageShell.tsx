@@ -190,7 +190,7 @@ export default function GraphPageShell({
           <p style={{ maxWidth: 620, opacity: 0.72 }}>
             {loadError
               ? `Static data request failed: ${loadError}`
-              : `${manifest.counts.graphEntities.toLocaleString()} nodes are loading from versioned static assets.`}
+              : `${manifest.counts.graphEntities.toLocaleString("en-US")} nodes are loading from versioned static assets.`}
           </p>
         </div>
       </main>
