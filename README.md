@@ -19,7 +19,7 @@ Together they form an end-to-end pipeline for gathering, securing, and visualizi
 
 - **Dashboard:** [princeofpwn.github.io/Hugin/](https://princeofpwn.github.io/Hugin/)
 - **Explore:** [Catalog](https://princeofpwn.github.io/Hugin/explore/) — 3-column master/detail/preview
-- **Graph:** [Cinematic 3D](https://princeofpwn.github.io/Hugin/graph/) — Kepler orbits, spacetime fabric, `⌘K` command palette
+- **Graph:** [Cinematic 3D](https://princeofpwn.github.io/Hugin/graph/) — Kepler orbits, spacetime fabric, 
 - **Latest:** [50 most recent](https://princeofpwn.github.io/Hugin/latest/)
 - **MITRE:** [ATT&CK matrix](https://princeofpwn.github.io/Hugin/mitre/) — coverage row-per-tactic
 - **Dataset:** [Contract](https://princeofpwn.github.io/Hugin/dataset/)
