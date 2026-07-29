@@ -103,6 +103,9 @@ jobs:
       - name: Test ingestion contracts
         run: node tests/ingest-v2-pipeline.test.mjs
 
+      - name: Pipeline E2E smoke test (deterministic, no LLM)
+        run: node tests/pipeline-e2e.test.mjs
+
       - name: Ingest video notes (Gemini)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

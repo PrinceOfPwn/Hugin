@@ -16,6 +16,12 @@ export const KINDS = Object.freeze([
   "playbook",
   "conversation",
   "unknown",
+  // Extended kinds emitted by the deterministic schema-router for curated
+  // project bundles and multimodal ingest. Must stay whitelisted here so the
+  // ROUTER_JSON_SCHEMA validator accepts them.
+  "project_source_code",
+  "project_documentation",
+  "video_notes",
 ]);
 
 export const COMPLEXITIES = Object.freeze(["simple", "general", "complex"]);

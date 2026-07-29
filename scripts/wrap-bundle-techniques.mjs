@@ -97,6 +97,12 @@ function emitCard(entry, existingIds) {
   const outPath = path.join(INCOMING, `tech-${id}.jsonl`);
   if (fs.existsSync(outPath)) return { action: "skip-existing-jsonl", src: entry.name, id, out: path.basename(outPath) };
 
+  // NB: keep the record shape aligned with the validator's allowed `kind`
+  // whitelist in detect-format.v2 — we intentionally do NOT emit
+  // `project_manifest` so the deterministic router picks documentationMapping
+  // (kind: "documentation") instead of the extended `project_documentation`
+  // kind (not yet whitelisted downstream). Bundle provenance survives in
+  // `tags` and `source_bundle` for cross-reference.
   const record = {
     id,
     title: parseTitle(text) || id,
@@ -104,13 +110,15 @@ function emitCard(entry, existingIds) {
     category: parseCategory(fm),
     tier: parseTier(fm),
     language: "en",
+    tags: [
+      "technique-card",
+      `origin:${entry.bundle}`,
+      `role:${entry.sub === "techniques" ? "curated" : "generated"}`,
+    ],
+    source_bundle: entry.bundle,
+    source_relative_path: `${entry.sub}/${entry.name}`,
     wrapped_from: "bundle_technique_card",
     wrapped_at: now,
-    project_manifest: {
-      project: entry.bundle,
-      relative_path: `${entry.sub}/${entry.name}`,
-      role: "technique-card",
-    },
   };
   fs.writeFileSync(outPath, JSON.stringify(record) + "\n");
   return { action: "emit", src: entry.name, id, out: path.basename(outPath) };

@@ -74,7 +74,14 @@ function projectSourceMapping(first, sourceName) {
     requested: fullEnrichment(),
     facets: {
       code: { file_name: pathForKey(first, ["file_name"]), relative_path: pathForKey(first, ["relative_path"]), language: pathForKey(first, ["file_type", "language"]) },
-      project: { name: projectName, member_path: pathForKey(first, ["project_manifest"]), role: pathForKey(first, ["project_manifest"]) },
+      // Each nested facet value must be null OR a {path, join} spec — literals
+      // like the previous `name: projectName` fail isValidFacetSpec. Emit path
+      // specs that resolve at apply-time via resolveFacet.
+      project: {
+        name: { path: ["project_manifest", "project"], join: null },
+        member_path: { path: ["project_manifest", "relative_path"], join: null },
+        role: { path: ["project_manifest", "role"], join: null },
+      },
     },
     notes: `Deterministic project source-code mapping (bundle=${projectName}).`,
   });
@@ -108,7 +115,12 @@ function projectDocumentationMapping(first, sourceName) {
     content: pathForKey(first, ["body", "content", "text", "details"]),
     requested: fullEnrichment(),
     facets: {
-      project: { name: projectName, member_path: pathForKey(first, ["project_manifest"]), role: pathForKey(first, ["project_manifest"]) },
+      // Same shape as projectSourceMapping — path specs, not string literals.
+      project: {
+        name: { path: ["project_manifest", "project"], join: null },
+        member_path: { path: ["project_manifest", "relative_path"], join: null },
+        role: { path: ["project_manifest", "role"], join: null },
+      },
     },
     notes: `Deterministic project documentation mapping (bundle=${projectName}).`,
   });
