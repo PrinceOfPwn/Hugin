@@ -230,11 +230,35 @@ export const TECHNIQUE_TO_TACTICS: Record<string, string[]> = {
   T1647: ["TA0005"],                     // Plist File Modification
 };
 
+const CATEGORY_TO_TACTICS: Record<string, string[]> = {
+  execution: ["TA0002"],
+  persistence: ["TA0003"],
+  privesc: ["TA0004"],
+  "privilege-escalation": ["TA0004"],
+  evasion: ["TA0005"],
+  "defense-evasion": ["TA0005"],
+  credentials: ["TA0006"],
+  "credential-access": ["TA0006"],
+  recon: ["TA0043"],
+  reconnaissance: ["TA0043"],
+  discovery: ["TA0007"],
+  c2: ["TA0011"],
+  "command-and-control": ["TA0011"],
+  lateral: ["TA0008"],
+  "lateral-movement": ["TA0008"],
+  collection: ["TA0009"],
+  exfiltration: ["TA0010"],
+  impact: ["TA0040"],
+};
+
 /** Resolve tactics for a MITRE technique id, transparently handling sub-techniques. */
-export function getTacticsFor(mitreId: string): string[] {
+export function getTacticsFor(mitreId: string, category: string = ""): string[] {
   if (!mitreId) return [];
   const base = String(mitreId).split(".")[0].toUpperCase();
-  return TECHNIQUE_TO_TACTICS[base] ?? [];
+  const direct = TECHNIQUE_TO_TACTICS[base];
+  if (direct && direct.length > 0) return direct;
+  const catKey = String(category).toLowerCase().trim();
+  return CATEGORY_TO_TACTICS[catKey] ?? [];
 }
 
 const MITRE_ID_RE = /^T\d{4}/;
