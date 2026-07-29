@@ -170,18 +170,30 @@ jobs:
           set -euo pipefail
           FORCE=""
           if [[ '${{ inputs.force_redetect }}' == 'true' ]]; then FORCE="--force"; fi
+          NORMALIZED=()
+          INPUTS=()
 
           while IFS= read -r input; do
             [[ -n "$input" ]] || continue
             relative="${input#data/incoming/}"
             name="$(echo "$relative" | tr '/' '_' | sed 's/\.jsonl$//')"
-            echo "::group::Ingest $input"
+            echo "::group::Normalize $input"
             node scripts/detect-format.v2.mjs "$input" $FORCE
             node scripts/apply-mapping.v2.mjs "$input"
-            node scripts/enrich-records.mjs "data/normalized/${name}.jsonl" $FORCE
-            node scripts/compile-canonical.mjs "data/enriched/${name}.jsonl"
             echo "::endgroup::"
+            INPUTS+=("$input")
+            NORMALIZED+=("data/normalized/${name}.jsonl")
           done < /tmp/hugin-inputs.txt
+
+          # A single process keeps Qwen resident for the full batch instead of
+          # loading and disposing the 4B ONNX model once per source file.
+          node scripts/enrich-records.mjs "${NORMALIZED[@]}" $FORCE
+
+          for index in "${!INPUTS[@]}"; do
+            echo "::group::Compile ${INPUTS[$index]}"
+            node scripts/compile-canonical.mjs "data/enriched/$(basename "${NORMALIZED[$index]}")"
+            echo "::endgroup::"
+          done
 
           node scripts/build-data.mjs
           node scripts/validate-data.mjs
