@@ -3,10 +3,31 @@ name: Mercury graph audit
 on:
   workflow_dispatch:
     inputs:
-      limit:
-        description: "Maximum nodes to audit; 0 audits the full graph"
+      mode:
+        description: "Audit mode: stratified sample now, full resume later"
+        required: true
+        default: "stratified"
+        type: choice
+        options: [stratified, full]
+      sample_percent:
+        description: "Percent of currently unprocessed nodes to sample by type"
+        required: true
+        default: "25"
+        type: string
+      sample_size:
+        description: "Exact stratified sample size; 0 uses sample_percent"
         required: true
         default: "0"
+        type: string
+      min_per_type:
+        description: "Minimum representation per type when capacity allows"
+        required: true
+        default: "3"
+        type: string
+      seed:
+        description: "Deterministic sampling seed"
+        required: true
+        default: "hugin-mercury-v1"
         type: string
       concurrency:
         description: "Parallel Mercury requests"
@@ -19,9 +40,14 @@ on:
         default: "instant"
         type: choice
         options: [instant, low, medium]
+      persist_state:
+        description: "Commit cumulative processed state to mercury-audit-state"
+        required: true
+        default: true
+        type: boolean
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mercury-graph-audit
@@ -32,9 +58,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Checkout graph source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+
+      - name: Checkout persistent Mercury state
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: mercury-audit-state
+          path: .mercury-state
+          fetch-depth: 1
+          persist-credentials: true
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -49,20 +84,45 @@ jobs:
           INCEPTION_API_KEY: ${{ secrets.INCEPTION_API_KEY }}
           MERCURY_MODEL: mercury-2
           MERCURY_REASONING_EFFORT: ${{ inputs.reasoning_effort }}
-          AUDIT_LIMIT: ${{ inputs.limit }}
+          AUDIT_MODE: ${{ inputs.mode }}
+          AUDIT_SAMPLE_PERCENT: ${{ inputs.sample_percent }}
+          AUDIT_SAMPLE_SIZE: ${{ inputs.sample_size }}
+          AUDIT_MIN_PER_TYPE: ${{ inputs.min_per_type }}
+          AUDIT_SEED: ${{ inputs.seed }}
           AUDIT_CONCURRENCY: ${{ inputs.concurrency }}
         run: |
           set -euo pipefail
           test -n "${INCEPTION_API_KEY:-}" || { echo "Repository secret INCEPTION_API_KEY is required" >&2; exit 2; }
-          [[ "$AUDIT_LIMIT" =~ ^[0-9]+$ ]] || { echo "limit must be a non-negative integer" >&2; exit 2; }
+          [[ "$AUDIT_SAMPLE_PERCENT" =~ ^[0-9]+$ ]] || { echo "sample_percent must be an integer" >&2; exit 2; }
+          (( AUDIT_SAMPLE_PERCENT >= 0 && AUDIT_SAMPLE_PERCENT <= 100 )) || { echo "sample_percent must be between 0 and 100" >&2; exit 2; }
+          [[ "$AUDIT_SAMPLE_SIZE" =~ ^[0-9]+$ ]] || { echo "sample_size must be a non-negative integer" >&2; exit 2; }
+          [[ "$AUDIT_MIN_PER_TYPE" =~ ^[0-9]+$ ]] || { echo "min_per_type must be a positive integer" >&2; exit 2; }
+          (( AUDIT_MIN_PER_TYPE >= 1 )) || { echo "min_per_type must be at least 1" >&2; exit 2; }
           [[ "$AUDIT_CONCURRENCY" =~ ^[0-9]+$ ]] || { echo "concurrency must be a positive integer" >&2; exit 2; }
           (( AUDIT_CONCURRENCY >= 1 )) || { echo "concurrency must be at least 1" >&2; exit 2; }
+          test -n "$AUDIT_SEED" || { echo "seed must not be empty" >&2; exit 2; }
 
-          node scripts/mercury-audit-graph.mjs \
-            --graph data/source/public-graph.json \
-            --out-dir artifacts/mercury-audit \
-            --limit "$AUDIT_LIMIT" \
+          mkdir -p artifacts/mercury-audit
+          args=(
+            --graph data/source/public-graph.json
+            --out-dir artifacts/mercury-audit
+            --state-file .mercury-state/state/audit.jsonl
+            --resume
             --concurrency "$AUDIT_CONCURRENCY"
+            --seed "$AUDIT_SEED"
+          )
+
+          if [[ "$AUDIT_MODE" == "full" ]]; then
+            args+=(--full)
+          else
+            args+=(
+              --sample-percent "$AUDIT_SAMPLE_PERCENT"
+              --sample-size "$AUDIT_SAMPLE_SIZE"
+              --min-per-type "$AUDIT_MIN_PER_TYPE"
+            )
+          fi
+
+          node scripts/mercury-audit-graph.mjs "${args[@]}"
 
       - name: Verify audit artifact
         if: success()
@@ -70,7 +130,36 @@ jobs:
         run: |
           test -s artifacts/mercury-audit/audit.jsonl
           test -s artifacts/mercury-audit/summary.json
+          test -s artifacts/mercury-audit/sample-plan.json
+          test -s artifacts/mercury-audit/processed-index.json
+          test -s artifacts/mercury-audit/cleanup-plan.json
           test -s artifacts/mercury-audit/REPORT.md
+
+      - name: Persist cumulative audit state
+        if: ${{ success() && inputs.persist_state == true }}
+        shell: bash
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p .mercury-state/state/runs
+          cp artifacts/mercury-audit/audit.jsonl .mercury-state/state/audit.jsonl
+          cp artifacts/mercury-audit/processed-index.json .mercury-state/state/processed-index.json
+          cp artifacts/mercury-audit/summary.json .mercury-state/state/latest-summary.json
+          cp artifacts/mercury-audit/sample-plan.json .mercury-state/state/latest-sample-plan.json
+          cp artifacts/mercury-audit/cleanup-plan.json .mercury-state/state/latest-cleanup-plan.json
+          cp artifacts/mercury-audit/summary.json ".mercury-state/state/runs/${RUN_ID}.json"
+
+          git -C .mercury-state config user.name "github-actions[bot]"
+          git -C .mercury-state config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C .mercury-state add state
+
+          if git -C .mercury-state diff --cached --quiet; then
+            echo "No persistent state changes"
+          else
+            git -C .mercury-state commit -m "audit(mercury): persist run ${RUN_ID}"
+            git -C .mercury-state push origin HEAD:mercury-audit-state
+          fi
 
       - name: Run summary
         if: always()
