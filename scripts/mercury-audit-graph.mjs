@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { auditJsonSchema, buildMessages, inspectHeuristically, normalizeAudit, stableHash, summarizeAudits } from "./lib/mercury-audit.mjs";
 
 const API_URL = process.env.MERCURY_API_URL ?? "https://api.inceptionlabs.ai/v1/chat/completions";
@@ -121,7 +122,7 @@ async function main() {
       if (i >= queue.length) return;
       const { node, content, heuristic } = queue[i];
       try {
-        const raw = opt.heuristicOnly ? null : await callMercury(buildMessages(node, content, heuristic), `hugin-${stableHash(String(node.id)).slice(0, 24)}`);
+        const raw = opt.heuristicOnly ? null : await callMercury(buildMessages(node, content, heuristic), crypto.randomUUID());
         const audit = opt.heuristicOnly ? fallback(node, heuristic) : normalizeAudit(raw, node, heuristic);
         fs.appendFileSync(jsonl, `${JSON.stringify(audit)}\n`); existing.set(String(node.id), audit); ok++;
       } catch (error) {
