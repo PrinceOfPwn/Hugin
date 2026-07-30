@@ -1,0 +1,25 @@
+{
+  "seeded_from_workflow_run": 30503353324,
+  "artifact_id": 8744339506,
+  "note": "Initial 30-node Mercury run imported as resume state. The next workflow run reconciles legacy false positives without repeating API calls.",
+  "raw_summary": {
+    "generated_at": "2026-07-30T00:40:10.277Z",
+    "total": 30,
+    "needs_review": 0,
+    "reclassification_candidates": 1,
+    "incorrect_qa_candidates": 0,
+    "by_detected_type": {
+      "technique": 27,
+      "technical_note": 3
+    },
+    "by_quality_issue": {
+      "missing_summary": 30
+    },
+    "graph": "data/source/public-graph.json",
+    "model": "mercury-2",
+    "reasoning_effort": "instant",
+    "success": 30,
+    "failed": 0,
+    "skipped_unchanged": 0
+  }
+}
