@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { detectLanguage, extractQaSections, inspectHeuristically, looksLikeCode, normalizeAudit } from "../scripts/lib/mercury-audit.mjs";
+import { reconcileAudit, requiresReview, sameTypeFamily, stratifiedSample } from "../scripts/lib/mercury-sampling.mjs";
 
 const assembly = `EXTRN g_NtAllocateVirtualMemorySSN:DWORD
 .code
@@ -17,6 +18,8 @@ NtAllocateVirtualMemory endp`;
 assert.equal(looksLikeCode(assembly), true);
 assert.equal(detectLanguage({ label: "syscalls.asm" }, assembly), "x86_64_assembly");
 assert.equal(detectLanguage({ label: "exploit.poc.py" }, ""), "python");
+assert.equal(sameTypeFamily("tradecraft_qa", "qa"), true);
+assert.equal(sameTypeFamily("technique", "technical_note"), false);
 
 const wrapped = `## 🎯 Research Context & Scenario\n\nsyscalls.asm\n\n---\n\n## 🔬 Full Technical Analysis\n\n${assembly}\n\n---`;
 assert.equal(extractQaSections(wrapped).scenario, "syscalls.asm");
@@ -41,11 +44,57 @@ const normalized = normalizeAudit({
 assert.deepEqual(normalized.tags, ["assembly", "windows-native-api"]);
 assert.equal(normalized.safe_fixes.reclassify_node, true);
 
+const reconciledQa = reconcileAudit(normalized, node, wrapped);
+assert.equal(reconciledQa.safe_fixes.reclassify_node, true);
+assert.equal(requiresReview(reconciledQa), true);
+
+const techniqueNode = { id: "T-001", type: "technique", label: "Technique", tags: ["one", "two"] };
+const techniqueContent = "## Summary\nA grounded summary already exists.\n\n## Technical Deep Dive\nDetails.";
+const techniqueHeuristic = inspectHeuristically(techniqueNode, techniqueContent);
+assert.ok(techniqueHeuristic.issues.includes("missing_summary"));
+const noOp = reconcileAudit(normalizeAudit({
+  detected_content_type: "technique", current_type_valid: true, language: null,
+  suggested_title: null, summary: "A grounded summary already exists.", tags: ["one", "two"],
+  mitre_candidates: [], entities: [], relation_candidates: [], quality_issues: ["missing_summary"],
+  recommended_renderer: "markdown",
+  safe_fixes: { remove_qa_prefix: false, extract_technical_answer: false, set_content_format: "markdown", replace_summary: false, reclassify_node: true },
+  confidence: 0.91, needs_review: false, rationale: "Type is already valid.",
+}, techniqueNode, techniqueHeuristic), techniqueNode, techniqueContent);
+assert.deepEqual(noOp.quality_issues, ["none"]);
+assert.equal(noOp.safe_fixes.reclassify_node, false);
+assert.equal(requiresReview(noOp), false);
+
+const sampleEntries = [
+  ...Array.from({ length: 10 }, (_, index) => ({ node: { id: `tech-${index}`, type: "technique" } })),
+  ...Array.from({ length: 4 }, (_, index) => ({ node: { id: `qa-${index}`, type: "tradecraft_qa" } })),
+  { node: { id: "tool-0", type: "tool" } },
+];
+const sampleA = stratifiedSample(sampleEntries, { sampleSize: 8, minPerType: 2, seed: "fixed" });
+const sampleB = stratifiedSample(sampleEntries, { sampleSize: 8, minPerType: 2, seed: "fixed" });
+assert.deepEqual(sampleA.selected.map((entry) => entry.node.id), sampleB.selected.map((entry) => entry.node.id));
+assert.equal(sampleA.selected.length, 8);
+assert.ok(sampleA.plan.strata.technique.selected >= 2);
+assert.ok(sampleA.plan.strata.qa.selected >= 2);
+assert.equal(sampleA.plan.strata.tool.selected, 1);
+
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "hugin-mercury-test-"));
 try {
   const graphPath = path.join(tempDir, "graph.json");
   const outDir = path.join(tempDir, "audit");
-  const graph = { nodes: [node], contents: { [node.id]: wrapped } };
+  const graph = {
+    nodes: [
+      node,
+      techniqueNode,
+      { id: "qa:2", type: "tradecraft_qa", galaxyId: "tradecraft_qa", label: "QA · Why use Kerberos?", tags: ["kerberos", "authentication"] },
+      { id: "tool:1", type: "tool", label: "Tool", tags: ["utility", "windows"] },
+    ],
+    contents: {
+      [node.id]: wrapped,
+      [techniqueNode.id]: techniqueContent,
+      "qa:2": "## 🎯 Research Context & Scenario\n\nWhy use Kerberos?\n\n---\n\n## 🔬 Full Technical Analysis\n\nKerberos provides ticket-based authentication.\n\n---",
+      "tool:1": "## Summary\nA small Windows utility.\n\n## Usage\nRun it locally.",
+    },
+  };
   fs.writeFileSync(graphPath, JSON.stringify(graph));
 
   const run = (...extraArgs) => spawnSync(process.execPath, [
@@ -56,25 +105,31 @@ try {
     ...extraArgs,
   ], { cwd: process.cwd(), encoding: "utf8" });
 
-  const first = run();
+  const first = run("--sample-percent", "75", "--min-per-type", "1", "--seed", "integration");
   assert.equal(first.status, 0, first.stderr);
-  const firstAudit = JSON.parse(fs.readFileSync(path.join(outDir, "audit.jsonl"), "utf8").trim());
-  assert.equal(firstAudit.detected_content_type, "source_code");
-  assert.equal(firstAudit.suggested_title, "syscalls.asm");
+  const firstSummary = JSON.parse(fs.readFileSync(path.join(outDir, "summary.json"), "utf8"));
+  const firstPlan = JSON.parse(fs.readFileSync(path.join(outDir, "sample-plan.json"), "utf8"));
+  assert.equal(firstSummary.total, 3);
+  assert.equal(firstSummary.cumulative_current, 3);
+  assert.equal(firstPlan.mode, "stratified-sample");
+  assert.equal(Object.values(firstPlan.strata).filter((value) => value.selected > 0).length, 3);
 
-  const unchanged = run("--resume");
+  const unchanged = run("--resume", "--state-file", path.join(outDir, "audit.jsonl"), "--full");
   assert.equal(unchanged.status, 0, unchanged.stderr);
   const unchangedSummary = JSON.parse(fs.readFileSync(path.join(outDir, "summary.json"), "utf8"));
-  assert.equal(unchangedSummary.skipped_unchanged, 1);
+  assert.equal(unchangedSummary.total, 1);
+  assert.equal(unchangedSummary.skipped_unchanged, 3);
+  assert.equal(unchangedSummary.cumulative_current, 4);
 
   graph.contents[node.id] = wrapped.replace("mov eax, g_NtAllocateVirtualMemorySSN", "mov eax, 18h");
   fs.writeFileSync(graphPath, JSON.stringify(graph));
-  const changed = run("--resume");
+  const changed = run("--resume", "--state-file", path.join(outDir, "audit.jsonl"), "--full");
   assert.equal(changed.status, 0, changed.stderr);
+  const changedSummary = JSON.parse(fs.readFileSync(path.join(outDir, "summary.json"), "utf8"));
+  assert.equal(changedSummary.total, 1);
+  assert.equal(changedSummary.cumulative_current, 4);
   const changedLines = fs.readFileSync(path.join(outDir, "audit.jsonl"), "utf8").trim().split(/\r?\n/);
-  assert.equal(changedLines.length, 1);
-  const changedAudit = JSON.parse(changedLines[0]);
-  assert.notEqual(changedAudit.source_hash, firstAudit.source_hash);
+  assert.equal(changedLines.length, 4);
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
