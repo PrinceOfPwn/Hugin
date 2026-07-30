@@ -75,6 +75,18 @@ jobs:
         with:
           node-version: 24
 
+      - name: Restore seeded Mercury state
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -s .mercury-state/state/audit.jsonl ]]; then
+            seed_file="$(find .mercury-state/state -maxdepth 1 -type f -name 'seed-audit-*.jsonl.gz.b64' | sort | tail -n 1)"
+            if [[ -n "$seed_file" ]]; then
+              base64 --decode "$seed_file" | gzip -dc > .mercury-state/state/audit.jsonl
+              echo "Restored initial audit state from $seed_file"
+            fi
+          fi
+
       - name: Test deterministic helpers
         run: npm run test:mercury
 
@@ -149,6 +161,7 @@ jobs:
           cp artifacts/mercury-audit/sample-plan.json .mercury-state/state/latest-sample-plan.json
           cp artifacts/mercury-audit/cleanup-plan.json .mercury-state/state/latest-cleanup-plan.json
           cp artifacts/mercury-audit/summary.json ".mercury-state/state/runs/${RUN_ID}.json"
+          rm -f .mercury-state/state/seed-audit-*.jsonl.gz.b64
 
           git -C .mercury-state config user.name "github-actions[bot]"
           git -C .mercury-state config user.email "41898282+github-actions[bot]@users.noreply.github.com"
