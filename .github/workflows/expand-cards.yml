@@ -87,7 +87,7 @@ jobs:
 
       - name: Upload dry-run payload
         if: env.EXPAND_DRY_RUN == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: expand-cards-dryrun-${{ github.run_id }}
           path: |
@@ -97,7 +97,7 @@ jobs:
 
       - name: Upload generated cards (dry-run reference)
         if: env.EXPAND_DRY_RUN == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: expand-cards-preview-${{ github.run_id }}
           path: |
