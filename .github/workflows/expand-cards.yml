@@ -50,7 +50,7 @@ jobs:
       EXPAND_CLUSTER_ID: ${{ github.event.inputs.cluster_id || '' }}
       EXPAND_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
