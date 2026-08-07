@@ -158,7 +158,19 @@ export function validateKnowledgeUnits(value, { root = "units", chunksById = nul
     }
     if (!unit?.source_refs?.length) errors.push(`${where}.source_refs must contain grounded provenance`);
 
+    const localNames = new Set([
+      ...(unit?.concepts ?? []).map((item) => item?.name),
+      ...(unit?.techniques ?? []).map((item) => item?.name),
+      ...(unit?.entities ?? []).map((item) => item?.name),
+    ].filter(Boolean));
+    for (const [relationIndex, relation] of (unit?.relations ?? []).entries()) {
+      if (!localNames.has(relation?.source) || !localNames.has(relation?.target)) {
+        errors.push(`${where}.relations[${relationIndex}] endpoints must reuse names from the same unit`);
+      }
+    }
+
     if (chunksById) {
+      const unitChunkIds = [...new Set((unit?.source_refs ?? []).flatMap((ref) => ref?.chunk_ids ?? []))];
       for (const [refIndex, ref] of (unit?.source_refs ?? []).entries()) {
         const refWhere = `${where}.source_refs[${refIndex}]`;
         if (typeof ref?.url !== "string" || !/^https?:\/\//i.test(ref.url)) errors.push(`${refWhere}.url must be http(s)`);
@@ -166,6 +178,21 @@ export function validateKnowledgeUnits(value, { root = "units", chunksById = nul
         if (!Array.isArray(ref?.evidence) || !ref.evidence.length) errors.push(`${refWhere}.evidence is required`);
         for (const quote of ref?.evidence ?? []) {
           if (!evidenceExistsInChunks(quote, ref.chunk_ids, chunksById)) errors.push(`${refWhere}.evidence is not an exact short quote from referenced chunks`);
+        }
+      }
+
+      for (const field of ["concepts", "techniques", "entities", "relations", "mitre_candidates"]) {
+        for (const [itemIndex, item] of (unit?.[field] ?? []).entries()) {
+          const itemWhere = `${where}.${field}[${itemIndex}]`;
+          if (!Array.isArray(item?.evidence) || !item.evidence.length) {
+            errors.push(`${itemWhere}.evidence is required`);
+            continue;
+          }
+          for (const quote of item.evidence) {
+            if (!evidenceExistsInChunks(quote, unitChunkIds, chunksById)) {
+              errors.push(`${itemWhere}.evidence is not an exact short quote from this unit's source chunks`);
+            }
+          }
         }
       }
     }
