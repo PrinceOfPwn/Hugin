@@ -10,11 +10,12 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Minimal OpenAI-compatible client for NVIDIA Integrate. The key is only read
  * from the environment, never written to a report, cache key, or artifact. */
 export class NvidiaModelsClient {
-  constructor({ apiKey = process.env.NVIDIA_API_KEY, baseUrl = process.env.NVIDIA_API_BASE_URL ?? DEFAULT_BASE_URL, cacheDir = ".cache/nvidia-models", model = process.env.HUGIN_NVIDIA_MODEL ?? DEFAULT_MODEL } = {}) {
+  constructor({ apiKey = process.env.NVIDIA_API_KEY, baseUrl = process.env.NVIDIA_API_BASE_URL ?? DEFAULT_BASE_URL, cacheDir = ".cache/nvidia-models", model = process.env.HUGIN_NVIDIA_MODEL ?? DEFAULT_MODEL, allowFallbacks = true } = {}) {
     this.apiKey = apiKey;
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.cacheDir = path.resolve(cacheDir);
     this.model = model;
+    this.allowFallbacks = allowFallbacks;
     fs.mkdirSync(this.cacheDir, { recursive: true });
   }
 
@@ -22,7 +23,8 @@ export class NvidiaModelsClient {
 
   async completeJson({ messages, validate, repairMessages, maxTokens = 131072, force = false, model = this.model }) {
     if (!this.available) return { value: null, model: null, cached: false, errors: ["NVIDIA_API_KEY unavailable"] };
-    const cacheFile = path.join(this.cacheDir, `${sha256(JSON.stringify({ provider: "nvidia", model, messages, maxTokens })).slice(0, 48)}.json`);
+    const cacheIdentity = { provider: "nvidia", model, messages, maxTokens, ...(this.allowFallbacks ? {} : { allowFallbacks: false }) };
+    const cacheFile = path.join(this.cacheDir, `${sha256(JSON.stringify(cacheIdentity)).slice(0, 48)}.json`);
     if (!force && fs.existsSync(cacheFile)) {
       try {
         const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
@@ -88,9 +90,14 @@ export class NvidiaModelsClient {
       });
     }
 
+    const selectedConfigs = this.allowFallbacks
+      ? modelConfigs
+      : modelConfigs.filter((config) => config.model === model).slice(0, 1);
+    if (selectedConfigs.length === 0) return { ok: false, error: `strict NVIDIA model ${model} has no request configuration` };
+
     let lastError = "";
 
-    for (const config of modelConfigs) {
+    for (const config of selectedConfigs) {
       const currentModel = config.model;
       const bodies = [
         { ...config, messages, response_format: { type: "json_object" } },
@@ -135,6 +142,6 @@ export class NvidiaModelsClient {
         }
       }
     }
-    return { ok: false, error: `all NVIDIA response formats failed (${lastError})` };
+    return { ok: false, error: `${this.allowFallbacks ? "all NVIDIA response formats failed" : `strict NVIDIA model ${model} failed`} (${lastError})` };
   }
 }
