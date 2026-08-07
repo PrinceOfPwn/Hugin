@@ -1,0 +1,49 @@
+name: External knowledge ingestion CI
+
+on:
+  pull_request:
+    paths:
+      - "scripts/ingest-external-knowledge.mjs"
+      - "scripts/distill-external-knowledge.mjs"
+      - "scripts/lib/external-knowledge.mjs"
+      - "tests/external-knowledge.test.mjs"
+      - "data/external-sources/**"
+      - ".github/workflows/external-knowledge*.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/ingest-external-knowledge.mjs"
+      - "scripts/distill-external-knowledge.mjs"
+      - "scripts/lib/external-knowledge.mjs"
+      - "tests/external-knowledge.test.mjs"
+      - "data/external-sources/**"
+      - ".github/workflows/external-knowledge*.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify PDF extractor runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+          pdftotext -v
+      - name: Syntax-check external ingestion
+        run: |
+          node --check scripts/ingest-external-knowledge.mjs
+          node --check scripts/distill-external-knowledge.mjs
+          node --check scripts/lib/external-knowledge.mjs
+      - name: Run deterministic distillation contracts
+        run: node tests/external-knowledge.test.mjs
