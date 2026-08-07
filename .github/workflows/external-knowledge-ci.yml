@@ -6,7 +6,9 @@ on:
       - "scripts/ingest-external-knowledge.mjs"
       - "scripts/distill-external-knowledge.mjs"
       - "scripts/lib/external-knowledge.mjs"
+      - "scripts/lib/nvidia-models.mjs"
       - "tests/external-knowledge.test.mjs"
+      - "tests/nvidia-model-strict.test.mjs"
       - "data/external-sources/**"
       - ".github/workflows/external-knowledge*.yml"
   push:
@@ -15,7 +17,9 @@ on:
       - "scripts/ingest-external-knowledge.mjs"
       - "scripts/distill-external-knowledge.mjs"
       - "scripts/lib/external-knowledge.mjs"
+      - "scripts/lib/nvidia-models.mjs"
       - "tests/external-knowledge.test.mjs"
+      - "tests/nvidia-model-strict.test.mjs"
       - "data/external-sources/**"
       - ".github/workflows/external-knowledge*.yml"
 
@@ -45,5 +49,8 @@ jobs:
           node --check scripts/ingest-external-knowledge.mjs
           node --check scripts/distill-external-knowledge.mjs
           node --check scripts/lib/external-knowledge.mjs
+          node --check scripts/lib/nvidia-models.mjs
       - name: Run deterministic distillation contracts
-        run: node tests/external-knowledge.test.mjs
+        run: |
+          node tests/external-knowledge.test.mjs
+          node tests/nvidia-model-strict.test.mjs
