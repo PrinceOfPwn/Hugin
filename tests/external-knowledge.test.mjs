@@ -152,7 +152,7 @@ test("rendered knowledge is operational and exposes auditable web provenance", (
   assert.match(body, /## Operator flow/);
   assert.match(body, /## Validation signals/);
   assert.match(body, /\[Source Book\]\(https:\/\/example\.test\/book\.pdf\)/);
-  assert.match(body, /sha256:fixture-source-sh/);
+  assert.match(body, /sha256:fixture-source-s…/);
   assert.doesNotMatch(body, /RAW CHUNK/);
 });
 
