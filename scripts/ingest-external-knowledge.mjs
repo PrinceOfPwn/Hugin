@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { sha256Bytes } from "./lib/binary-hash.mjs";
+import { assertPublicHttpUrl, fetchPublicNoRedirect } from "./lib/public-url.mjs";
 import {
   DEFAULT_CHUNK_CHARS,
   chunkPdfText,
@@ -29,6 +31,7 @@ const sourceOverride = argValue("--source=");
 if (sourceOverride) collection.source = sourceOverride;
 if (!collection.id || !collection.title || !collection.source) throw new Error("Collection requires id, title, and source");
 if (!/^https?:\/\//i.test(collection.source)) throw new Error("Publishable external knowledge requires a public http(s) source URL");
+await assertPublicHttpUrl(collection.source);
 
 const maxDocuments = intArg("--max-documents=", collection.max_documents ?? 25, MAX_DOCUMENTS_HARD);
 const maxPages = intArg("--max-pages=", collection.max_pages_per_document ?? MAX_PAGES_HARD, MAX_PAGES_HARD);
@@ -195,6 +198,7 @@ async function resolveSources(sourceValue) {
     return resolveGithubPdfRepo({ owner, repo, ref: resolved.ref, prefix });
   }
   if (/^https?:\/\//i.test(sourceValue)) {
+    await assertPublicHttpUrl(sourceValue);
     return [{ title: titleFromUrl(sourceValue), url: sourceValue, fetchUrl: sourceValue, kind: /\.pdf(?:$|[?#])/i.test(sourceValue) ? "pdf" : "web" }];
   }
   throw new Error("Only public http(s) sources are supported by the publishable external ingestion path");
@@ -273,6 +277,12 @@ async function readResponseWithLimit(response, maxBytes) {
   return Buffer.concat(chunks, total);
 }
 
+function physicalPdfPageCount(text) {
+  const pages = String(text ?? "").split("\f");
+  if (pages.length > 1 && pages.at(-1) === "") pages.pop();
+  return pages.length;
+}
+
 async function stageSource(source) {
   const maxBytes = maxDocumentBytes();
   let bytes;
@@ -281,9 +291,8 @@ async function stageSource(source) {
     bytes = await fetchGithubBlob(source, maxBytes);
     contentType = "application/pdf";
   } else {
-    const response = await fetch(source.fetchUrl, {
+    const response = await fetchPublicNoRedirect(source.fetchUrl, {
       headers: { "User-Agent": "Hugin-external-knowledge/1.0" },
-      redirect: "follow",
       signal: AbortSignal.timeout(120000),
     });
     if (!response.ok) throw new Error(`fetch failed: ${response.status}`);
@@ -291,7 +300,7 @@ async function stageSource(source) {
     bytes = await readResponseWithLimit(response, maxBytes);
   }
 
-  const digest = sha256(bytes);
+  const digest = sha256Bytes(bytes);
   const sourceId = `external-source:${sha256(`${collection.id}:${source.url}:${digest}`).slice(0, 24)}`;
   const isPdf = source.kind === "pdf" || /application\/pdf/i.test(contentType) || bytes.subarray(0, 5).toString("ascii") === "%PDF-";
   let chunks;
@@ -308,9 +317,9 @@ async function stageSource(source) {
       maxBuffer: 256 * 1024 * 1024,
     });
     if (result.status !== 0) throw new Error(`pdftotext failed: ${(result.stderr || result.stdout || "unknown error").slice(0, 500)}`);
-    totalPages = result.stdout.split("\f").filter((page) => page.trim()).length;
+    totalPages = physicalPdfPageCount(result.stdout);
     pagesTruncated = totalPages > maxPages;
-    if (requireComplete && pagesTruncated) throw new Error(`PDF has ${totalPages} text pages but max_pages=${maxPages}; complete publication refuses truncation`);
+    if (requireComplete && pagesTruncated) throw new Error(`PDF has ${totalPages} physical pages but max_pages=${maxPages}; complete publication refuses truncation`);
     chunks = chunkPdfText(result.stdout, { chunkChars, overlapPages, maxPages });
   } else {
     const decoded = bytes.toString("utf8");
