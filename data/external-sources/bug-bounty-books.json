@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "id": "bug-bounty-books",
+  "title": "Bug Bounty Books",
+  "source": "https://github.com/akr3ch/BugBountyBooks/tree/main",
+  "source_type": "github_pdf_repo",
+  "knowledge_profile": "offensive-web",
+  "language": "en",
+  "max_documents": 12,
+  "max_pages_per_document": 900,
+  "max_document_bytes": 104857600,
+  "chunk_chars": 48000,
+  "chunk_overlap_pages": 1,
+  "distill_batch_chars": 220000,
+  "reduce_batch_chars": 520000,
+  "max_chunks_per_extract_batch": 6,
+  "max_units_per_reduce_batch": 80,
+  "max_output_tokens": 16384,
+  "publication_policy": "derived-knowledge-only"
+}
