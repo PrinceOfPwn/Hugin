@@ -74,7 +74,7 @@ jobs:
             "version": 1,
             "id": "ci-external-smoke",
             "title": "CI external smoke",
-            "source": "https://github.com/akr3ch/BugBountyBooks/blob/main/Bug%20Bounty%20Bootcamp.pdf",
+            "source": "https://github.com/akr3ch/BugBountyBooks/blob/main/Bug%20Bounty%20Bootcamp%20The%20Guide%20to%20Finding%20and%20Reporting%20Web%20Vulnerabilities%20by%20Vickie%20Li.pdf",
             "knowledge_profile": "offensive-web",
             "language": "en",
             "max_document_bytes": 52428800,
