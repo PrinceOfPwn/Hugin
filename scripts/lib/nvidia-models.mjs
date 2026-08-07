@@ -23,7 +23,8 @@ export class NvidiaModelsClient {
 
   async completeJson({ messages, validate, repairMessages, maxTokens = 131072, force = false, model = this.model }) {
     if (!this.available) return { value: null, model: null, cached: false, errors: ["NVIDIA_API_KEY unavailable"] };
-    const cacheFile = path.join(this.cacheDir, `${sha256(JSON.stringify({ provider: "nvidia", model, messages, maxTokens, allowFallbacks: this.allowFallbacks })).slice(0, 48)}.json`);
+    const cacheIdentity = { provider: "nvidia", model, messages, maxTokens, ...(this.allowFallbacks ? {} : { allowFallbacks: false }) };
+    const cacheFile = path.join(this.cacheDir, `${sha256(JSON.stringify(cacheIdentity)).slice(0, 48)}.json`);
     if (!force && fs.existsSync(cacheFile)) {
       try {
         const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
