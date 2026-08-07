@@ -3,7 +3,9 @@ import {
   MAX_EVIDENCE_CHARS,
   chunkPdfText,
   chunkPlainText,
+  decodeHtmlEntities,
   htmlToText,
+  normalizeUnitSourceRefs,
   packByChars,
   renderKnowledgeUnit,
   toCanonicalRecords,
@@ -28,7 +30,14 @@ test("PDF page chunking preserves page provenance and overlap", () => {
   assert.ok(chunks.length >= 2);
   assert.equal(chunks[0].page_start, 1);
   assert.ok(chunks[0].page_end >= 1);
-  assert.equal(chunks[1].page_start, chunks[0].page_end, "second chunk should overlap one page");
+  assert.ok(chunks[1].page_start <= chunks[0].page_end, "second chunk should overlap page provenance");
+});
+
+test("oversized PDF pages are split below the chunk budget", () => {
+  const chunks = chunkPdfText("A".repeat(1300), { chunkChars: 300, overlapPages: 1 });
+  assert.ok(chunks.length >= 4);
+  assert.ok(chunks.every((chunk) => chunk.text.length <= 300));
+  assert.ok(chunks.every((chunk) => chunk.page_start === 1 && chunk.page_end === 1));
 });
 
 test("plain web text is chunked without losing content order", () => {
@@ -39,12 +48,13 @@ test("plain web text is chunked without losing content order", () => {
   assert.ok(chunks.at(-1).text.includes("gamma"));
 });
 
-test("HTML extraction drops scripts and preserves visible title/body", () => {
+test("HTML extraction drops scripts and survives invalid numeric entities", () => {
   const parsed = htmlToText(`<html><head><title>Bug Bounty Note</title><style>.x{}</style></head><body><h1>IDOR</h1><p>Change the object identifier.</p><script>alert(1)</script></body></html>`);
   assert.equal(parsed.title, "Bug Bounty Note");
   assert.match(parsed.text, /IDOR/);
   assert.match(parsed.text, /Change the object identifier/);
   assert.doesNotMatch(parsed.text, /alert\(1\)/);
+  assert.equal(decodeHtmlEntities("bad &#999999999; entity"), "bad &#999999999; entity");
 });
 
 test("character batching keeps all items exactly once", () => {
@@ -55,27 +65,57 @@ test("character batching keeps all items exactly once", () => {
 });
 
 test("knowledge validation grounds source refs and every graph claim", () => {
-  const chunksById = new Map([["c1", { id: "c1", body: "A tester changes the object identifier and compares authorization behavior." }]]);
+  const chunksById = fixtureChunks();
   const unit = fixtureUnit();
   unit.source_refs = [{
     title: "Source",
-    url: "https://example.test/source",
+    url: "https://example.test/book.pdf",
     page_start: 10,
     page_end: 10,
     chunk_ids: ["c1"],
     evidence: ["changes the object identifier"],
   }];
   assert.deepEqual(validateKnowledgeUnits({ units: [unit] }, { chunksById }), []);
+
+  unit.source_refs[0].url = "https://wrong.test/book.pdf";
+  assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /url must match/.test(error)));
+  unit.source_refs[0].url = "https://example.test/book.pdf";
+
   unit.relations[0].target = "Invented remote node";
   assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /endpoints must reuse names/.test(error)));
   unit.relations[0].target = "Object-level authorization";
+
   unit.techniques[0].evidence = ["invented technique evidence"];
   assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /source chunks/.test(error)));
   unit.techniques[0].evidence = ["changes the object identifier"];
+
+  unit.tool_usage = [{ tool: "HTTP proxy" }];
+  assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /tool_usage/.test(error)));
+  unit.tool_usage = fixtureUnit().tool_usage;
+
   unit.source_refs[0].evidence = ["not present in source"];
   assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /not an exact short quote/.test(error)));
   unit.source_refs[0].evidence = ["x".repeat(MAX_EVIDENCE_CHARS + 1)];
   assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).length > 0);
+});
+
+test("provenance normalization is derived from chunks, not model metadata", () => {
+  const chunksById = fixtureChunks();
+  const unit = fixtureUnit();
+  unit.source_refs = [{
+    title: "hallucinated title",
+    url: "https://wrong.test/book.pdf",
+    page_start: 999,
+    page_end: 999,
+    chunk_ids: ["c1"],
+    evidence: ["changes the object identifier"],
+  }];
+  const normalized = normalizeUnitSourceRefs(unit, chunksById);
+  assert.equal(normalized.source_refs[0].title, "Source Book");
+  assert.equal(normalized.source_refs[0].url, "https://example.test/book.pdf");
+  assert.equal(normalized.source_refs[0].page_start, 10);
+  assert.equal(normalized.source_refs[0].page_end, 10);
+  assert.equal(normalized.source_refs[0].source_sha256, "fixture-source-sha256");
 });
 
 test("rendered knowledge is operational and exposes auditable web provenance", () => {
@@ -88,7 +128,7 @@ test("rendered knowledge is operational and exposes auditable web provenance", (
   assert.doesNotMatch(body, /RAW CHUNK/);
 });
 
-test("canonical output compiles through HUGIN's existing playbook path", () => {
+test("canonical output uses stable collection ownership", () => {
   const records = toCanonicalRecords([fixtureUnit()], {
     id: "fixture-collection",
     title: "Fixture Collection",
@@ -102,9 +142,24 @@ test("canonical output compiles through HUGIN's existing playbook path", () => {
   assert.equal(record.kind, "playbook");
   assert.equal(record.publish_state, "core");
   assert.equal(record.enrichment.model, "z-ai/glm-5.2");
-  assert.match(record.source.input_file, /^external:/);
+  assert.equal(record.source.input_file, "external:fixture-collection");
   assert.ok(record.enrichment.techniques.length > 0);
 });
+
+function fixtureChunks() {
+  return new Map([["c1", {
+    id: "c1",
+    body: "A tester changes the object identifier and compares authorization behavior.",
+    source_document: {
+      source_id: "fixture-source",
+      source_title: "Source Book",
+      source_url: "https://example.test/book.pdf",
+      source_sha256: "fixture-source-sha256",
+      page_start: 10,
+      page_end: 10,
+    },
+  }]]);
+}
 
 function fixtureUnit() {
   return {
@@ -125,7 +180,7 @@ function fixtureUnit() {
     pivots: ["Test sibling endpoints that reuse the same identifier."],
     failure_modes: ["A 200 response can still contain an authorization error in the body."],
     tool_usage: [{ tool: "HTTP proxy", use: "Replay and compare requests", pattern: "Change one identifier at a time" }],
-    source_refs: [{ title: "Source Book", url: "https://example.test/book.pdf", page_start: 10, page_end: 11, chunk_ids: ["c1"], evidence: ["changes the object identifier"] }],
+    source_refs: [{ title: "Source Book", url: "https://example.test/book.pdf", source_sha256: "fixture-source-sha256", page_start: 10, page_end: 11, chunk_ids: ["c1"], evidence: ["changes the object identifier"] }],
     tags: ["idor", "authorization", "web"],
     concepts: [{ name: "Object-level authorization", type: "security_boundary", description: "Authorization decision tied to a referenced object.", confidence: 0.9, evidence: ["changes the object identifier"] }],
     techniques: [{ name: "Object Reference Mutation", description: "Mutate an object identifier while holding the session constant.", phase: "testing", confidence: 0.9, evidence: ["changes the object identifier"] }],
