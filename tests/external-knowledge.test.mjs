@@ -8,6 +8,7 @@ import {
   normalizeUnitSourceRefs,
   packByChars,
   renderKnowledgeUnit,
+  stableStringify,
   toCanonicalRecords,
   validateKnowledgeUnits,
 } from "../scripts/lib/external-knowledge.mjs";
@@ -38,6 +39,7 @@ test("oversized PDF pages are split below the chunk budget", () => {
   assert.ok(chunks.length >= 4);
   assert.ok(chunks.every((chunk) => chunk.text.length <= 300));
   assert.ok(chunks.every((chunk) => chunk.page_start === 1 && chunk.page_end === 1));
+  assert.throws(() => chunkPdfText("abc", { chunkChars: 0 }), /positive integer/);
 });
 
 test("plain web text is chunked without losing content order", () => {
@@ -46,6 +48,7 @@ test("plain web text is chunked without losing content order", () => {
   assert.ok(chunks.length >= 2);
   assert.ok(chunks[0].text.includes("alpha"));
   assert.ok(chunks.at(-1).text.includes("gamma"));
+  assert.throws(() => chunkPlainText("abc", { chunkChars: -1 }), /positive integer/);
 });
 
 test("HTML extraction drops scripts and survives invalid numeric entities", () => {
@@ -81,6 +84,10 @@ test("knowledge validation grounds source refs and every graph claim", () => {
   assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /url must match/.test(error)));
   unit.source_refs[0].url = "https://example.test/book.pdf";
 
+  unit.source_refs[0].chunk_ids = ["c1", "missing"];
+  assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /must all resolve/.test(error)));
+  unit.source_refs[0].chunk_ids = ["c1"];
+
   unit.relations[0].target = "Invented remote node";
   assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /endpoints must reuse names/.test(error)));
   unit.relations[0].target = "Object-level authorization";
@@ -97,6 +104,20 @@ test("knowledge validation grounds source refs and every graph claim", () => {
   assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /not an exact short quote/.test(error)));
   unit.source_refs[0].evidence = ["x".repeat(MAX_EVIDENCE_CHARS + 1)];
   assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).length > 0);
+});
+
+test("malformed non-array GLM fields return errors instead of throwing", () => {
+  const unit = fixtureUnit();
+  unit.operator_flow = "not-an-array";
+  unit.source_refs = "not-an-array";
+  unit.concepts = { bad: true };
+  unit.relations = "not-an-array";
+  assert.doesNotThrow(() => validateKnowledgeUnits({ units: [unit] }, { chunksById: fixtureChunks() }));
+  const errors = validateKnowledgeUnits({ units: [unit] }, { chunksById: fixtureChunks() });
+  assert.ok(errors.some((error) => /operator_flow must be an array/.test(error)));
+  assert.ok(errors.some((error) => /source_refs must be an array/.test(error)));
+  assert.ok(errors.some((error) => /concepts must be an array/.test(error)));
+  assert.ok(errors.some((error) => /relations must be an array/.test(error)));
 });
 
 test("provenance normalization is derived from chunks, not model metadata", () => {
@@ -116,6 +137,12 @@ test("provenance normalization is derived from chunks, not model metadata", () =
   assert.equal(normalized.source_refs[0].page_start, 10);
   assert.equal(normalized.source_refs[0].page_end, 10);
   assert.equal(normalized.source_refs[0].source_sha256, "fixture-source-sha256");
+  unit.source_refs[0].chunk_ids = ["c1", "missing"];
+  assert.throws(() => normalizeUnitSourceRefs(unit, chunksById), /invalid chunk_ids/);
+});
+
+test("stable serialization is independent of object insertion order", () => {
+  assert.equal(stableStringify({ b: 2, a: { y: 2, x: 1 } }), stableStringify({ a: { x: 1, y: 2 }, b: 2 }));
 });
 
 test("rendered knowledge is operational and exposes auditable web provenance", () => {
@@ -125,11 +152,22 @@ test("rendered knowledge is operational and exposes auditable web provenance", (
   assert.match(body, /## Operator flow/);
   assert.match(body, /## Validation signals/);
   assert.match(body, /\[Source Book\]\(https:\/\/example\.test\/book\.pdf\)/);
+  assert.match(body, /sha256:fixture-source-sh/);
   assert.doesNotMatch(body, /RAW CHUNK/);
 });
 
-test("canonical output uses stable collection ownership", () => {
-  const records = toCanonicalRecords([fixtureUnit()], {
+test("canonical output uses stable collection ownership and record hash", () => {
+  const firstUnit = fixtureUnit();
+  const secondUnit = JSON.parse(JSON.stringify(firstUnit));
+  const records = toCanonicalRecords([firstUnit], {
+    id: "fixture-collection",
+    title: "Fixture Collection",
+    source: "https://example.test/collection",
+    knowledge_profile: "offensive-web",
+    language: "en",
+  });
+  const reordered = { tags: secondUnit.tags, ...Object.fromEntries(Object.entries(secondUnit).filter(([key]) => key !== "tags").reverse()) };
+  const recordsReordered = toCanonicalRecords([reordered], {
     id: "fixture-collection",
     title: "Fixture Collection",
     source: "https://example.test/collection",
@@ -143,6 +181,7 @@ test("canonical output uses stable collection ownership", () => {
   assert.equal(record.publish_state, "core");
   assert.equal(record.enrichment.model, "z-ai/glm-5.2");
   assert.equal(record.source.input_file, "external:fixture-collection");
+  assert.equal(record.source.record_sha256, recordsReordered[0].source.record_sha256);
   assert.ok(record.enrichment.techniques.length > 0);
 });
 
