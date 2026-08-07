@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { sha256Bytes } from "./lib/binary-hash.mjs";
 import { NvidiaModelsClient } from "./lib/nvidia-models.mjs";
 import {
   DEFAULT_BATCH_CHARS,
   normalizeUnitSourceRefs,
   packByChars,
-  sha256,
   toCanonicalRecords,
   validateKnowledgeUnits,
 } from "./lib/external-knowledge.mjs";
@@ -111,7 +111,7 @@ fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, `${canonical.map((record) => JSON.stringify(record)).join("\n")}\n`);
 report.final_units = canonical.length;
 fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-fs.writeFileSync(reportPath, `${JSON.stringify({ ...report, output: path.relative(process.cwd(), out), output_sha256: sha256(fs.readFileSync(out)) }, null, 2)}\n`);
+fs.writeFileSync(reportPath, `${JSON.stringify({ ...report, output: path.relative(process.cwd(), out), output_sha256: sha256Bytes(fs.readFileSync(out)) }, null, 2)}\n`);
 console.log(`[distill] ${chunks.length} transient chunks -> ${canonical.length} published knowledge units`);
 console.log(`[distill] output -> ${out}`);
 console.log(`[distill] report -> ${reportPath}`);
