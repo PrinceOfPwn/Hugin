@@ -8,10 +8,13 @@ on:
       - "scripts/ingest-external-knowledge.mjs"
       - "scripts/distill-external-knowledge.mjs"
       - "scripts/lib/external-knowledge.mjs"
+      - "scripts/lib/binary-hash.mjs"
+      - "scripts/lib/public-url.mjs"
       - "scripts/lib/nvidia-models.mjs"
       - "scripts/lib/ingest-contract.mjs"
       - "scripts/lib/local-model.mjs"
       - "tests/external-knowledge.test.mjs"
+      - "tests/external-source-safety.test.mjs"
       - "tests/nvidia-model-strict.test.mjs"
   workflow_dispatch:
     inputs:
@@ -66,8 +69,11 @@ jobs:
           node --check scripts/ingest-external-knowledge.mjs
           node --check scripts/distill-external-knowledge.mjs
           node --check scripts/lib/external-knowledge.mjs
+          node --check scripts/lib/binary-hash.mjs
+          node --check scripts/lib/public-url.mjs
           node --check scripts/lib/nvidia-models.mjs
           node tests/external-knowledge.test.mjs
+          node tests/external-source-safety.test.mjs
           node tests/nvidia-model-strict.test.mjs
       - name: Verify BugBountyBooks preset can cover the live corpus
         shell: bash
@@ -145,6 +151,7 @@ jobs:
       - name: Test deterministic ingestion contracts
         run: |
           node tests/external-knowledge.test.mjs
+          node tests/external-source-safety.test.mjs
           node tests/nvidia-model-strict.test.mjs
 
       - name: Resolve collection configuration
