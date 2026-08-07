@@ -26,14 +26,20 @@ export function compactText(value) {
     .trim();
 }
 
+function decodeCodePoint(raw, radix, whole) {
+  const value = Number.parseInt(raw, radix);
+  if (!Number.isInteger(value) || value < 0 || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) return whole;
+  try { return String.fromCodePoint(value); } catch { return whole; }
+}
+
 export function decodeHtmlEntities(value) {
   const named = {
     amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
     ndash: "–", mdash: "—", hellip: "…",
   };
   return String(value ?? "")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(Number.parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (whole, n) => decodeCodePoint(n, 10, whole))
+    .replace(/&#x([0-9a-f]+);/gi, (whole, n) => decodeCodePoint(n, 16, whole))
     .replace(/&([a-z]+);/gi, (whole, name) => named[name.toLowerCase()] ?? whole);
 }
 
@@ -48,35 +54,64 @@ export function htmlToText(html) {
   return { title, text: compactText(decodeHtmlEntities(withoutNoise)) };
 }
 
+function splitBoundedText(text, maxChars) {
+  const clean = compactText(text);
+  if (!clean) return [];
+  const slices = [];
+  let start = 0;
+  while (start < clean.length) {
+    let end = Math.min(clean.length, start + maxChars);
+    if (end < clean.length) {
+      const paragraph = clean.lastIndexOf("\n\n", end);
+      const sentence = clean.lastIndexOf(". ", end);
+      const whitespace = clean.lastIndexOf(" ", end);
+      const candidate = Math.max(paragraph, sentence, whitespace);
+      if (candidate > start + Math.floor(maxChars * 0.6)) end = candidate + (candidate === sentence ? 1 : 0);
+    }
+    if (end <= start) end = Math.min(clean.length, start + maxChars);
+    slices.push(clean.slice(start, end).trim());
+    start = end;
+  }
+  return slices.filter(Boolean);
+}
+
 export function chunkPdfText(text, { chunkChars = DEFAULT_CHUNK_CHARS, overlapPages = 1, maxPages = Infinity } = {}) {
   const rawPages = String(text ?? "").split("\f");
-  const pages = rawPages
+  const pageSegments = rawPages
     .slice(0, Number.isFinite(maxPages) ? Math.max(0, maxPages) : undefined)
-    .map((page, index) => ({ page: index + 1, text: compactText(page) }))
+    .flatMap((page, index) => splitBoundedText(page, chunkChars).map((segment, segmentIndex) => ({
+      page: index + 1,
+      segment: segmentIndex,
+      text: segment,
+    })))
     .filter((page) => page.text);
-  if (!pages.length) return [];
+  if (!pageSegments.length) return [];
 
   const chunks = [];
   let cursor = 0;
-  while (cursor < pages.length) {
+  while (cursor < pageSegments.length) {
     const start = cursor;
     let end = cursor;
     let chars = 0;
-    while (end < pages.length) {
-      const next = pages[end].text.length + (end > start ? 2 : 0);
+    while (end < pageSegments.length) {
+      const next = pageSegments[end].text.length + (end > start ? 2 : 0);
       if (end > start && chars + next > chunkChars) break;
       chars += next;
       end++;
     }
     if (end === start) end++;
-    const selected = pages.slice(start, end);
+    const selected = pageSegments.slice(start, end);
     chunks.push({
       page_start: selected[0].page,
       page_end: selected.at(-1).page,
       text: selected.map((page) => page.text).join("\n\n"),
     });
-    if (end >= pages.length) break;
-    cursor = Math.max(start + 1, end - Math.max(0, overlapPages));
+    if (end >= pageSegments.length) break;
+
+    const overlapFloor = selected.at(-1).page - Math.max(0, overlapPages) + 1;
+    let overlapIndex = end;
+    while (overlapIndex > start && pageSegments[overlapIndex - 1].page >= overlapFloor) overlapIndex--;
+    cursor = Math.max(start + 1, overlapIndex);
   }
   return chunks;
 }
@@ -139,6 +174,76 @@ const STRING_ARRAY_FIELDS = [
   "prerequisites", "attack_surface", "validation_signals", "pivots", "failure_modes", "tags",
 ];
 
+const isString = (value) => typeof value === "string" && value.trim().length > 0;
+const isOptionalString = (value) => value == null || typeof value === "string";
+const isConfidence = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+
+function validateArrayMemberShapes(unit, where, errors) {
+  for (const [index, step] of (unit.operator_flow ?? []).entries()) {
+    if (typeof step === "string") {
+      if (!step.trim()) errors.push(`${where}.operator_flow[${index}] must not be empty`);
+    } else if (!step || typeof step !== "object" || !isString(step.action) || !isOptionalString(step.why)) {
+      errors.push(`${where}.operator_flow[${index}] must be a string or {action, why?}`);
+    }
+  }
+
+  for (const [index, point] of (unit.decision_points ?? []).entries()) {
+    if (!point || typeof point !== "object" || !isString(point.condition) || !isString(point.action) || !isOptionalString(point.rationale)) {
+      errors.push(`${where}.decision_points[${index}] must be {condition, action, rationale?}`);
+    }
+  }
+
+  for (const [index, tool] of (unit.tool_usage ?? []).entries()) {
+    if (!tool || typeof tool !== "object" || !isString(tool.tool) || !isString(tool.use) || !isOptionalString(tool.pattern)) {
+      errors.push(`${where}.tool_usage[${index}] must be {tool, use, pattern?}`);
+    }
+  }
+
+  for (const [index, ref] of (unit.source_refs ?? []).entries()) {
+    if (!ref || typeof ref !== "object" || !isString(ref.url) || !Array.isArray(ref.chunk_ids) || !Array.isArray(ref.evidence)) {
+      errors.push(`${where}.source_refs[${index}] must be an object with url, chunk_ids, and evidence`);
+    }
+  }
+
+  for (const field of ["concepts", "techniques", "entities"]) {
+    for (const [index, item] of (unit[field] ?? []).entries()) {
+      if (!item || typeof item !== "object" || !isString(item.name) || !Array.isArray(item.evidence) || (item.confidence != null && !isConfidence(item.confidence))) {
+        errors.push(`${where}.${field}[${index}] must be an object with name, evidence, and optional confidence 0..1`);
+      }
+    }
+  }
+
+  for (const [index, relation] of (unit.relations ?? []).entries()) {
+    if (!relation || typeof relation !== "object" || !isString(relation.source) || !isString(relation.target) || !isString(relation.type) || !Array.isArray(relation.evidence) || (relation.confidence != null && !isConfidence(relation.confidence))) {
+      errors.push(`${where}.relations[${index}] must be {source,target,type,evidence,confidence?}`);
+    }
+  }
+
+  for (const [index, candidate] of (unit.mitre_candidates ?? []).entries()) {
+    if (!candidate || typeof candidate !== "object" || !isString(candidate.id) || !Array.isArray(candidate.evidence) || (candidate.confidence != null && !isConfidence(candidate.confidence))) {
+      errors.push(`${where}.mitre_candidates[${index}] must be {id,evidence,confidence?}`);
+    }
+  }
+}
+
+function sourceRefMetadata(ref, chunksById) {
+  const chunks = (ref?.chunk_ids ?? []).map((id) => chunksById.get(id)).filter(Boolean);
+  if (!chunks.length) return null;
+  const first = chunks[0].source_document ?? {};
+  const sourceIds = new Set(chunks.map((chunk) => chunk.source_document?.source_id));
+  if (sourceIds.size !== 1 || !first.source_id) return null;
+  const pageStarts = chunks.map((chunk) => chunk.source_document?.page_start).filter(Number.isFinite);
+  const pageEnds = chunks.map((chunk) => chunk.source_document?.page_end).filter(Number.isFinite);
+  return {
+    source_id: first.source_id,
+    title: first.source_title,
+    url: first.source_url,
+    source_sha256: first.source_sha256,
+    page_start: pageStarts.length ? Math.min(...pageStarts) : null,
+    page_end: pageEnds.length ? Math.max(...pageEnds) : null,
+  };
+}
+
 export function validateKnowledgeUnits(value, { root = "units", chunksById = null } = {}) {
   const errors = [];
   if (!value || typeof value !== "object" || !Array.isArray(value[root])) return [`${root} array is required`];
@@ -146,17 +251,21 @@ export function validateKnowledgeUnits(value, { root = "units", chunksById = nul
   for (const [index, unit] of value[root].entries()) {
     const where = `${root}[${index}]`;
     for (const field of ["unit_key", "title", "knowledge_type", "summary", "objective", "applicability"]) {
-      if (typeof unit?.[field] !== "string" || !unit[field].trim()) errors.push(`${where}.${field} must be a non-empty string`);
+      if (!isString(unit?.[field])) errors.push(`${where}.${field} must be a non-empty string`);
     }
     if (unit?.unit_key) {
       if (keys.has(unit.unit_key)) errors.push(`${where}.unit_key must be unique`);
       keys.add(unit.unit_key);
     }
-    for (const field of STRING_ARRAY_FIELDS) if (!Array.isArray(unit?.[field])) errors.push(`${where}.${field} must be an array`);
+    for (const field of STRING_ARRAY_FIELDS) {
+      if (!Array.isArray(unit?.[field])) errors.push(`${where}.${field} must be an array`);
+      else if (unit[field].some((item) => !isString(item))) errors.push(`${where}.${field} must contain only non-empty strings`);
+    }
     for (const field of ["operator_flow", "decision_points", "tool_usage", "source_refs", "concepts", "techniques", "entities", "relations", "mitre_candidates"]) {
       if (!Array.isArray(unit?.[field])) errors.push(`${where}.${field} must be an array`);
     }
     if (!unit?.source_refs?.length) errors.push(`${where}.source_refs must contain grounded provenance`);
+    validateArrayMemberShapes(unit, where, errors);
 
     const localNames = new Set([
       ...(unit?.concepts ?? []).map((item) => item?.name),
@@ -176,6 +285,15 @@ export function validateKnowledgeUnits(value, { root = "units", chunksById = nul
         if (typeof ref?.url !== "string" || !/^https?:\/\//i.test(ref.url)) errors.push(`${refWhere}.url must be http(s)`);
         if (!Array.isArray(ref?.chunk_ids) || !ref.chunk_ids.length) errors.push(`${refWhere}.chunk_ids is required`);
         if (!Array.isArray(ref?.evidence) || !ref.evidence.length) errors.push(`${refWhere}.evidence is required`);
+
+        const metadata = sourceRefMetadata(ref, chunksById);
+        if (!metadata) {
+          errors.push(`${refWhere}.chunk_ids must resolve to exactly one source document`);
+        } else {
+          if (ref.url !== metadata.url) errors.push(`${refWhere}.url must match referenced chunk provenance`);
+          if (ref.page_start != null && metadata.page_start != null && Number(ref.page_start) !== metadata.page_start) errors.push(`${refWhere}.page_start must match referenced chunks`);
+          if (ref.page_end != null && metadata.page_end != null && Number(ref.page_end) !== metadata.page_end) errors.push(`${refWhere}.page_end must match referenced chunks`);
+        }
         for (const quote of ref?.evidence ?? []) {
           if (!evidenceExistsInChunks(quote, ref.chunk_ids, chunksById)) errors.push(`${refWhere}.evidence is not an exact short quote from referenced chunks`);
         }
@@ -198,6 +316,25 @@ export function validateKnowledgeUnits(value, { root = "units", chunksById = nul
     }
   }
   return errors;
+}
+
+export function normalizeUnitSourceRefs(unit, chunksById) {
+  const normalized = structuredClone(unit);
+  normalized.source_refs = (unit.source_refs ?? []).map((ref) => {
+    const metadata = sourceRefMetadata(ref, chunksById);
+    if (!metadata) throw new Error(`Cannot normalize provenance for ${unit.unit_key}: invalid chunk_ids`);
+    return {
+      ...ref,
+      title: metadata.title || ref.title || metadata.url,
+      url: metadata.url,
+      source_id: metadata.source_id,
+      source_sha256: metadata.source_sha256,
+      page_start: metadata.page_start,
+      page_end: metadata.page_end,
+      evidence: (ref.evidence ?? []).map(shortEvidence).slice(0, 3),
+    };
+  });
+  return normalized;
 }
 
 function markdownEscape(value) {
@@ -256,7 +393,8 @@ export function renderKnowledgeUnit(unit) {
     lines.push("", "## Sources and provenance", "");
     for (const ref of unit.source_refs) {
       const range = ref.page_start ? ` · pp. ${ref.page_start}${ref.page_end && ref.page_end !== ref.page_start ? `–${ref.page_end}` : ""}` : "";
-      lines.push(`- [${markdownEscape(ref.title || ref.url)}](${ref.url})${range}`);
+      const digest = ref.source_sha256 ? ` · sha256:${String(ref.source_sha256).slice(0, 16)}…` : "";
+      lines.push(`- [${markdownEscape(ref.title || ref.url)}](${ref.url})${range}${digest}`);
       for (const quote of (ref.evidence ?? []).slice(0, 3)) lines.push(`  - Evidence: “${shortEvidence(quote)}”`);
     }
   }
@@ -267,8 +405,10 @@ export function toCanonicalRecords(units, collection, { model = "z-ai/glm-5.2" }
   return units.map((unit, index) => {
     const body = renderKnowledgeUnit(unit);
     const sourceRefs = (unit.source_refs ?? []).map((ref) => ({
+      source_id: ref.source_id ?? null,
       title: ref.title,
       url: ref.url,
+      source_sha256: ref.source_sha256 ?? null,
       page_start: ref.page_start ?? null,
       page_end: ref.page_end ?? null,
       chunk_ids: ref.chunk_ids ?? [],
@@ -300,7 +440,7 @@ export function toCanonicalRecords(units, collection, { model = "z-ai/glm-5.2" }
       },
       source: {
         name: collection.title,
-        input_file: `external:${collection.source}`,
+        input_file: `external:${collection.id}`,
         record_index: index,
         record_sha256: sha256(JSON.stringify(unit)),
         mapping_sha256: sha256(EXTERNAL_KNOWLEDGE_VERSION),
