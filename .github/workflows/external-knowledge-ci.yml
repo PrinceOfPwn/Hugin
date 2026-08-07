@@ -6,10 +6,13 @@ on:
       - "scripts/ingest-external-knowledge.mjs"
       - "scripts/distill-external-knowledge.mjs"
       - "scripts/lib/external-knowledge.mjs"
+      - "scripts/lib/binary-hash.mjs"
+      - "scripts/lib/public-url.mjs"
       - "scripts/lib/nvidia-models.mjs"
       - "scripts/lib/ingest-contract.mjs"
       - "scripts/lib/local-model.mjs"
       - "tests/external-knowledge.test.mjs"
+      - "tests/external-source-safety.test.mjs"
       - "tests/nvidia-model-strict.test.mjs"
       - "data/external-sources/**"
       - ".github/workflows/external-knowledge*.yml"
@@ -19,10 +22,13 @@ on:
       - "scripts/ingest-external-knowledge.mjs"
       - "scripts/distill-external-knowledge.mjs"
       - "scripts/lib/external-knowledge.mjs"
+      - "scripts/lib/binary-hash.mjs"
+      - "scripts/lib/public-url.mjs"
       - "scripts/lib/nvidia-models.mjs"
       - "scripts/lib/ingest-contract.mjs"
       - "scripts/lib/local-model.mjs"
       - "tests/external-knowledge.test.mjs"
+      - "tests/external-source-safety.test.mjs"
       - "tests/nvidia-model-strict.test.mjs"
       - "data/external-sources/**"
       - ".github/workflows/external-knowledge*.yml"
@@ -58,10 +64,13 @@ jobs:
           node --check scripts/ingest-external-knowledge.mjs
           node --check scripts/distill-external-knowledge.mjs
           node --check scripts/lib/external-knowledge.mjs
+          node --check scripts/lib/binary-hash.mjs
+          node --check scripts/lib/public-url.mjs
           node --check scripts/lib/nvidia-models.mjs
       - name: Run deterministic distillation contracts
         run: |
           node tests/external-knowledge.test.mjs
+          node tests/external-source-safety.test.mjs
           node tests/nvidia-model-strict.test.mjs
       - name: Live GitHub PDF staging smoke test
         shell: bash
