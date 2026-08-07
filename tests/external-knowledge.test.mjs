@@ -54,7 +54,7 @@ test("character batching keeps all items exactly once", () => {
   assert.ok(batches.every((batch) => batch.length <= 3));
 });
 
-test("knowledge validation requires exact short evidence from referenced chunks", () => {
+test("knowledge validation grounds source refs and every graph claim", () => {
   const chunksById = new Map([["c1", { id: "c1", body: "A tester changes the object identifier and compares authorization behavior." }]]);
   const unit = fixtureUnit();
   unit.source_refs = [{
@@ -66,6 +66,12 @@ test("knowledge validation requires exact short evidence from referenced chunks"
     evidence: ["changes the object identifier"],
   }];
   assert.deepEqual(validateKnowledgeUnits({ units: [unit] }, { chunksById }), []);
+  unit.relations[0].target = "Invented remote node";
+  assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /endpoints must reuse names/.test(error)));
+  unit.relations[0].target = "Object-level authorization";
+  unit.techniques[0].evidence = ["invented technique evidence"];
+  assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /source chunks/.test(error)));
+  unit.techniques[0].evidence = ["changes the object identifier"];
   unit.source_refs[0].evidence = ["not present in source"];
   assert.ok(validateKnowledgeUnits({ units: [unit] }, { chunksById }).some((error) => /not an exact short quote/.test(error)));
   unit.source_refs[0].evidence = ["x".repeat(MAX_EVIDENCE_CHARS + 1)];
