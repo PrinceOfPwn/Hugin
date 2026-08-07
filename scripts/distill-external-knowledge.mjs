@@ -45,6 +45,7 @@ for (const list of bySource.values()) list.sort((a, b) => (a.source_document.chu
 const cloud = new NvidiaModelsClient({
   cacheDir: process.env.HUGIN_NVIDIA_CACHE ?? ".cache/nvidia-models",
   model: REQUIRED_MODEL,
+  allowFallbacks: false,
 });
 
 const report = {
