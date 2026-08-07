@@ -203,7 +203,7 @@ jobs:
             --max-documents="${{ inputs.max_documents }}" \
             --max-pages="${{ inputs.max_pages_per_document }}" \
             --require-complete
-          jq -e '.complete == true and .skipped == [] and .documents | length > 0' \
+          jq -e '.complete == true and (.skipped | length == 0) and (.documents | length > 0)' \
             ".cache/hugin-external/${{ steps.config.outputs.collection }}.inventory.json" >/dev/null
 
       - name: Distill high-value operational knowledge with GLM
@@ -221,7 +221,7 @@ jobs:
             --out=".cache/hugin-external/${{ steps.config.outputs.collection }}.distilled.jsonl" \
             --report=".cache/hugin-external/${{ steps.config.outputs.collection }}.distilled.report.json" \
             $FORCE
-          jq -e '.final_units > 0 and .documents > 0 and (.errors | length == 0)' \
+          jq -e '(.final_units > 0) and (.documents > 0) and (.errors | length == 0)' \
             ".cache/hugin-external/${{ steps.config.outputs.collection }}.distilled.report.json" >/dev/null
 
       - name: Compile distilled knowledge into HUGIN
