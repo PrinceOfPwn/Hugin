@@ -7,6 +7,23 @@ export const MAX_EVIDENCE_CHARS = 220;
 
 export const sha256 = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
 
+export function stableStringify(value) {
+  const normalize = (item, inArray = false) => {
+    if (item === null || typeof item === "string" || typeof item === "boolean" || typeof item === "number") return item;
+    if (Array.isArray(item)) return item.map((child) => normalize(child, true) ?? null);
+    if (item && typeof item === "object") {
+      return Object.fromEntries(
+        Object.keys(item).sort().flatMap((key) => {
+          const child = normalize(item[key], false);
+          return child === undefined ? [] : [[key, child]];
+        }),
+      );
+    }
+    return inArray ? null : undefined;
+  };
+  return JSON.stringify(normalize(value));
+}
+
 export function slugify(value, fallback = "source") {
   const slug = String(value ?? "")
     .normalize("NFKD")
@@ -55,6 +72,7 @@ export function htmlToText(html) {
 }
 
 function splitBoundedText(text, maxChars) {
+  if (!Number.isInteger(maxChars) || maxChars < 1) throw new RangeError("maxChars must be a positive integer");
   const clean = compactText(text);
   if (!clean) return [];
   const slices = [];
@@ -76,6 +94,7 @@ function splitBoundedText(text, maxChars) {
 }
 
 export function chunkPdfText(text, { chunkChars = DEFAULT_CHUNK_CHARS, overlapPages = 1, maxPages = Infinity } = {}) {
+  if (!Number.isInteger(chunkChars) || chunkChars < 1) throw new RangeError("chunkChars must be a positive integer");
   const rawPages = String(text ?? "").split("\f");
   const pageSegments = rawPages
     .slice(0, Number.isFinite(maxPages) ? Math.max(0, maxPages) : undefined)
@@ -117,6 +136,7 @@ export function chunkPdfText(text, { chunkChars = DEFAULT_CHUNK_CHARS, overlapPa
 }
 
 export function chunkPlainText(text, { chunkChars = DEFAULT_CHUNK_CHARS, overlapChars = 1600 } = {}) {
+  if (!Number.isInteger(chunkChars) || chunkChars < 1) throw new RangeError("chunkChars must be a positive integer");
   const clean = compactText(text);
   if (!clean) return [];
   const chunks = [];
@@ -174,12 +194,13 @@ const STRING_ARRAY_FIELDS = [
   "prerequisites", "attack_surface", "validation_signals", "pivots", "failure_modes", "tags",
 ];
 
+const asArray = (value) => Array.isArray(value) ? value : [];
 const isString = (value) => typeof value === "string" && value.trim().length > 0;
 const isOptionalString = (value) => value == null || typeof value === "string";
 const isConfidence = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 
 function validateArrayMemberShapes(unit, where, errors) {
-  for (const [index, step] of (unit.operator_flow ?? []).entries()) {
+  for (const [index, step] of asArray(unit.operator_flow).entries()) {
     if (typeof step === "string") {
       if (!step.trim()) errors.push(`${where}.operator_flow[${index}] must not be empty`);
     } else if (!step || typeof step !== "object" || !isString(step.action) || !isOptionalString(step.why)) {
@@ -187,39 +208,39 @@ function validateArrayMemberShapes(unit, where, errors) {
     }
   }
 
-  for (const [index, point] of (unit.decision_points ?? []).entries()) {
+  for (const [index, point] of asArray(unit.decision_points).entries()) {
     if (!point || typeof point !== "object" || !isString(point.condition) || !isString(point.action) || !isOptionalString(point.rationale)) {
       errors.push(`${where}.decision_points[${index}] must be {condition, action, rationale?}`);
     }
   }
 
-  for (const [index, tool] of (unit.tool_usage ?? []).entries()) {
+  for (const [index, tool] of asArray(unit.tool_usage).entries()) {
     if (!tool || typeof tool !== "object" || !isString(tool.tool) || !isString(tool.use) || !isOptionalString(tool.pattern)) {
       errors.push(`${where}.tool_usage[${index}] must be {tool, use, pattern?}`);
     }
   }
 
-  for (const [index, ref] of (unit.source_refs ?? []).entries()) {
+  for (const [index, ref] of asArray(unit.source_refs).entries()) {
     if (!ref || typeof ref !== "object" || !isString(ref.url) || !Array.isArray(ref.chunk_ids) || !Array.isArray(ref.evidence)) {
       errors.push(`${where}.source_refs[${index}] must be an object with url, chunk_ids, and evidence`);
     }
   }
 
   for (const field of ["concepts", "techniques", "entities"]) {
-    for (const [index, item] of (unit[field] ?? []).entries()) {
+    for (const [index, item] of asArray(unit[field]).entries()) {
       if (!item || typeof item !== "object" || !isString(item.name) || !Array.isArray(item.evidence) || (item.confidence != null && !isConfidence(item.confidence))) {
         errors.push(`${where}.${field}[${index}] must be an object with name, evidence, and optional confidence 0..1`);
       }
     }
   }
 
-  for (const [index, relation] of (unit.relations ?? []).entries()) {
+  for (const [index, relation] of asArray(unit.relations).entries()) {
     if (!relation || typeof relation !== "object" || !isString(relation.source) || !isString(relation.target) || !isString(relation.type) || !Array.isArray(relation.evidence) || (relation.confidence != null && !isConfidence(relation.confidence))) {
       errors.push(`${where}.relations[${index}] must be {source,target,type,evidence,confidence?}`);
     }
   }
 
-  for (const [index, candidate] of (unit.mitre_candidates ?? []).entries()) {
+  for (const [index, candidate] of asArray(unit.mitre_candidates).entries()) {
     if (!candidate || typeof candidate !== "object" || !isString(candidate.id) || !Array.isArray(candidate.evidence) || (candidate.confidence != null && !isConfidence(candidate.confidence))) {
       errors.push(`${where}.mitre_candidates[${index}] must be {id,evidence,confidence?}`);
     }
@@ -227,8 +248,10 @@ function validateArrayMemberShapes(unit, where, errors) {
 }
 
 function sourceRefMetadata(ref, chunksById) {
-  const chunks = (ref?.chunk_ids ?? []).map((id) => chunksById.get(id)).filter(Boolean);
-  if (!chunks.length) return null;
+  const ids = Array.isArray(ref?.chunk_ids) ? ref.chunk_ids : [];
+  if (!ids.length) return null;
+  const chunks = ids.map((id) => chunksById.get(id));
+  if (chunks.some((chunk) => !chunk)) return null;
   const first = chunks[0].source_document ?? {};
   const sourceIds = new Set(chunks.map((chunk) => chunk.source_document?.source_id));
   if (sourceIds.size !== 1 || !first.source_id) return null;
@@ -250,6 +273,10 @@ export function validateKnowledgeUnits(value, { root = "units", chunksById = nul
   const keys = new Set();
   for (const [index, unit] of value[root].entries()) {
     const where = `${root}[${index}]`;
+    if (!unit || typeof unit !== "object" || Array.isArray(unit)) {
+      errors.push(`${where} must be an object`);
+      continue;
+    }
     for (const field of ["unit_key", "title", "knowledge_type", "summary", "objective", "applicability"]) {
       if (!isString(unit?.[field])) errors.push(`${where}.${field} must be a non-empty string`);
     }
@@ -264,23 +291,24 @@ export function validateKnowledgeUnits(value, { root = "units", chunksById = nul
     for (const field of ["operator_flow", "decision_points", "tool_usage", "source_refs", "concepts", "techniques", "entities", "relations", "mitre_candidates"]) {
       if (!Array.isArray(unit?.[field])) errors.push(`${where}.${field} must be an array`);
     }
-    if (!unit?.source_refs?.length) errors.push(`${where}.source_refs must contain grounded provenance`);
+    if (!Array.isArray(unit?.source_refs) || unit.source_refs.length === 0) errors.push(`${where}.source_refs must contain grounded provenance`);
     validateArrayMemberShapes(unit, where, errors);
 
     const localNames = new Set([
-      ...(unit?.concepts ?? []).map((item) => item?.name),
-      ...(unit?.techniques ?? []).map((item) => item?.name),
-      ...(unit?.entities ?? []).map((item) => item?.name),
+      ...asArray(unit?.concepts).map((item) => item?.name),
+      ...asArray(unit?.techniques).map((item) => item?.name),
+      ...asArray(unit?.entities).map((item) => item?.name),
     ].filter(Boolean));
-    for (const [relationIndex, relation] of (unit?.relations ?? []).entries()) {
+    for (const [relationIndex, relation] of asArray(unit?.relations).entries()) {
       if (!localNames.has(relation?.source) || !localNames.has(relation?.target)) {
         errors.push(`${where}.relations[${relationIndex}] endpoints must reuse names from the same unit`);
       }
     }
 
     if (chunksById) {
-      const unitChunkIds = [...new Set((unit?.source_refs ?? []).flatMap((ref) => ref?.chunk_ids ?? []))];
-      for (const [refIndex, ref] of (unit?.source_refs ?? []).entries()) {
+      const sourceRefs = asArray(unit?.source_refs);
+      const unitChunkIds = [...new Set(sourceRefs.flatMap((ref) => Array.isArray(ref?.chunk_ids) ? ref.chunk_ids : []))];
+      for (const [refIndex, ref] of sourceRefs.entries()) {
         const refWhere = `${where}.source_refs[${refIndex}]`;
         if (typeof ref?.url !== "string" || !/^https?:\/\//i.test(ref.url)) errors.push(`${refWhere}.url must be http(s)`);
         if (!Array.isArray(ref?.chunk_ids) || !ref.chunk_ids.length) errors.push(`${refWhere}.chunk_ids is required`);
@@ -288,19 +316,19 @@ export function validateKnowledgeUnits(value, { root = "units", chunksById = nul
 
         const metadata = sourceRefMetadata(ref, chunksById);
         if (!metadata) {
-          errors.push(`${refWhere}.chunk_ids must resolve to exactly one source document`);
+          errors.push(`${refWhere}.chunk_ids must all resolve to exactly one source document`);
         } else {
           if (ref.url !== metadata.url) errors.push(`${refWhere}.url must match referenced chunk provenance`);
           if (ref.page_start != null && metadata.page_start != null && Number(ref.page_start) !== metadata.page_start) errors.push(`${refWhere}.page_start must match referenced chunks`);
           if (ref.page_end != null && metadata.page_end != null && Number(ref.page_end) !== metadata.page_end) errors.push(`${refWhere}.page_end must match referenced chunks`);
         }
-        for (const quote of ref?.evidence ?? []) {
-          if (!evidenceExistsInChunks(quote, ref.chunk_ids, chunksById)) errors.push(`${refWhere}.evidence is not an exact short quote from referenced chunks`);
+        for (const quote of asArray(ref?.evidence)) {
+          if (!evidenceExistsInChunks(quote, asArray(ref?.chunk_ids), chunksById)) errors.push(`${refWhere}.evidence is not an exact short quote from referenced chunks`);
         }
       }
 
       for (const field of ["concepts", "techniques", "entities", "relations", "mitre_candidates"]) {
-        for (const [itemIndex, item] of (unit?.[field] ?? []).entries()) {
+        for (const [itemIndex, item] of asArray(unit?.[field]).entries()) {
           const itemWhere = `${where}.${field}[${itemIndex}]`;
           if (!Array.isArray(item?.evidence) || !item.evidence.length) {
             errors.push(`${itemWhere}.evidence is required`);
@@ -320,7 +348,7 @@ export function validateKnowledgeUnits(value, { root = "units", chunksById = nul
 
 export function normalizeUnitSourceRefs(unit, chunksById) {
   const normalized = structuredClone(unit);
-  normalized.source_refs = (unit.source_refs ?? []).map((ref) => {
+  normalized.source_refs = asArray(unit.source_refs).map((ref) => {
     const metadata = sourceRefMetadata(ref, chunksById);
     if (!metadata) throw new Error(`Cannot normalize provenance for ${unit.unit_key}: invalid chunk_ids`);
     return {
@@ -331,7 +359,7 @@ export function normalizeUnitSourceRefs(unit, chunksById) {
       source_sha256: metadata.source_sha256,
       page_start: metadata.page_start,
       page_end: metadata.page_end,
-      evidence: (ref.evidence ?? []).map(shortEvidence).slice(0, 3),
+      evidence: asArray(ref.evidence).map(shortEvidence).slice(0, 3),
     };
   });
   return normalized;
@@ -442,7 +470,7 @@ export function toCanonicalRecords(units, collection, { model = "z-ai/glm-5.2" }
         name: collection.title,
         input_file: `external:${collection.id}`,
         record_index: index,
-        record_sha256: sha256(JSON.stringify(unit)),
+        record_sha256: sha256(stableStringify(unit)),
         mapping_sha256: sha256(EXTERNAL_KNOWLEDGE_VERSION),
       },
       routing: {
