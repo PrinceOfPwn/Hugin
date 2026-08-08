@@ -1,0 +1,18 @@
+---
+id: T-GAP-1006
+title: "SysWhispers3 as Reference SSN-Stub Generator"
+tier: "A"
+category: "syscalls"
+---
+
+# SysWhispers3 as Reference SSN-Stub Generator
+
+## Description
+Documents SysWhispers3 as the canonical external tooling for SSN-stub generation, with its supported evasion modes: WoW64 stubs (for Heaven's Gate-style transitions), egg-hunter SSN resolution (the `YW...` egg pattern scanned at runtime in ntdll .text), direct syscall jumps in WoW64 and x64, and indirect syscall jumps (calling into ntdll's own `syscall; ret` gadget to defeat kernel call-stack checks). Reference card rather than a how-to; vault's own T-002 implementation should be cross-referenced against SysWhispers3's feature set so operators know what capability parity exists.
+
+
+## Rationale
+Single coverage-gap note naming the canonical external tooling for SSN stub generation; operators will encounter this regardless of vault stance.
+
+## References
+- lgtm:vault-gap-syswhispers3-tooling
