@@ -1,0 +1,309 @@
+name: Distill external knowledge with GLM
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/external-knowledge.yml"
+      - "data/external-sources/**"
+      - "scripts/ingest-external-knowledge.mjs"
+      - "scripts/distill-external-knowledge.mjs"
+      - "scripts/lib/external-knowledge.mjs"
+      - "scripts/lib/binary-hash.mjs"
+      - "scripts/lib/public-url.mjs"
+      - "scripts/lib/nvidia-models.mjs"
+      - "scripts/lib/ingest-contract.mjs"
+      - "scripts/lib/local-model.mjs"
+      - "tests/external-knowledge.test.mjs"
+      - "tests/external-source-safety.test.mjs"
+      - "tests/nvidia-model-strict.test.mjs"
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: "Knowledge source preset"
+        type: choice
+        required: true
+        default: bug-bounty-books
+        options:
+          - bug-bounty-books
+          - custom
+      source_url:
+        description: "Custom public PDF, web page, or GitHub repository URL (preset=custom)"
+        type: string
+        default: ""
+      max_documents:
+        description: "Maximum source documents to process (1-50; complete publication refuses truncation)"
+        type: number
+        default: 25
+      max_pages_per_document:
+        description: "Maximum PDF pages per document (1-1500; complete publication refuses truncation)"
+        type: number
+        default: 1500
+      force:
+        description: "Ignore cached GLM responses"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # This workflow and ingest-v2 both rewrite public-graph.json + ingest-manifest.json.
+  # Sharing the group serializes canonical writers instead of racing graph commits.
+  group: hugin-universal-ingest-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Validate exact publication entrypoints
+        run: |
+          node --check scripts/ingest-external-knowledge.mjs
+          node --check scripts/distill-external-knowledge.mjs
+          node --check scripts/lib/external-knowledge.mjs
+          node --check scripts/lib/binary-hash.mjs
+          node --check scripts/lib/public-url.mjs
+          node --check scripts/lib/nvidia-models.mjs
+          node tests/external-knowledge.test.mjs
+          node tests/external-source-safety.test.mjs
+          node tests/nvidia-model-strict.test.mjs
+      - name: Verify BugBountyBooks preset can cover the live corpus
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          max_docs=$(jq -r '.max_documents' data/external-sources/bug-bounty-books.json)
+          source_url=$(jq -r '.source' data/external-sources/bug-bounty-books.json)
+          [[ "$source_url" == "https://github.com/akr3ch/BugBountyBooks/tree/main" ]]
+          payload=$(curl --fail-with-body --retry 3 --retry-all-errors --retry-delay 2 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/akr3ch/BugBountyBooks/git/trees/main?recursive=1)
+          pdf_count=$(jq '[.tree[] | select(.type == "blob" and (.path | ascii_downcase | endswith(".pdf")))] | length' <<<"$payload")
+          if (( pdf_count == 0 )); then
+            echo "BugBountyBooks resolved zero PDFs" >&2
+            exit 1
+          fi
+          if (( pdf_count > max_docs )); then
+            echo "Preset max_documents=$max_docs cannot cover live PDF count=$pdf_count" >&2
+            exit 1
+          fi
+          echo "Live corpus coverage OK: $pdf_count PDFs <= max_documents=$max_docs"
+
+  distill:
+    if: github.event_name == 'workflow_dispatch' && github.actor != 'hugin-bot'
+    permissions:
+      contents: write
+      actions: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .cache/nvidia-models
+          key: hugin-external-glm-${{ hashFiles('package-lock.json', 'scripts/lib/nvidia-models.mjs', 'scripts/lib/external-knowledge.mjs') }}
+          restore-keys: |
+            hugin-external-glm-
+
+      - name: Validate dispatch limits
+        shell: bash
+        env:
+          MAX_DOCUMENTS: ${{ inputs.max_documents }}
+          MAX_PAGES: ${{ inputs.max_pages_per_document }}
+        run: |
+          set -euo pipefail
+          [[ "$MAX_DOCUMENTS" =~ ^[0-9]+$ ]] && (( MAX_DOCUMENTS >= 1 && MAX_DOCUMENTS <= 50 )) || { echo "max_documents must be 1..50" >&2; exit 2; }
+          [[ "$MAX_PAGES" =~ ^[0-9]+$ ]] && (( MAX_PAGES >= 1 && MAX_PAGES <= 1500 )) || { echo "max_pages_per_document must be 1..1500" >&2; exit 2; }
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          if ! command -v pdftotext >/dev/null 2>&1; then
+            for attempt in 1 2 3; do
+              if sudo apt-get update && sudo apt-get install -y poppler-utils; then break; fi
+              if [[ "$attempt" == "3" ]]; then exit 1; fi
+              sleep $((attempt * 5))
+            done
+          fi
+          pdftotext -v
+
+      - name: Test deterministic ingestion contracts
+        run: |
+          node tests/external-knowledge.test.mjs
+          node tests/external-source-safety.test.mjs
+          node tests/nvidia-model-strict.test.mjs
+
+      - name: Resolve collection configuration
+        id: config
+        shell: bash
+        env:
+          PRESET: ${{ inputs.preset }}
+          SOURCE_URL: ${{ inputs.source_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/hugin-external
+          if [[ "$PRESET" == "bug-bounty-books" ]]; then
+            CONFIG="data/external-sources/bug-bounty-books.json"
+            COLLECTION="bug-bounty-books"
+          else
+            if [[ -z "$SOURCE_URL" ]]; then
+              echo "source_url is required when preset=custom" >&2
+              exit 2
+            fi
+            if [[ ! "$SOURCE_URL" =~ ^https?:// ]]; then
+              echo "source_url must be public http(s)" >&2
+              exit 2
+            fi
+            source_hash=$(printf '%s' "$SOURCE_URL" | sha256sum | cut -c1-16)
+            COLLECTION="custom-${source_hash}"
+            CONFIG=".cache/hugin-external/${COLLECTION}.json"
+            jq -n --arg source "$SOURCE_URL" --arg id "$COLLECTION" '{
+              version: 1,
+              id: $id,
+              title: "Custom external knowledge source",
+              source: $source,
+              knowledge_profile: "offensive-web",
+              language: "en",
+              publication_policy: "derived-knowledge-only",
+              max_document_bytes: 104857600,
+              chunk_chars: 48000,
+              chunk_overlap_pages: 1,
+              distill_batch_chars: 220000,
+              reduce_batch_chars: 520000,
+              max_output_tokens: 16384
+            }' > "$CONFIG"
+          fi
+          echo "config=$CONFIG" >> "$GITHUB_OUTPUT"
+          echo "collection=$COLLECTION" >> "$GITHUB_OUTPUT"
+
+      - name: Stage complete PDF/web evidence transiently
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          node scripts/ingest-external-knowledge.mjs \
+            "${{ steps.config.outputs.config }}" \
+            --out=".cache/hugin-external/${{ steps.config.outputs.collection }}.chunks.jsonl" \
+            --inventory=".cache/hugin-external/${{ steps.config.outputs.collection }}.inventory.json" \
+            --max-documents="${{ inputs.max_documents }}" \
+            --max-pages="${{ inputs.max_pages_per_document }}" \
+            --require-complete
+          jq -e '.complete == true and (.skipped | length == 0) and (.documents | length > 0)' \
+            ".cache/hugin-external/${{ steps.config.outputs.collection }}.inventory.json" >/dev/null
+
+      - name: Distill high-value operational knowledge with GLM
+        shell: bash
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          HUGIN_NVIDIA_CACHE: .cache/nvidia-models
+        run: |
+          set -euo pipefail
+          FORCE=""
+          if [[ "${{ inputs.force }}" == "true" ]]; then FORCE="--force"; fi
+          node scripts/distill-external-knowledge.mjs \
+            ".cache/hugin-external/${{ steps.config.outputs.collection }}.chunks.jsonl" \
+            --collection="${{ steps.config.outputs.config }}" \
+            --out=".cache/hugin-external/${{ steps.config.outputs.collection }}.distilled.jsonl" \
+            --report=".cache/hugin-external/${{ steps.config.outputs.collection }}.distilled.report.json" \
+            $FORCE
+          jq -e '(.final_units > 0) and (.documents > 0) and (.errors | length == 0)' \
+            ".cache/hugin-external/${{ steps.config.outputs.collection }}.distilled.report.json" >/dev/null
+
+      - name: Compile distilled knowledge into HUGIN
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/compile-canonical.mjs ".cache/hugin-external/${{ steps.config.outputs.collection }}.distilled.jsonl"
+          HUGIN_SIMILARITY_ENGINE=lexical node scripts/build-data.mjs
+          node scripts/validate-data.mjs
+
+      - name: Verify raw source material is not tracked
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/).*\.pdf$|^\.cache/hugin-external/' ; then
+            echo "Raw external source material must never be tracked" >&2
+            exit 1
+          fi
+
+      - name: Commit distilled graph projection
+        id: commit
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "hugin-bot"
+          git config user.email "[private-email]"
+          git add data/source/public-graph.json data/source/ingest-manifest.json
+          if git diff --staged --quiet; then
+            echo "No graph changes"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "knowledge: distill external offensive research"
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "pushed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 3))
+          done
+          echo "Unable to push distilled knowledge after retries" >&2
+          exit 1
+
+      - name: Dispatch Pages deploy
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run pages.yml --ref main
+          echo "Pages deployment dispatched from the committed graph projection"
+
+      - name: Run summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## HUGIN external knowledge distillation" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          for report in .cache/hugin-external/*.inventory.json .cache/hugin-external/*.distilled.report.json; do
+            [[ -f "$report" ]] || continue
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload provenance reports (never raw chunks)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hugin-external-knowledge-${{ github.run_id }}
+          path: |
+            .cache/hugin-external/*.inventory.json
+            .cache/hugin-external/*.distilled.report.json
+          retention-days: 14

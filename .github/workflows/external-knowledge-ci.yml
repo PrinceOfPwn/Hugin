@@ -1,0 +1,102 @@
+name: External knowledge ingestion CI
+
+on:
+  pull_request:
+    paths:
+      - "scripts/ingest-external-knowledge.mjs"
+      - "scripts/distill-external-knowledge.mjs"
+      - "scripts/lib/external-knowledge.mjs"
+      - "scripts/lib/binary-hash.mjs"
+      - "scripts/lib/public-url.mjs"
+      - "scripts/lib/nvidia-models.mjs"
+      - "scripts/lib/ingest-contract.mjs"
+      - "scripts/lib/local-model.mjs"
+      - "tests/external-knowledge.test.mjs"
+      - "tests/external-source-safety.test.mjs"
+      - "tests/nvidia-model-strict.test.mjs"
+      - "data/external-sources/**"
+      - ".github/workflows/external-knowledge*.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/ingest-external-knowledge.mjs"
+      - "scripts/distill-external-knowledge.mjs"
+      - "scripts/lib/external-knowledge.mjs"
+      - "scripts/lib/binary-hash.mjs"
+      - "scripts/lib/public-url.mjs"
+      - "scripts/lib/nvidia-models.mjs"
+      - "scripts/lib/ingest-contract.mjs"
+      - "scripts/lib/local-model.mjs"
+      - "tests/external-knowledge.test.mjs"
+      - "tests/external-source-safety.test.mjs"
+      - "tests/nvidia-model-strict.test.mjs"
+      - "data/external-sources/**"
+      - ".github/workflows/external-knowledge*.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify PDF extractor runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v pdftotext >/dev/null 2>&1; then
+            for attempt in 1 2 3; do
+              if sudo apt-get update && sudo apt-get install -y poppler-utils; then break; fi
+              if [[ "$attempt" == "3" ]]; then exit 1; fi
+              sleep $((attempt * 5))
+            done
+          fi
+          pdftotext -v
+      - name: Syntax-check external ingestion
+        run: |
+          node --check scripts/ingest-external-knowledge.mjs
+          node --check scripts/distill-external-knowledge.mjs
+          node --check scripts/lib/external-knowledge.mjs
+          node --check scripts/lib/binary-hash.mjs
+          node --check scripts/lib/public-url.mjs
+          node --check scripts/lib/nvidia-models.mjs
+      - name: Run deterministic distillation contracts
+        run: |
+          node tests/external-knowledge.test.mjs
+          node tests/external-source-safety.test.mjs
+          node tests/nvidia-model-strict.test.mjs
+      - name: Live GitHub PDF staging smoke test
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/hugin-external-smoke.json <<'JSON'
+          {
+            "version": 1,
+            "id": "ci-external-smoke",
+            "title": "CI external smoke",
+            "source": "https://github.com/akr3ch/BugBountyBooks/blob/main/Bug%20Bounty%20Bootcamp%20The%20Guide%20to%20Finding%20and%20Reporting%20Web%20Vulnerabilities%20by%20Vickie%20Li.pdf",
+            "knowledge_profile": "offensive-web",
+            "language": "en",
+            "max_document_bytes": 52428800,
+            "chunk_chars": 12000,
+            "chunk_overlap_pages": 1
+          }
+          JSON
+          node scripts/ingest-external-knowledge.mjs \
+            /tmp/hugin-external-smoke.json \
+            --out=/tmp/hugin-external-smoke.chunks.jsonl \
+            --inventory=/tmp/hugin-external-smoke.inventory.json \
+            --max-documents=1 \
+            --max-pages=2
+          jq -e '(.documents | length == 1) and (.chunks > 0) and (.skipped | length == 0)' \
+            /tmp/hugin-external-smoke.inventory.json >/dev/null
+          test -s /tmp/hugin-external-smoke.chunks.jsonl

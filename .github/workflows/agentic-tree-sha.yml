@@ -1,0 +1,95 @@
+name: Compute verified agentic tree
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/agentic-tree-sha.yml"
+      - ".github/workflows/agentic-bootstrap.yml"
+      - "agentic-bootstrap.part*"
+
+permissions:
+  contents: read
+
+jobs:
+  compute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: Reconstruct exact source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat agentic-bootstrap.part* > /tmp/hugin-agentic.b64
+          base64 --decode /tmp/hugin-agentic.b64 > /tmp/hugin-agentic.tar.gz
+          echo "0af8116416c40f8196ab874fd9828cc00cbf95fd1d98597efff68a5e6eff7313  /tmp/hugin-agentic.tar.gz" | sha256sum --check --strict
+          test "$(tar -tzf /tmp/hugin-agentic.tar.gz | grep -vc '/$')" -eq 28
+          tar -tzf /tmp/hugin-agentic.tar.gz | while IFS= read -r entry; do
+            case "$entry" in
+              /*|../*|*/../*) echo "unsafe archive path: $entry" >&2; exit 1 ;;
+            esac
+          done
+          tar -xzf /tmp/hugin-agentic.tar.gz -C .
+          rm -f agentic-bootstrap.part*
+          rm -f .github/workflows/agentic-bootstrap.yml .github/workflows/agentic-tree-sha.yml
+          git add -A
+          git diff --cached --check
+      - name: Validate every deterministic contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            scripts/reconcile-gaps-agentic.mjs \
+            scripts/apply-knowledge-proposals.mjs \
+            scripts/import-skill.mjs \
+            scripts/validate-skills.mjs \
+            scripts/lib/agentic-reconciliation.mjs \
+            scripts/lib/knowledge-agent-prompts.mjs \
+            scripts/lib/knowledge-agent-tools.mjs \
+            scripts/lib/knowledge-apply.mjs \
+            scripts/lib/knowledge-proposal.mjs \
+            scripts/lib/nvidia-models.mjs \
+            scripts/lib/skill-import.mjs \
+            scripts/lib/skills-registry.mjs \
+            scripts/lib/tool-agent-runtime.mjs; do
+              node --check "$file"
+          done
+          for test_file in \
+            tests/skills-registry.test.mjs \
+            tests/skill-import.test.mjs \
+            tests/knowledge-agent-tools.test.mjs \
+            tests/knowledge-proposal.test.mjs \
+            tests/tool-agent-runtime.test.mjs \
+            tests/agentic-reconciliation.test.mjs \
+            tests/knowledge-apply.test.mjs \
+            tests/nvidia-tools.test.mjs \
+            tests/nvidia-model-strict.test.mjs \
+            tests/external-knowledge.test.mjs \
+            tests/external-source-safety.test.mjs; do
+              node "$test_file"
+          done
+          node scripts/validate-skills.mjs --check
+      - name: Compute deterministic tree SHAs
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "base_commit=9d977082c5a36bd359b129fa5170e85df9b4e6ba"
+            echo "base_tree=$(git rev-parse 9d977082c5a36bd359b129fa5170e85df9b4e6ba^{tree})"
+            echo "final_tree=$(git write-tree)"
+            echo "archive_sha256=0af8116416c40f8196ab874fd9828cc00cbf95fd1d98597efff68a5e6eff7313"
+            echo "files=$(tar -tzf /tmp/hugin-agentic.tar.gz | grep -vc '/$')"
+          } | tee /tmp/agentic-tree-shas.txt
+      - name: Upload verified tree SHAs
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentic-tree-shas-${{ github.run_id }}
+          path: /tmp/agentic-tree-shas.txt
+          retention-days: 2
+          if-no-files-found: error

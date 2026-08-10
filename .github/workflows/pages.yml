@@ -1,6 +1,7 @@
 name: Deploy HUGIN 2.1 to Pages
 
 on:
+  pull_request:
   push:
     branches: [main]
     paths-ignore:
@@ -8,7 +9,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: pages
+  group: pages-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
   cancel-in-progress: true
 
 jobs:
@@ -38,7 +39,7 @@ jobs:
       - run: npm run data:validate
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: hugin-generated-${{ github.sha }}
+          name: hugin-generated-${{ github.sha }}-${{ github.run_id }}
           path: |
             src/generated
             public/data
@@ -60,18 +61,32 @@ jobs:
       - run: npm ci
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
-          name: hugin-generated-${{ github.sha }}
+          name: hugin-generated-${{ github.sha }}-${{ github.run_id }}
           path: .
       - run: npm run site:build
       - run: npm run site:validate
       - run: npm run check
       - run: npm run test:budgets
-      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
-      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+      - name: Verify deploy artifact exists
+        run: test -f dist/index.html
+      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - name: Upload GitHub Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
           path: dist
+      - name: Upload PR deploy preview artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hugin-pages-dry-run-${{ github.sha }}
+          path: dist
+          retention-days: 3
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     permissions:
       pages: write

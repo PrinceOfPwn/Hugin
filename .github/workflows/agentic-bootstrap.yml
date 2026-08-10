@@ -1,0 +1,99 @@
+name: Expand agentic knowledge bootstrap
+
+on:
+  push:
+    branches:
+      - agent/agentic-glm-skills-reconciler
+    paths:
+      - ".github/workflows/agentic-bootstrap.yml"
+  pull_request:
+    paths:
+      - ".github/workflows/agentic-bootstrap.yml"
+      - "agentic-bootstrap.part*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hugin-agentic-bootstrap-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  expand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: Reconstruct and verify source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat agentic-bootstrap.part* > /tmp/hugin-agentic.b64
+          base64 --decode /tmp/hugin-agentic.b64 > /tmp/hugin-agentic.tar.gz
+          echo "0af8116416c40f8196ab874fd9828cc00cbf95fd1d98597efff68a5e6eff7313  /tmp/hugin-agentic.tar.gz" | sha256sum --check --strict
+          test "$(tar -tzf /tmp/hugin-agentic.tar.gz | grep -vc '/$')" -eq 28
+          tar -tzf /tmp/hugin-agentic.tar.gz | while IFS= read -r entry; do
+            case "$entry" in
+              /*|../*|*/../*) echo "unsafe archive path: $entry" >&2; exit 1 ;;
+            esac
+          done
+      - name: Expand source tree and remove bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xzf /tmp/hugin-agentic.tar.gz -C .
+          rm -f agentic-bootstrap.part*
+          rm -f .github/workflows/agentic-bootstrap.yml
+          git diff --check
+      - name: Validate syntax and every deterministic contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            scripts/reconcile-gaps-agentic.mjs \
+            scripts/apply-knowledge-proposals.mjs \
+            scripts/import-skill.mjs \
+            scripts/validate-skills.mjs \
+            scripts/lib/agentic-reconciliation.mjs \
+            scripts/lib/knowledge-agent-prompts.mjs \
+            scripts/lib/knowledge-agent-tools.mjs \
+            scripts/lib/knowledge-apply.mjs \
+            scripts/lib/knowledge-proposal.mjs \
+            scripts/lib/nvidia-models.mjs \
+            scripts/lib/skill-import.mjs \
+            scripts/lib/skills-registry.mjs \
+            scripts/lib/tool-agent-runtime.mjs; do
+              node --check "$file"
+          done
+          for test_file in \
+            tests/skills-registry.test.mjs \
+            tests/skill-import.test.mjs \
+            tests/knowledge-agent-tools.test.mjs \
+            tests/knowledge-proposal.test.mjs \
+            tests/tool-agent-runtime.test.mjs \
+            tests/agentic-reconciliation.test.mjs \
+            tests/knowledge-apply.test.mjs \
+            tests/nvidia-tools.test.mjs \
+            tests/nvidia-model-strict.test.mjs \
+            tests/external-knowledge.test.mjs \
+            tests/external-source-safety.test.mjs; do
+              node "$test_file"
+          done
+          node scripts/validate-skills.mjs --check
+      - name: Commit unified agentic implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "hugin-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat: add agentic GLM knowledge reconciliation"
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          git push origin HEAD:"$branch"
