@@ -160,7 +160,9 @@ OS Internals Context:
 
 Key Implementation Details:
 
-State: No current implementation in HUGIN source. The grep-matched file dark_crystal/crowd/src/overload.rs was reviewed: it implements Module Overloading (NtCreateSection with SEC_IMAGE + NtMapViewOfSection) and manual-map loading; it contains no named-pipe or IPC code and is not an implementation of this technique. Then a paragraph on what an implementation would look like: a transport module beside T-022's tcp_transport.rs / http_poll_transport.rs; server side CreateNamedPipeW with PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, PIPE_TYPE_MESSAGE, framing = 4-byte LE length prefix + payload, henge transforms applied to frames; client side CreateFileW on \\.\pipe\name or \\host\pipe\name; tokio::net::windows::named_pipe for async or raw windows::Win32::System::Pipes bindings; anonymous-pipe variant via CreatePipe + STARTUPINFO stdio redirection for staged child processes.
+State: No current implementation in HUGIN source. The grep-matched file dark_crystal/crowd/src/overload.rs was reviewed: it implements Module Overloading (NtCreateSection with SEC_IMAGE + NtMapViewOfSection) and manual-map loading; it contains no named-pipe or IPC code and is not an implementation of this technique. Then a paragraph on what an implementation would look like: a transport module beside T-022's tcp_transport.rs / http_poll_transport.rs; server side CreateNamedPipeW with PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, PIPE_TYPE_MESSAGE, framing = 4-byte LE length prefix + payload, henge transforms applied to frames; client side CreateFileW on \\.\pipe
+ame or \\host\pipe
+ame; tokio::net::windows::named_pipe for async or raw windows::Win32::System::Pipes bindings; anonymous-pipe variant via CreatePipe + STARTUPINFO stdio redirection for staged child processes.
 
 Wait — rule 3 says no suggestions/variant ideas: "Do not add 'Consider also X' or 'A future improvement could Y' sections." But the Key Implementation Details template explicitly says when no source implements: "Then briefly describe what an implementation would look like (data structures, syscalls, roughly one paragraph)." So that paragraph is mandated by the template, not a rule-3 violation. Keep it descriptive of what an implementation would look like, framed as documentation, not as a suggestion for improvement.
 
@@ -203,7 +205,9 @@ One more check on mechanism details from the material to name precisely:
 - "With the server service running, all named pipes become accessible to remote systems. Communications can now flow back and forth through the same pipe." ✓
 - Anonymous: "Less overhead than named pipes", "Local only", "One-way", "cannot be used to communicate over the network, and they cannot be used to communicate with processes that are not related to them (parent/child)", "useful for quick IPC between a process and its child process using standard input/output redirection" ✓
 
-Note: the material's unit 19 excerpt mentions clients use "\\ComputerName\pipe\PipeName" (LGTM note says \ComputerName\pipe\PipeName). Standard form is \\.\pipe\name locally and \\ComputerName\pipe\name remotely. Good.
+Note: the material's unit 19 excerpt mentions clients use "\\ComputerName\pipe\PipeName" (LGTM note says \ComputerName\pipe\PipeName). Standard form is \\.\pipe
+ame locally and \\ComputerName\pipe
+ame remotely. Good.
 
 Word on "kernel-mode transport with implicit buffering" from consolidated description — I'll use that phrasing in Summary or OS Internals.
 

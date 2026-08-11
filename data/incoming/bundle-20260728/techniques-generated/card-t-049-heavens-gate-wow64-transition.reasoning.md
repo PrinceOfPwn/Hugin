@@ -81,8 +81,10 @@ From atlas-binary-analysis-part1.md unit 7: "Heaven's Gate: The Transition — x
 Now Windows internals grounding (from well-established documentation — allowed):
 
 - WoW64 subsystem: on 64-bit Windows, 32-bit processes run under WoW64. The process address space contains:
-  - 32-bit ntdll.dll (from %SystemRoot%\SysWOW64\ntdll.dll) mapped below 4GB.
-  - 64-bit ntdll.dll (from %SystemRoot%\System32\ntdll.dll) mapped in the 64-bit address space (above 4GB).
+  - 32-bit ntdll.dll (from %SystemRoot%\SysWOW64
+tdll.dll) mapped below 4GB.
+  - 64-bit ntdll.dll (from %SystemRoot%\System32
+tdll.dll) mapped in the 64-bit address space (above 4GB).
   - wow64.dll, wow64cpu.dll, wow64win.dll — the 64-bit emulation/thunking layer.
 - Segment selectors: 0x23 = 32-bit code segment (compatibility mode), 0x33 = 64-bit code segment (long mode). A far jump/call/ret to selector 0x33 switches the CPU to 64-bit mode; 0x23 switches back. This is documented behavior on x86-64 (the CS descriptor's L bit determines long mode).
 - The 32-bit TEB (fs:[0]) and 64-bit TEB (gs:[0]) both exist in a WoW64 process; the 64-bit PEB is accessible at gs:[0x60]. The 32-bit PEB is at fs:[0x30].
