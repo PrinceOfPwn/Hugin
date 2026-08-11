@@ -194,7 +194,8 @@ Key Implementation Details: no implementation. Would look like: recon module pro
 
 Why It Matters: prevents self-inflicted DoS / detection from mass service failure; modern service splitting changes calculus.
 
-Detection: service enumeration low noise (RPC to SCM over \pipe\ntsvcs? actually SCM uses RPC endpoint; local enumeration via EnumServicesStatusEx is in-process RPC client call), telemetry: Sysmon 8 CreateRemoteThread into svchost, ETW-TI kernel provider, service crash 7034/7031 System event log, WER, SCM recovery actions firing (cross-ref T-040 residual), EDR behavioral rule "unsigned module in svchost address space" via image load callbacks (Sysmon 7). Bypass: pick isolated, non-PPL, non-critical svchost with matching token; prefer threadless/Pool Party style injection avoiding CreateRemoteThread (T-007). Residual: injected memory regions, event log crash entries.
+Detection: service enumeration low noise (RPC to SCM over \pipe
+tsvcs? actually SCM uses RPC endpoint; local enumeration via EnumServicesStatusEx is in-process RPC client call), telemetry: Sysmon 8 CreateRemoteThread into svchost, ETW-TI kernel provider, service crash 7034/7031 System event log, WER, SCM recovery actions firing (cross-ref T-040 residual), EDR behavioral rule "unsigned module in svchost address space" via image load callbacks (Sysmon 7). Bypass: pick isolated, non-PPL, non-critical svchost with matching token; prefer threadless/Pool Party style injection avoiding CreateRemoteThread (T-007). Residual: injected memory regions, event log crash entries.
 
 Draft T-059:
 

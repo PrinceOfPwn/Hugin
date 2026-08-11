@@ -19,7 +19,8 @@ SEC670 documents the three-component Windows service architecture required to co
 
 ## Mechanism
 
-1. The service binary's main thread calls StartServiceCtrlDispatcher, passing a SERVICE_TABLE_ENTRY array. Each entry maps a service name string to a ServiceMain function pointer. The dispatcher blocks the main thread, waiting for the SCM to send control requests via the named pipe \\.\pipe\net\NtControlPipe16.
+1. The service binary's main thread calls StartServiceCtrlDispatcher, passing a SERVICE_TABLE_ENTRY array. Each entry maps a service name string to a ServiceMain function pointer. The dispatcher blocks the main thread, waiting for the SCM to send control requests via the named pipe \\.\pipe
+et\NtControlPipe16.
 2. When the SCM starts the service (at boot for SERVICE_AUTO_START, or on demand via StartService), StartServiceCtrlDispatcher receives the start command, creates a new thread, and invokes the ServiceMain callback registered in the SERVICE_TABLE_ENTRY.
 3. Within ServiceMain, the service thread calls RegisterServiceCtrlHandlerEx (or the older RegisterServiceCtrlHandler) to register a HandlerEx callback function. This callback receives SERVICE_CONTROL_STOP, SERVICE_CONTROL_PAUSE, SERVICE_CONTROL_CONTINUE, SERVICE_CONTROL_INTERROGATE, and user-defined control codes from the SCM.
 4. ServiceMain calls SetServiceStatus to transition the service through the state machine: SERVICE_START_PENDING → SERVICE_RUNNING. The SERVICE_STATUS structure passed to SetServiceStatus includes dwCurrentState, dwControlsAccepted (which control codes the service handles), dwWin32ExitCode, dwCheckPoint, and dwWaitHint (timeout for the SCM before assuming the service is unresponsive).

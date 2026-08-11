@@ -140,7 +140,8 @@ Wait — does the service still auto-start? Yes, SCM as SYSTEM has SERVICE_START
 
 ## OS Internals Context
 
-- Service objects are securable objects managed by the Service Control Manager (services.exe); access checks happen in services.exe (user mode, RPC over \pipe\ntsvcs / MS-SCMR) not the kernel object manager — services aren't kernel objects. The SCM performs AccessCheck against the stored security descriptor for each service on API calls like OpenService, QueryServiceStatus, EnumServicesStatusEx.
+- Service objects are securable objects managed by the Service Control Manager (services.exe); access checks happen in services.exe (user mode, RPC over \pipe
+tsvcs / MS-SCMR) not the kernel object manager — services aren't kernel objects. The SCM performs AccessCheck against the stored security descriptor for each service on API calls like OpenService, QueryServiceStatus, EnumServicesStatusEx.
 - Access masks: map the SDDL two-letter codes to SERVICE_* constants: CC=SERVICE_QUERY_CONFIG (0x0001), DC=SERVICE_CHANGE_CONFIG (0x0002), LC=SERVICE_QUERY_STATUS (0x0004), SW=SERVICE_ENUMERATE_DEPENDENTS (0x0008), RP=SERVICE_START (0x0010), WP=SERVICE_STOP (0x0020), DT=SERVICE_PAUSE_CONTINUE (0x0040), LO=SERVICE_INTERROGATE (0x0080), CR=SERVICE_USER_DEFINED_CONTROL (0x0100), plus standard rights RC=READ_CONTROL, SD=DELETE, WD=WRITE_DAC, WO=WRITE_OWNER.
 - ACE ordering: deny-first canonical ordering in the DACL; access check stops at first deny match for requested mask.
 - EnumServicesStatusEx behavior: returns only services caller can query status on (per MSDN: "services... the caller must have SERVICE_QUERY_STATUS"— actually MSDN documents that EnumServicesStatus/Ex return services regardless? Let me think. Hmm.
@@ -154,7 +155,8 @@ Careful here. What is the documented behavior? From MSDN EnumServicesStatusExA r
 
 Hmm, wait — BA deny includes DC/LC/SW/WP/DT/SD, BA allow includes everything (CCDCLCSWRPWPDTLOCRSDRCWDWO). Net for BA: allowed CC, RP, LO, CR, RC, WD, WO; denied DC, LC, SW, WP, DT, SD. So admin cannot stop the service (WP denied) or delete it (SD denied) or query its status (LC denied) — but can start it, and can rewrite its DACL (WD) and take ownership (WO). So the "revert path" is: admin uses WRITE_DAC to reset DACL, or WRITE_OWNER to take ownership then reset. That's accurate string decoding. Also note SeTakeOwnershipPrivilege makes all of this moot for a determined admin regardless — but that's extra; I can mention the string's own escape hatch as observed in the ACEs.
 
-- Where the check happens relative to kernel: SCM is user-mode (services.exe, RPC server implementing MS-SCMR over ncalrpc/\pipe\ntsvcs). Kernel object manager never sees the service — only the underlying process/registry. So no kernel callback observes "service enumeration"; EDR visibility comes from RPC telemetry, registry monitoring (Security subkey write), and Security auditing from the SACL.
+- Where the check happens relative to kernel: SCM is user-mode (services.exe, RPC server implementing MS-SCMR over ncalrpc/\pipe
+tsvcs). Kernel object manager never sees the service — only the underlying process/registry. So no kernel callback observes "service enumeration"; EDR visibility comes from RPC telemetry, registry monitoring (Security subkey write), and Security auditing from the SACL.
 
 ## Key Implementation Details
 

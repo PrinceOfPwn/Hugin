@@ -29,7 +29,8 @@ Windows Service Control Manager persistence leverages the SCM programming model 
 
 ## OS Internals Context
 
-The Service Control Manager (services.exe) is the user-mode component responsible for managing the service database, starting and stopping services, and maintaining service state. At boot, the SCM reads HKLM\SYSTEM\CurrentControlSet\Services to enumerate all registered services and their configurations. For each service with Start=2 (auto-start), the SCM creates a process via CreateProcessW and waits for the service process to call StartServiceControlDispatcher, which connects to the SCM's named pipe (\\.\pipe\net\NtControlPipe16).
+The Service Control Manager (services.exe) is the user-mode component responsible for managing the service database, starting and stopping services, and maintaining service state. At boot, the SCM reads HKLM\SYSTEM\CurrentControlSet\Services to enumerate all registered services and their configurations. For each service with Start=2 (auto-start), the SCM creates a process via CreateProcessW and waits for the service process to call StartServiceControlDispatcher, which connects to the SCM's named pipe (\\.\pipe
+et\NtControlPipe16).
 
 The StartServiceCtrlDispatcher function blocks the main thread, waiting for the SCM to dispatch a service start request. When the SCM sends a start command, StartServiceCtrlDispatcher creates a new thread for the service and calls the ServiceMain function registered in the SERVICE_TABLE_ENTRY. This threading model means the service binary's main thread is occupied by the dispatcher loop, and the payload must execute either within ServiceMain (synchronously, before reporting SERVICE_RUNNING) or on a separate thread spawned by ServiceMain.
 

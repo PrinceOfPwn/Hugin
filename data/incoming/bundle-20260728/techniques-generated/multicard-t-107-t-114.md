@@ -176,7 +176,8 @@ Windows Service Control Manager persistence leverages the SCM programming model 
 
 ## OS Internals Context
 
-The Service Control Manager (services.exe) is the user-mode component responsible for managing the service database, starting and stopping services, and maintaining service state. At boot, the SCM reads HKLM\SYSTEM\CurrentControlSet\Services to enumerate all registered services and their configurations. For each service with Start=2 (auto-start), the SCM creates a process via CreateProcessW and waits for the service process to call StartServiceControlDispatcher, which connects to the SCM's named pipe (\\.\pipe\net\NtControlPipe16).
+The Service Control Manager (services.exe) is the user-mode component responsible for managing the service database, starting and stopping services, and maintaining service state. At boot, the SCM reads HKLM\SYSTEM\CurrentControlSet\Services to enumerate all registered services and their configurations. For each service with Start=2 (auto-start), the SCM creates a process via CreateProcessW and waits for the service process to call StartServiceControlDispatcher, which connects to the SCM's named pipe (\\.\pipe
+et\NtControlPipe16).
 
 The StartServiceCtrlDispatcher function blocks the main thread, waiting for the SCM to dispatch a service start request. When the SCM sends a start command, StartServiceCtrlDispatcher creates a new thread for the service and calls the ServiceMain function registered in the SERVICE_TABLE_ENTRY. This threading model means the service binary's main thread is occupied by the dispatcher loop, and the payload must execute either within ServiceMain (synchronously, before reporting SERVICE_RUNNING) or on a separate thread spawned by ServiceMain.
 
@@ -315,7 +316,8 @@ SEC670 documents the three-component Windows service architecture required to co
 
 ## Mechanism
 
-1. The service binary's main thread calls StartServiceCtrlDispatcher, passing a SERVICE_TABLE_ENTRY array. Each entry maps a service name string to a ServiceMain function pointer. The dispatcher blocks the main thread, waiting for the SCM to send control requests via the named pipe \\.\pipe\net\NtControlPipe16.
+1. The service binary's main thread calls StartServiceCtrlDispatcher, passing a SERVICE_TABLE_ENTRY array. Each entry maps a service name string to a ServiceMain function pointer. The dispatcher blocks the main thread, waiting for the SCM to send control requests via the named pipe \\.\pipe
+et\NtControlPipe16.
 2. When the SCM starts the service (at boot for SERVICE_AUTO_START, or on demand via StartService), StartServiceCtrlDispatcher receives the start command, creates a new thread, and invokes the ServiceMain callback registered in the SERVICE_TABLE_ENTRY.
 3. Within ServiceMain, the service thread calls RegisterServiceCtrlHandlerEx (or the older RegisterServiceCtrlHandler) to register a HandlerEx callback function. This callback receives SERVICE_CONTROL_STOP, SERVICE_CONTROL_PAUSE, SERVICE_CONTROL_CONTINUE, SERVICE_CONTROL_INTERROGATE, and user-defined control codes from the SCM.
 4. ServiceMain calls SetServiceStatus to transition the service through the state machine: SERVICE_START_PENDING → SERVICE_RUNNING. The SERVICE_STATUS structure passed to SetServiceStatus includes dwCurrentState, dwControlsAccepted (which control codes the service handles), dwWin32ExitCode, dwCheckPoint, and dwWaitHint (timeout for the SCM before assuming the service is unresponsive).
